@@ -1,12 +1,17 @@
 import type { Metadata } from 'next'
-import { Inter, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' })
-const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono', display: 'swap' })
-
 export const metadata: Metadata = {
-  title: 'FlowState — Content Creator Workflow',
+  title: 'FlowState',
   description: 'Focus-first workflow tool for content creators',
 }
 
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body style={{ margin: 0, padding: 0, minHeight: '100vh', background: '#0a0a0f', color: '#f0f0ff', fontFamily: 'system-ui, -apple-system, sans-serif', WebkitFontSmoothing: 'antialiased' }}>
+        {children}
+      </body>
+    </html>
+  )
+}

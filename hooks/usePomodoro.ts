@@ -3,17 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { PomodoroPhase } from '@/types'
 
-export const DURATIONS: Record<PomodoroPhase, number> = {
+const DURATIONS: Record<PomodoroPhase, number> = {
   work: 25 * 60,
   shortBreak: 5 * 60,
   longBreak: 15 * 60,
-}
-
-interface PomodoroState {
-  phase: PomodoroPhase
-  timeLeft: number
-  isRunning: boolean
-  pomodorosCompleted: number
 }
 
 interface UsePomodoroOptions {
@@ -22,98 +15,78 @@ interface UsePomodoroOptions {
 }
 
 export function usePomodoro({ onWorkComplete, onBreakComplete }: UsePomodoroOptions = {}) {
-  const [state, setState] = useState<PomodoroState>({
-    phase: 'work',
-    timeLeft: DURATIONS.work,
-    isRunning: false,
-    pomodorosCompleted: 0,
-  })
+  const [phase, setPhase] = useState<PomodoroPhase>('work')
+  const [timeLeft, setTimeLeft] = useState(DURATIONS.work)
+  const [isRunning, setIsRunning] = useState(false)
+  const [pomodorosCompleted, setPomodorosCompleted] = useState(0)
+  const onWorkRef = useRef(onWorkComplete)
+  const onBreakRef = useRef(onBreakComplete)
 
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const onWorkCompleteRef = useRef(onWorkComplete)
-  const onBreakCompleteRef = useRef(onBreakComplete)
-
-  useEffect(() => {
-    onWorkCompleteRef.current = onWorkComplete
-    onBreakCompleteRef.current = onBreakComplete
-  }, [onWorkComplete, onBreakComplete])
-
-  const tick = useCallback(() => {
-    setState((prev) => {
-      if (prev.timeLeft <= 1) {
-        const wasWork = prev.phase === 'work'
-        const newPomodoros = wasWork ? prev.pomodorosCompleted + 1 : prev.pomodorosCompleted
-
-        let nextPhase: PomodoroPhase
-        if (wasWork) {
-          nextPhase = newPomodoros % 4 === 0 ? 'longBreak' : 'shortBreak'
-          setTimeout(() => onWorkCompleteRef.current?.(), 0)
-        } else {
-          nextPhase = 'work'
-          setTimeout(() => onBreakCompleteRef.current?.(), 0)
-        }
-
-        return {
-          phase: nextPhase,
-          timeLeft: DURATIONS[nextPhase],
-          isRunning: false,
-          pomodorosCompleted: newPomodoros,
-        }
-      }
-      return { ...prev, timeLeft: prev.timeLeft - 1 }
-    })
-  }, [])
+  useEffect(() => { onWorkRef.current = onWorkComplete }, [onWorkComplete])
+  useEffect(() => { onBreakRef.current = onBreakComplete }, [onBreakComplete])
 
   useEffect(() => {
-    if (state.isRunning) {
-      intervalRef.current = setInterval(tick, 1000)
-    } else {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-  }, [state.isRunning, tick])
+    if (!isRunning) return
+    const id = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          setIsRunning(false)
+          setPhase(cur => {
+            const wasWork = cur === 'work'
+            if (wasWork) {
+              setPomodorosCompleted(n => {
+                const next = n + 1
+                const nextPhase = next % 4 === 0 ? 'longBreak' : 'shortBreak'
+                setTimeLeft(DURATIONS[nextPhase])
+                setPhase(nextPhase)
+                setTimeout(() => onWorkRef.current?.(), 0)
+                return next
+              })
+            } else {
+              setTimeLeft(DURATIONS.work)
+              setPhase('work')
+              setTimeout(() => onBreakRef.current?.(), 0)
+            }
+            return cur
+          })
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, [isRunning])
 
-  const start = useCallback(() => setState((p) => ({ ...p, isRunning: true })), [])
-  const pause = useCallback(() => setState((p) => ({ ...p, isRunning: false })), [])
-
-  const reset = useCallback(() =>
-    setState((p) => ({ ...p, timeLeft: DURATIONS[p.phase], isRunning: false })), [])
-
-  const skip = useCallback(() => {
-    setState((prev) => {
-      const wasWork = prev.phase === 'work'
-      const newPomodoros = wasWork ? prev.pomodorosCompleted + 1 : prev.pomodorosCompleted
-      let nextPhase: PomodoroPhase
-      if (wasWork) {
-        nextPhase = newPomodoros % 4 === 0 ? 'longBreak' : 'shortBreak'
-      } else {
-        nextPhase = 'work'
-      }
-      return {
-        phase: nextPhase,
-        timeLeft: DURATIONS[nextPhase],
-        isRunning: false,
-        pomodorosCompleted: newPomodoros,
-      }
-    })
-  }, [])
-
-  const formatTime = (seconds: number): string => {
-    const m = Math.floor(seconds / 60)
-    const s = seconds % 60
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60)
+    const sec = s % 60
+    return (m < 10 ? '0' : '') + m + ':' + (sec < 10 ? '0' : '') + sec
   }
 
+  const start = useCallback(() => setIsRunning(true), [])
+  const pause = useCallback(() => setIsRunning(false), [])
+  const reset = useCallback(() => { setIsRunning(false); setTimeLeft(DURATIONS[phase]) }, [phase])
+  const skip = useCallback(() => {
+    setIsRunning(false)
+    setPhase(cur => {
+      const wasWork = cur === 'work'
+      if (wasWork) {
+        setPomodorosCompleted(n => n + 1)
+        const next = (pomodorosCompleted + 1) % 4 === 0 ? 'longBreak' : 'shortBreak'
+        setTimeLeft(DURATIONS[next])
+        return next
+      } else {
+        setTimeLeft(DURATIONS.work)
+        return 'work'
+      }
+    })
+  }, [pomodorosCompleted])
+
   return {
-    ...state,
-    start,
-    pause,
-    reset,
-    skip,
-    formattedTime: formatTime(state.timeLeft),
-    progress: 1 - state.timeLeft / DURATIONS[state.phase],
-    isBreak: state.phase !== 'work',
+    phase, timeLeft, isRunning, pomodorosCompleted,
+    start, pause, reset, skip,
+    formattedTime: formatTime(timeLeft),
+    progress: 1 - timeLeft / DURATIONS[phase],
+    isBreak: phase !== 'work',
   }
 }

@@ -8,13 +8,13 @@ import type { WorkflowType } from '@/types'
 import { sounds } from '@/lib/sounds'
 
 const FALLBACK: WorkflowType[] = [
-  { id: 'yt-short',  name: 'YouTube Short',   slug: 'youtube-short',    description: 'Vertical video under 60 seconds',  icon: '(Short)',  color: '#ff0000' },
-  { id: 'yt-long',   name: 'YouTube Longform', slug: 'youtube-longform', description: 'Full-length educational video',     icon: '(Long)',   color: '#ff4444' },
-  { id: 'tweet',     name: 'Tweet / X Post',   slug: 'tweet',            description: 'High-impact text post',             icon: '(Tweet)',  color: '#1da1f2' },
-  { id: 'ig-post',   name: 'Instagram Post',   slug: 'instagram-post',   description: 'Feed image or carousel',            icon: '(Photo)',  color: '#e1306c' },
-  { id: 'ig-reel',   name: 'Instagram Reel',   slug: 'instagram-reel',   description: 'Short vertical video',              icon: '(Reel)',   color: '#833ab4' },
-  { id: 'linkedin',  name: 'LinkedIn Post',    slug: 'linkedin-post',    description: 'Professional thought-leadership',   icon: '(LinkedIn)', color: '#0077b5' },
-  { id: 'tiktok',   name: 'TikTok',            slug: 'tiktok',           description: 'Trend-driven short video',          icon: '(TikTok)', color: '#69c9d0' },
+  { id: 'yt-short',  name: 'YouTube Short',   slug: 'youtube-short',    description: 'Vertical video under 60 seconds',  icon: 'Short',    color: '#ff0000' },
+  { id: 'yt-long',   name: 'YouTube Longform', slug: 'youtube-longform', description: 'Full-length educational video',     icon: 'Long',     color: '#ff4444' },
+  { id: 'tweet',     name: 'Tweet / X Post',   slug: 'tweet',            description: 'High-impact text post',             icon: 'Tweet',    color: '#1da1f2' },
+  { id: 'ig-post',   name: 'Instagram Post',   slug: 'instagram-post',   description: 'Feed image or carousel',            icon: 'Photo',    color: '#e1306c' },
+  { id: 'ig-reel',   name: 'Instagram Reel',   slug: 'instagram-reel',   description: 'Short vertical video',              icon: 'Reel',     color: '#833ab4' },
+  { id: 'linkedin',  name: 'LinkedIn Post',    slug: 'linkedin-post',    description: 'Professional thought-leadership',   icon: 'LinkedIn', color: '#0077b5' },
+  { id: 'tiktok',    name: 'TikTok',           slug: 'tiktok',           description: 'Trend-driven short video',          icon: 'TikTok',   color: '#69c9d0' },
 ]
 
 const C = {
@@ -36,9 +36,7 @@ export default function WorkflowsPage() {
       .catch(() => { setWorkflows(FALLBACK); setSupabaseOk(false) })
   }, [])
 
-  function select(wf: WorkflowType) {
-    sounds.playClick(); setSelected(wf); setTitle('')
-  }
+  function select(wf: WorkflowType) { sounds.playClick(); setSelected(wf); setTitle('') }
 
   async function create() {
     if (!selected || !title.trim()) return
@@ -50,28 +48,16 @@ export default function WorkflowsPage() {
     } catch { setCreating(false) }
   }
 
-  const cardStyle = (wf: WorkflowType): React.CSSProperties => ({
-    width: '100%', textAlign: 'left', padding: '1.25rem',
-    display: 'flex', flexDirection: 'column', gap: '0.75rem',
-    background: selected?.id === wf.id ? wf.color + '11' : C.card,
-    border: '1px solid ' + (selected?.id === wf.id ? C.cyan : C.border),
-    borderRadius: '1rem', cursor: 'pointer',
-    boxShadow: selected?.id === wf.id ? '0 0 20px ' + C.cyan + '22' : 'none',
-    transition: 'all 0.2s', fontFamily: 'inherit',
-  })
-
   return (
     <main style={{ minHeight: '100vh', padding: '2rem 1.5rem', maxWidth: '56rem', margin: '0 auto', background: C.bg }}>
-      <button
-        onClick={() => { sounds.playClick(); router.push('/') }}
-        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2rem', background: 'none', border: 'none', color: C.textSec, cursor: 'pointer', fontSize: '0.875rem', fontFamily: 'inherit' }}
-      >
+      <button onClick={() => { sounds.playClick(); router.push('/') }}
+        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2rem', background: 'none', border: 'none', color: C.textSec, cursor: 'pointer', fontSize: '0.875rem', fontFamily: 'inherit' }}>
         <ArrowLeft size={16} />Back
       </button>
-
       <div style={{ marginBottom: '2rem' }}>
-        <h1 style={{ fontSize: 'clamp(1.8rem, 4vw, 2.5rem)', fontWeight: 900, color: C.text, marginBottom: '0.5rem' }}>
-          Choose your <span style={{ color: C.cyan }}>workflow</span>
+        <h1 style={{ fontSize: 'clamp(1.8rem,4vw,2.5rem)', fontWeight: 900, color: C.text, marginBottom: '0.5rem' }}>
+          {'Choose your '}
+          <span style={{ color: C.cyan }}>workflow</span>
         </h1>
         <p style={{ color: C.textSec }}>What are you creating today?</p>
         {!supabaseOk && (
@@ -80,14 +66,14 @@ export default function WorkflowsPage() {
           </span>
         )}
       </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: '1rem', marginBottom: '2rem' }}>
         {workflows.map(wf => (
-          <button key={wf.id} onClick={() => select(wf)} style={cardStyle(wf)}
+          <button key={wf.id} onClick={() => select(wf)}
+            style={{ width: '100%', textAlign: 'left', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', background: selected?.id === wf.id ? wf.color + '11' : C.card, border: '1px solid ' + (selected?.id === wf.id ? C.cyan : C.border), borderRadius: '1rem', cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'inherit' }}
             onMouseEnter={e => { if (selected?.id !== wf.id) { (e.currentTarget as HTMLButtonElement).style.borderColor = C.cyan; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)' }}}
             onMouseLeave={e => { if (selected?.id !== wf.id) { (e.currentTarget as HTMLButtonElement).style.borderColor = C.border; (e.currentTarget as HTMLButtonElement).style.transform = 'none' }}}
           >
-            <div style={{ width: '3rem', height: '3rem', borderRadius: '0.875rem', background: selected?.id === wf.id ? wf.color + '22' : C.surface, border: '1px solid ' + (selected?.id === wf.id ? wf.color + '55' : C.border), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 700, color: C.textSec }}>
+            <div style={{ width: '3rem', height: '3rem', borderRadius: '0.875rem', background: C.surface, border: '1px solid ' + C.border, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700, color: C.textSec }}>
               {wf.icon}
             </div>
             <div>
@@ -102,38 +88,26 @@ export default function WorkflowsPage() {
           </button>
         ))}
       </div>
-
       {selected && (
         <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: '1rem', padding: '1.5rem', maxWidth: '28rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <span style={{ fontSize: '1rem', fontWeight: 700, color: C.textSec }}>{selected.icon}</span>
-              <div>
-                <p style={{ fontWeight: 700, color: C.text }}>{selected.name}</p>
-                <p style={{ fontSize: '0.75rem', color: C.textSec }}>Name this piece of content</p>
-              </div>
+            <div>
+              <p style={{ fontWeight: 700, color: C.text }}>{selected.name}</p>
+              <p style={{ fontSize: '0.75rem', color: C.textSec }}>Name this piece of content</p>
             </div>
-            <button onClick={() => { sounds.playClick(); setSelected(null) }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.textMut, padding: '0.25rem' }}>
+            <button onClick={() => { sounds.playClick(); setSelected(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.textMut, padding: '0.25rem' }}>
               <X size={18} />
             </button>
           </div>
-          <input
-            type="text"
-            placeholder="e.g. How to build a habit in 30 days"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && create()}
-            autoFocus
-            style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '0.75rem', fontSize: '0.875rem', marginBottom: '1rem', outline: 'none', background: C.surface, border: '1px solid ' + C.border, color: C.text, fontFamily: 'inherit', boxSizing: 'border-box', transition: 'border-color 0.2s' }}
-            onFocus={e => (e.target.style.borderColor = C.cyan)}
-            onBlur={e => (e.target.style.borderColor = C.border)}
+          <input type="text" placeholder="e.g. How to build a habit in 30 days"
+            value={title} onChange={e => setTitle(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && create()} autoFocus
+            style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '0.75rem', fontSize: '0.875rem', marginBottom: '1rem', outline: 'none', background: C.surface, border: '1px solid ' + C.border, color: C.text, fontFamily: 'inherit', boxSizing: 'border-box' }}
+            onFocus={e => { e.target.style.borderColor = C.cyan }}
+            onBlur={e => { e.target.style.borderColor = C.border }}
           />
-          <button
-            onClick={create}
-            disabled={!title.trim() || creating}
-            style={{ width: '100%', padding: '0.75rem', background: 'linear-gradient(135deg, ' + C.cyan + ', #0099cc)', border: 'none', borderRadius: '0.75rem', color: '#000', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', fontFamily: 'inherit', opacity: (!title.trim() || creating) ? 0.5 : 1 }}
-          >
+          <button onClick={create} disabled={!title.trim() || creating}
+            style={{ width: '100%', padding: '0.75rem', background: 'linear-gradient(135deg,' + C.cyan + ',#0099cc)', border: 'none', borderRadius: '0.75rem', color: '#000', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', fontFamily: 'inherit', opacity: (!title.trim() || creating) ? 0.5 : 1 }}>
             {creating ? 'Creating...' : 'Start Workflow'}
           </button>
         </div>

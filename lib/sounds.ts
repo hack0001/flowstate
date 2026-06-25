@@ -4,103 +4,71 @@ class SoundSystem {
   private ctx: AudioContext | null = null
   private enabled = true
 
+  setEnabled(v: boolean) { this.enabled = v }
+
   private getCtx(): AudioContext {
-    if (!this.ctx) {
-      this.ctx = new AudioContext()
-    }
+    if (!this.ctx) this.ctx = new AudioContext()
     return this.ctx
   }
 
-  setEnabled(v: boolean) {
-    this.enabled = v
-  }
-
-  private tone(
-    freq: number,
-    startTime: number,
-    duration: number,
-    volume = 0.3,
-    type: OscillatorType = 'sine'
-  ) {
-    if (!this.enabled) return
-    const ctx = this.getCtx()
+  private tone(freq: number, type: OscillatorType, start: number, dur: number, gain: number, ctx: AudioContext) {
     const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.frequency.value = freq
+    const g = ctx.createGain()
+    osc.connect(g)
+    g.connect(ctx.destination)
     osc.type = type
-    gain.gain.setValueAtTime(0, startTime)
-    gain.gain.linearRampToValueAtTime(volume, startTime + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration)
-    osc.start(startTime)
-    osc.stop(startTime + duration + 0.05)
+    osc.frequency.value = freq
+    g.gain.setValueAtTime(0, ctx.currentTime + start)
+    g.gain.linearRampToValueAtTime(gain, ctx.currentTime + start + 0.01)
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
+    osc.start(ctx.currentTime + start)
+    osc.stop(ctx.currentTime + start + dur + 0.05)
   }
 
-  /** Satisfying 3-note ascending ding for completing a task */
   playTaskComplete() {
     if (!this.enabled) return
-    const ctx = this.getCtx()
-    const now = ctx.currentTime
-    // C5 → E5 → G5 (major chord arpeggio)
-    ;[523.25, 659.25, 783.99].forEach((freq, i) => {
-      this.tone(freq, now + i * 0.12, 0.4, 0.25)
-    })
+    try {
+      const ctx = this.getCtx()
+      this.tone(523, 'sine', 0, 0.15, 0.3, ctx)
+      this.tone(659, 'sine', 0.1, 0.15, 0.3, ctx)
+      this.tone(784, 'sine', 0.2, 0.25, 0.3, ctx)
+    } catch {}
   }
 
-  /** Full celebration fanfare for completing a stage */
   playStageComplete() {
     if (!this.enabled) return
-    const ctx = this.getCtx()
-    const now = ctx.currentTime
-    // C5 → E5 → G5 → C6 (triumphant)
-    ;[523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
-      this.tone(freq, now + i * 0.1, 0.7, 0.3)
-    })
-    // Extra flourish
-    setTimeout(() => {
-      const n = ctx.currentTime
-      ;[783.99, 1046.5].forEach((freq, i) => {
-        this.tone(freq, n + i * 0.15, 0.5, 0.2)
-      })
-    }, 600)
+    try {
+      const ctx = this.getCtx()
+      const freqs = [523, 659, 784, 1047]
+      freqs.forEach((f, i) => this.tone(f, 'sine', i * 0.12, 0.2, 0.25, ctx))
+    } catch {}
   }
 
-  /** Soft click for button presses */
   playClick() {
     if (!this.enabled) return
-    const ctx = this.getCtx()
-    this.tone(800, ctx.currentTime, 0.05, 0.08, 'sine')
+    try {
+      const ctx = this.getCtx()
+      this.tone(800, 'sine', 0, 0.05, 0.1, ctx)
+    } catch {}
   }
 
-  /** Timer end bell */
   playTimerEnd() {
     if (!this.enabled) return
-    const ctx = this.getCtx()
-    const now = ctx.currentTime
-    ;[440, 554.37, 659.25].forEach((freq, i) => {
-      this.tone(freq, now + i * 0.25, 0.8, 0.25)
-    })
+    try {
+      const ctx = this.getCtx()
+      this.tone(880, 'sine', 0, 0.4, 0.3, ctx)
+      this.tone(880, 'sine', 0.5, 0.4, 0.3, ctx)
+      this.tone(1047, 'sine', 1.0, 0.5, 0.3, ctx)
+    } catch {}
   }
 
-  /** Break start chime */
   playBreakStart() {
     if (!this.enabled) return
-    const ctx = this.getCtx()
-    const now = ctx.currentTime
-    ;[659.25, 523.25].forEach((freq, i) => {
-      this.tone(freq, now + i * 0.2, 0.6, 0.2)
-    })
-  }
-
-  /** Streak milestone */
-  playStreak() {
-    if (!this.enabled) return
-    const ctx = this.getCtx()
-    const now = ctx.currentTime
-    ;[523.25, 587.33, 659.25, 698.46, 783.99, 880, 1046.5].forEach((freq, i) => {
-      this.tone(freq, now + i * 0.07, 0.25, 0.2)
-    })
+    try {
+      const ctx = this.getCtx()
+      this.tone(392, 'sine', 0, 0.3, 0.2, ctx)
+      this.tone(330, 'sine', 0.3, 0.4, 0.2, ctx)
+    } catch {}
   }
 }
 

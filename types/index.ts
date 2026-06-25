@@ -5,8 +5,7 @@ export interface WorkflowType {
   description: string
   icon: string
   color: string
-  stage_count?: number
-  task_count?: number
+  stages?: Stage[]
 }
 
 export interface Stage {
@@ -26,22 +25,21 @@ export interface Task {
   description: string
   instructions: string
   order_index: number
-  estimated_minutes: number
+  estimated_minutes?: number
   has_prompt: boolean
-  prompt_text?: string | null
-  resource_url?: string | null
+  prompt_text?: string
+  resource_url?: string
 }
 
 export interface WorkflowSession {
   id: string
   workflow_type_id: string
   title: string
-  current_stage_id: string | null
-  current_task_id: string | null
-  is_active: boolean
   is_priority: boolean
-  started_at: string
-  completed_at: string | null
+  current_stage_id?: string
+  current_task_id?: string
+  created_at: string
+  updated_at: string
   workflow_type?: WorkflowType
 }
 
@@ -51,18 +49,6 @@ export interface TaskCompletion {
   task_id: string
   completed_at: string
   pomodoros_used: number
-}
-
-export interface FocusSession {
-  session: WorkflowSession
-  currentTask: Task | null
-  currentStage: Stage | null
-  allStages: Stage[]
-  allTasks: Task[]
-  completedTaskIds: string[]
-  totalTasks: number
-  completedTasks: number
-  progress: number
 }
 
 export type PomodoroPhase = 'work' | 'shortBreak' | 'longBreak'
