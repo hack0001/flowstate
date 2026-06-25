@@ -2,105 +2,73 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
-import {
-  ArrowLeft, ChevronLeft, ChevronRight, CheckCircle2,
-  Copy, ExternalLink, Volume2, VolumeX, LayoutGrid,
-  Play, Pause, SkipForward, RefreshCw
-} from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, CheckCircle2, Copy, ExternalLink, Volume2, VolumeX, LayoutGrid, Play, Pause, SkipForward, RefreshCw } from 'lucide-react'
 import { getSession, getStagesForWorkflow, getCompletions, completeTask } from '@/lib/supabase'
 import type { WorkflowSession, Stage, Task } from '@/types'
 import { sounds } from '@/lib/sounds'
 import { usePomodoro } from '@/hooks/usePomodoro'
 import { useCelebration } from '@/hooks/useCelebration'
 
-const FOCUS_TIPS = [
-  { tip: "One task. One screen. One focus.", science: "Research shows task-switching costs 23 minutes of recovery time." },
-  { tip: "The next 25 minutes are all that exist.", science: "Pomodoro technique improves focus by removing decision fatigue." },
-  { tip: "Done beats perfect. Ship it.", science: "Perfectionism is procrastination with better PR." },
-  { tip: "Momentum is a superpower.", science: "Completing small tasks triggers dopamine, fuelling the next one." },
-  { tip: "Your phone can wait. This can't.", science: "Average attention recovery after phone distraction: 25 minutes." },
-  { tip: "The hardest part is starting. You already did that.", science: "Zeigarnik effect: started tasks are easier to complete." },
-  { tip: "Progress, not perfection.", science: "Teresa Amabile: small wins create the best creative momentum." },
-  { tip: "Protect your deep work time fiercely.", science: "Cal Newport: 4 hours of deep work beats 10 hours of distracted work." },
+const C = {
+  bg: '#0a0a0f', surface: '#12121a', card: '#1a1a26', border: '#2a2a3a',
+  cyan: '#00d4ff', green: '#00ff88', purple: '#8b5cf6', amber: '#ffb800',
+  text: '#f0f0ff', textSec: '#8888aa', textMut: '#4a4a6a',
+}
+
+const TIPS = [
+  { tip: 'One task. One screen. One focus.', science: 'Task-switching costs 23 minutes of recovery time on average.' },
+  { tip: 'The next 25 minutes are all that exist.', science: 'Pomodoro technique removes decision fatigue and sharpens focus.' },
+  { tip: 'Done beats perfect. Ship it.', science: 'Perfectionism is procrastination with better PR.' },
+  { tip: 'Momentum is a superpower.', science: 'Completing small tasks triggers dopamine, fuelling the next one.' },
+  { tip: 'Your phone can wait. This cannot.', science: 'Average attention recovery after phone distraction: 25 minutes.' },
+  { tip: 'The hardest part is starting. You already did that.', science: 'Zeigarnik effect: started tasks are easier to complete.' },
+  { tip: 'Progress, not perfection.', science: 'Teresa Amabile: small wins create the best creative momentum.' },
+  { tip: 'Protect your deep work time fiercely.', science: 'Cal Newport: 4hrs deep work beats 10hrs of distracted work.' },
 ]
 
 function PomodoroRing({ progress, phase }: { progress: number; phase: string }) {
-  const size = 120
-  const stroke = 6
-  const radius = (size - stroke) / 2
-  const circumference = 2 * Math.PI * radius
-  const offset = circumference * (1 - progress)
-
-  const color = phase === 'work' ? '#00d4ff' : phase === 'shortBreak' ? '#00ff88' : '#8b5cf6'
-
+  const size = 120, stroke = 6, r = (size - stroke) / 2
+  const circ = 2 * Math.PI * r
+  const color = phase === 'work' ? C.cyan : phase === 'shortBreak' ? C.green : C.purple
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {/* Track */}
-      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#2a2a3a" strokeWidth={stroke} />
-      {/* Progress */}
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke={color}
-        strokeWidth={stroke}
-        strokeLinecap="round"
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        className="pomodoro-ring"
-        style={{ filter: `drop-shadow(0 0 6px ${color}88)` }}
-      />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={C.border} strokeWidth={stroke} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
+        strokeDasharray={circ} strokeDashoffset={circ * (1 - progress)}
+        style={{ transform: 'rotate(-90deg)', transformOrigin: 'center', transition: 'stroke-dashoffset 1s linear', filter: `drop-shadow(0 0 6px ${color}88)` }} />
     </svg>
   )
 }
 
 export default function FocusPage() {
   const router = useRouter()
-  const params = useParams()
+  const { id: sessionId } = useParams() as { id: string }
   const searchParams = useSearchParams()
-  const sessionId = params.id as string
   const initialTaskId = searchParams.get('task')
 
   const [session, setSession] = useState<WorkflowSession | null>(null)
   const [stages, setStages] = useState<Stage[]>([])
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set())
-  const [currentTaskIdx, setCurrentTaskIdx] = useState(0)
-  const [soundEnabled, setSoundEnabled] = useState(true)
-  const [justCompleted, setJustCompleted] = useState(false)
-  const [promptCopied, setPromptCopied] = useState(false)
+  const [taskIdx, setTaskIdx] = useState(0)
+  const [soundOn, setSoundOn] = useState(true)
+  const [justDone, setJustDone] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(true)
   const [tipIdx, setTipIdx] = useState(0)
-
   const { celebrate } = useCelebration()
 
-  const allTasks: Task[] = stages.flatMap((s) => s.tasks ?? [])
-  const currentTask = allTasks[currentTaskIdx] ?? null
-  const totalTasks = allTasks.length
-  const totalCompleted = allTasks.filter((t) => completedIds.has(t.id)).length
-  const progress = totalTasks ? totalCompleted / totalTasks : 0
-  const currentStage = currentTask
-    ? stages.find((s) => s.tasks?.some((t) => t.id === currentTask.id))
-    : null
+  const allTasks: Task[] = stages.flatMap(s => s.tasks ?? [])
+  const task = allTasks[taskIdx] ?? null
+  const currentStage = task ? stages.find(s => s.tasks?.some(t => t.id === task.id)) : null
+  const totalDone = allTasks.filter(t => completedIds.has(t.id)).length
+  const progress = allTasks.length ? totalDone / allTasks.length : 0
+  const isDone = task ? completedIds.has(task.id) : false
 
-  const handlePomodoroWorkComplete = useCallback(() => {
-    if (soundEnabled) sounds.playTimerEnd()
-    celebrate('task')
-  }, [soundEnabled, celebrate])
+  const onWorkDone = useCallback(() => { if (soundOn) sounds.playTimerEnd(); celebrate('task') }, [soundOn, celebrate])
+  const onBreakDone = useCallback(() => { if (soundOn) sounds.playBreakStart() }, [soundOn])
+  const pom = usePomodoro({ onWorkComplete: onWorkDone, onBreakComplete: onBreakDone })
 
-  const handlePomodoroBreakComplete = useCallback(() => {
-    if (soundEnabled) sounds.playBreakStart()
-  }, [soundEnabled])
-
-  const pomodoro = usePomodoro({
-    onWorkComplete: handlePomodoroWorkComplete,
-    onBreakComplete: handlePomodoroBreakComplete,
-  })
-
-  useEffect(() => {
-    sounds.setEnabled(soundEnabled)
-  }, [soundEnabled])
+  useEffect(() => { sounds.setEnabled(soundOn) }, [soundOn])
 
   useEffect(() => {
     async function load() {
@@ -108,472 +76,228 @@ export default function FocusPage() {
         const s = await getSession(sessionId)
         setSession(s)
         const st = await getStagesForWorkflow(s.workflow_type_id)
-        const validStages = st ?? []
-        setStages(validStages)
-
-        const completionData = await getCompletions(sessionId)
-        const ids = new Set((completionData ?? []).map((c: { task_id: string }) => c.task_id))
+        const validSt = st ?? []
+        setStages(validSt)
+        const c = await getCompletions(sessionId)
+        const ids = new Set((c ?? []).map((x: { task_id: string }) => x.task_id))
         setCompletedIds(ids)
-
-        // Find starting task
+        const flat: Task[] = validSt.flatMap((stage: Stage) => stage.tasks ?? [])
         if (initialTaskId) {
-          const flat: Task[] = validStages.flatMap((stage) => stage.tasks ?? [])
-          const idx = flat.findIndex((t) => t.id === initialTaskId)
-          if (idx >= 0) setCurrentTaskIdx(idx)
+          const i = flat.findIndex(t => t.id === initialTaskId)
+          if (i >= 0) setTaskIdx(i)
         } else {
-          // Find first incomplete task
-          const flat: Task[] = validStages.flatMap((stage) => stage.tasks ?? [])
-          const firstIncomplete = flat.findIndex((t) => !ids.has(t.id))
-          if (firstIncomplete >= 0) setCurrentTaskIdx(firstIncomplete)
+          const i = flat.findIndex(t => !ids.has(t.id))
+          if (i >= 0) setTaskIdx(i)
         }
-      } catch (e) {
-        console.error(e)
-      } finally {
-        setLoading(false)
-      }
+      } catch (e) { console.error(e) }
+      finally { setLoading(false) }
     }
     load()
   }, [sessionId, initialTaskId])
 
-  // Rotate tip every 5 minutes
   useEffect(() => {
-    const interval = setInterval(() => {
-      setTipIdx((i) => (i + 1) % FOCUS_TIPS.length)
-    }, 5 * 60 * 1000)
-    return () => clearInterval(interval)
+    const t = setInterval(() => setTipIdx(i => (i + 1) % TIPS.length), 5 * 60 * 1000)
+    return () => clearInterval(t)
   }, [])
 
   async function markComplete() {
-    if (!currentTask || completedIds.has(currentTask.id)) return
+    if (!task || isDone) return
     sounds.playTaskComplete()
-
-    const newIds = new Set([...completedIds, currentTask.id])
+    const newIds = new Set(Array.from(completedIds).concat(task.id))
     setCompletedIds(newIds)
-    setJustCompleted(true)
-
-    await completeTask(sessionId, currentTask.id, pomodoro.pomodorosCompleted)
-
-    // Check if stage complete
-    const stageTasks = currentStage?.tasks ?? []
-    const stageComplete = stageTasks.every((t) => newIds.has(t.id))
-    if (stageComplete) {
-      setTimeout(() => {
-        sounds.playStageComplete()
-        celebrate('stage')
-      }, 300)
-    } else {
-      setTimeout(() => celebrate('task'), 100)
-    }
-
+    setJustDone(true)
+    await completeTask(sessionId, task.id, pom.pomodorosCompleted)
+    const stageDone = (currentStage?.tasks ?? []).every(t => newIds.has(t.id))
+    if (stageDone) setTimeout(() => { sounds.playStageComplete(); celebrate('stage') }, 300)
+    else setTimeout(() => celebrate('task'), 100)
     setTimeout(() => {
-      setJustCompleted(false)
-      // Auto-advance to next incomplete task
-      const nextIdx = allTasks.findIndex((t, i) => i > currentTaskIdx && !newIds.has(t.id))
-      if (nextIdx >= 0) {
-        setCurrentTaskIdx(nextIdx)
-      }
+      setJustDone(false)
+      const next = allTasks.findIndex((t, i) => i > taskIdx && !newIds.has(t.id))
+      if (next >= 0) setTaskIdx(next)
     }, 1200)
   }
 
-  function navigate(dir: 'prev' | 'next') {
-    sounds.playClick()
-    setCurrentTaskIdx((i) => {
-      if (dir === 'prev') return Math.max(0, i - 1)
-      return Math.min(allTasks.length - 1, i + 1)
-    })
-  }
+  const tip = TIPS[tipIdx]
+  const phaseColor = pom.phase === 'work' ? C.cyan : pom.phase === 'shortBreak' ? C.green : C.purple
+  const phaseLabel = pom.phase === 'work' ? '🎯 Focus Time' : pom.phase === 'shortBreak' ? '☕ Short Break' : '🌿 Long Break'
 
-  function copyPrompt() {
-    if (currentTask?.prompt_text) {
-      navigator.clipboard.writeText(currentTask.prompt_text)
-      sounds.playClick()
-      setPromptCopied(true)
-      setTimeout(() => setPromptCopied(false), 2000)
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="flex items-center gap-3" style={{ color: 'var(--text-secondary)' }}>
-          <div className="w-5 h-5 rounded-full border-2 animate-spin"
-            style={{ borderColor: 'var(--cyan)', borderTopColor: 'transparent' }} />
-          Loading focus session...
-        </div>
-      </div>
-    )
-  }
-
-  const isDone = currentTask ? completedIds.has(currentTask.id) : false
-  const tip = FOCUS_TIPS[tipIdx]
-
-  const phaseLabel = {
-    work: '🎯 Focus Time',
-    shortBreak: '☕ Short Break',
-    longBreak: '🌿 Long Break',
-  }[pomodoro.phase]
-
-  const phaseColor = {
-    work: 'var(--cyan)',
-    shortBreak: 'var(--green)',
-    longBreak: 'var(--purple)',
-  }[pomodoro.phase]
+  if (loading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg, gap: '0.75rem', color: C.textSec }}>
+      <div style={{ width: '1.25rem', height: '1.25rem', borderRadius: '50%', border: `2px solid ${C.cyan}`, borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
+      Loading focus session...
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  )
 
   return (
-    <main
-      className="min-h-screen flex flex-col"
-      style={{ background: 'var(--bg)' }}
-    >
+    <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: C.bg }}>
+
       {/* Top bar */}
-      <div className="flex items-center justify-between px-6 py-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => { sounds.playClick(); router.push(`/workflow/${sessionId}`) }}
-            className="flex items-center gap-1.5 text-sm transition-colors"
-            style={{ color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}
-          >
-            <ArrowLeft size={15} />
-            Overview
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button onClick={() => { sounds.playClick(); router.push(`/workflow/${sessionId}`) }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: 'none', border: 'none', color: C.textSec, cursor: 'pointer', fontSize: '0.875rem', fontFamily: 'inherit' }}>
+            <ArrowLeft size={15} />Overview
           </button>
-          <span style={{ color: 'var(--border)' }}>|</span>
-          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            {session?.workflow_type?.icon} {session?.title}
-          </span>
+          <span style={{ color: C.border }}>|</span>
+          <span style={{ fontSize: '0.875rem', color: C.textSec }}>{session?.workflow_type?.icon} {session?.title}</span>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setSoundEnabled((v) => !v)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-            title={soundEnabled ? 'Mute sounds' : 'Enable sounds'}
-          >
-            {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button onClick={() => setSoundOn(v => !v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.textMut, padding: '0.25rem' }}>
+            {soundOn ? <Volume2 size={16} /> : <VolumeX size={16} />}
           </button>
-          <button
-            onClick={() => { sounds.playClick(); router.push(`/workflow/${sessionId}`) }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-            title="Task list"
-          >
+          <button onClick={() => { sounds.playClick(); router.push(`/workflow/${sessionId}`) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.textMut, padding: '0.25rem' }}>
             <LayoutGrid size={16} />
           </button>
         </div>
       </div>
 
-      {/* Overall progress bar */}
-      <div className="px-6 mb-4">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {currentStage?.icon} {currentStage?.name}
-          </span>
-          <span className="text-xs font-semibold" style={{ color: 'var(--cyan)' }}>
-            {totalCompleted}/{totalTasks} tasks
-          </span>
+      {/* Overall progress */}
+      <div style={{ padding: '0 1.5rem', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
+          <span style={{ fontSize: '0.75rem', color: C.textMut }}>{currentStage?.icon} {currentStage?.name}</span>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: C.cyan }}>{totalDone}/{allTasks.length} tasks</span>
         </div>
-        <div className="progress-bar">
-          <div className="progress-fill" style={{ width: `${progress * 100}%` }} />
+        <div style={{ height: '6px', background: C.border, borderRadius: '3px', overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${progress * 100}%`, background: `linear-gradient(90deg, ${C.cyan}, ${C.purple})`, borderRadius: '3px', transition: 'width 0.6s ease' }} />
         </div>
       </div>
 
-      {/* Main focus area */}
-      <div className="flex-1 flex flex-col lg:flex-row gap-6 px-6 pb-6 min-h-0">
+      {/* Main layout: task + sidebar */}
+      <div style={{ flex: 1, display: 'flex', gap: '1.5rem', padding: '0 1.5rem 1.5rem', minHeight: 0, flexWrap: 'wrap' }}>
 
         {/* Task panel */}
-        <div className="flex-1 flex flex-col min-h-0">
-          <AnimatePresence mode="wait">
-            {currentTask ? (
-              <motion.div
-                key={currentTask.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.25 }}
-                className="flex flex-col gap-4 flex-1"
-              >
-                {/* Task header */}
-                <div
-                  className="card p-6"
-                  style={{
-                    borderColor: isDone
-                      ? 'rgba(0,255,136,0.4)'
-                      : justCompleted
-                      ? 'rgba(0,255,136,0.6)'
-                      : 'var(--border)',
-                    background: isDone ? 'rgba(0,255,136,0.05)' : 'var(--card)',
-                    transition: 'all 0.4s ease',
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-4 mb-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xs font-semibold tracking-widest uppercase"
-                          style={{ color: 'var(--text-muted)' }}>
-                          Task {currentTaskIdx + 1} of {totalTasks}
-                        </span>
-                        {isDone && (
-                          <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
-                            style={{ background: 'rgba(0,255,136,0.15)', color: 'var(--green)' }}>
-                            <CheckCircle2 size={10} />
-                            Complete
-                          </span>
-                        )}
-                      </div>
-                      <h1 className="text-2xl font-black leading-tight" style={{ color: 'var(--text-primary)' }}>
-                        {currentTask.title}
-                      </h1>
-                      <p className="mt-1.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {currentTask.description}
-                        {currentTask.estimated_minutes && (
-                          <span className="ml-2 px-1.5 py-0.5 rounded text-xs"
-                            style={{ background: 'var(--surface)', color: 'var(--text-muted)' }}>
-                            ~{currentTask.estimated_minutes}m
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
+        <div style={{ flex: 1, minWidth: '280px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {task ? (
+            <>
+              {/* Task header card */}
+              <div style={{ background: isDone ? 'rgba(0,255,136,0.04)' : C.card, border: `1px solid ${isDone ? 'rgba(0,255,136,0.4)' : C.border}`, borderRadius: '1rem', padding: '1.5rem', transition: 'all 0.4s' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <span style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.textMut }}>Task {taskIdx + 1} of {allTasks.length}</span>
+                  {isDone && <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.7rem', padding: '0.15rem 0.5rem', borderRadius: '9999px', background: 'rgba(0,255,136,0.15)', color: C.green }}><CheckCircle2 size={10} />Complete</span>}
                 </div>
+                <h1 style={{ fontSize: 'clamp(1.2rem, 2.5vw, 1.75rem)', fontWeight: 900, color: C.text, lineHeight: 1.25, marginBottom: '0.5rem' }}>{task.title}</h1>
+                <p style={{ fontSize: '0.875rem', color: C.textSec }}>
+                  {task.description}
+                  {task.estimated_minutes && <span style={{ marginLeft: '0.5rem', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', background: C.surface, color: C.textMut, fontSize: '0.75rem' }}>~{task.estimated_minutes}m</span>}
+                </p>
+              </div>
 
-                {/* Instructions */}
-                <div className="card p-6 flex-1 overflow-auto">
-                  <h3 className="text-xs font-semibold tracking-widest uppercase mb-4"
-                    style={{ color: 'var(--text-muted)' }}>
-                    Instructions
-                  </h3>
-                  <pre
-                    className="text-sm whitespace-pre-wrap leading-relaxed"
-                    style={{ color: 'var(--text-secondary)', fontFamily: 'inherit' }}
-                  >
-                    {currentTask.instructions}
-                  </pre>
-
-                  {/* Resource links */}
-                  {(currentTask.has_prompt || currentTask.resource_url) && (
-                    <div className="flex gap-2 mt-6 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
-                      {currentTask.has_prompt && currentTask.prompt_text && (
-                        <button
-                          onClick={copyPrompt}
-                          className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-xl transition-all"
-                          style={{
-                            background: promptCopied ? 'rgba(0,255,136,0.15)' : 'rgba(139,92,246,0.1)',
-                            color: promptCopied ? 'var(--green)' : 'var(--purple)',
-                            border: promptCopied ? '1px solid rgba(0,255,136,0.3)' : '1px solid rgba(139,92,246,0.3)',
-                          }}
-                        >
-                          <Copy size={13} />
-                          {promptCopied ? '✓ Copied!' : 'Copy Claude Prompt'}
-                        </button>
-                      )}
-                      {currentTask.resource_url && (
-                        <a
-                          href={currentTask.resource_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-xl transition-all"
-                          style={{
-                            background: 'rgba(0,212,255,0.1)',
-                            color: 'var(--cyan)',
-                            border: '1px solid rgba(0,212,255,0.2)',
-                            textDecoration: 'none',
-                          }}
-                        >
-                          <ExternalLink size={13} />
-                          Open Resource
-                        </a>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Action buttons */}
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => navigate('prev')}
-                    disabled={currentTaskIdx === 0}
-                    className="btn btn-ghost p-3"
-                    style={{ opacity: currentTaskIdx === 0 ? 0.3 : 1 }}
-                  >
-                    <ChevronLeft size={20} />
-                  </button>
-
-                  <button
-                    onClick={markComplete}
-                    disabled={isDone || justCompleted}
-                    className="btn flex-1 text-base font-bold py-4 transition-all duration-300"
-                    style={{
-                      background: isDone
-                        ? 'rgba(0,255,136,0.15)'
-                        : 'linear-gradient(135deg, var(--green), #00cc6a)',
-                      color: isDone ? 'var(--green)' : '#000',
-                      border: isDone ? '1px solid rgba(0,255,136,0.3)' : 'none',
-                      boxShadow: isDone ? 'none' : '0 4px 20px rgba(0,255,136,0.3)',
-                    }}
-                  >
-                    {isDone ? (
-                      <><CheckCircle2 size={18} /> Done ✓</>
-                    ) : justCompleted ? (
-                      '🎉 Crushed it!'
-                    ) : (
-                      '✓ Mark Complete'
+              {/* Instructions */}
+              <div style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, borderRadius: '1rem', padding: '1.5rem', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+                <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.textMut, marginBottom: '1rem' }}>Instructions</p>
+                <pre style={{ fontSize: '0.875rem', whiteSpace: 'pre-wrap', lineHeight: 1.7, color: C.textSec, fontFamily: 'inherit', flex: 1 }}>{task.instructions}</pre>
+                {(task.has_prompt || task.resource_url) && (
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', paddingTop: '1rem', borderTop: `1px solid ${C.border}`, flexWrap: 'wrap' }}>
+                    {task.has_prompt && task.prompt_text && (
+                      <button onClick={() => { navigator.clipboard.writeText(task.prompt_text!); sounds.playClick(); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.875rem', padding: '0.5rem 1rem', borderRadius: '0.75rem', background: copied ? 'rgba(0,255,136,0.15)' : 'rgba(139,92,246,0.1)', color: copied ? C.green : C.purple, border: `1px solid ${copied ? 'rgba(0,255,136,0.3)' : 'rgba(139,92,246,0.3)'}`, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s' }}>
+                        <Copy size={13} />{copied ? '✓ Copied!' : 'Copy Claude Prompt'}
+                      </button>
                     )}
-                  </button>
+                    {task.resource_url && (
+                      <a href={task.resource_url} target="_blank" rel="noopener noreferrer"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.875rem', padding: '0.5rem 1rem', borderRadius: '0.75rem', background: `${C.cyan}1a`, color: C.cyan, border: `1px solid ${C.cyan}33`, textDecoration: 'none' }}>
+                        <ExternalLink size={13} />Open Resource
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
 
-                  <button
-                    onClick={() => navigate('next')}
-                    disabled={currentTaskIdx === allTasks.length - 1}
-                    className="btn btn-ghost p-3"
-                    style={{ opacity: currentTaskIdx === allTasks.length - 1 ? 0.3 : 1 }}
-                  >
-                    <ChevronRight size={20} />
-                  </button>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex-1 flex items-center justify-center card"
-              >
-                <div className="text-center p-8">
-                  <div className="text-6xl mb-4">🎉</div>
-                  <h2 className="text-2xl font-black mb-2" style={{ color: 'var(--green)' }}>
-                    All tasks complete!
-                  </h2>
-                  <p style={{ color: 'var(--text-secondary)' }}>
-                    You crushed this workflow. Time to publish.
-                  </p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* Right sidebar: Pomodoro + tips */}
-        <div className="lg:w-72 flex flex-col gap-4 flex-shrink-0">
-
-          {/* Pomodoro timer */}
-          <div className="card p-5 flex flex-col items-center">
-            <p className="text-xs font-semibold tracking-widest uppercase mb-3"
-              style={{ color: phaseColor }}>
-              {phaseLabel}
-            </p>
-
-            <div className="relative mb-3">
-              <PomodoroRing progress={pomodoro.progress} phase={pomodoro.phase} />
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-2xl font-black font-mono" style={{ color: 'var(--text-primary)' }}>
-                  {pomodoro.formattedTime}
-                </span>
-                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  #{pomodoro.pomodorosCompleted + 1}
-                </span>
+              {/* Action row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <button onClick={() => { sounds.playClick(); setTaskIdx(i => Math.max(0, i - 1)) }}
+                  disabled={taskIdx === 0}
+                  style={{ padding: '0.875rem', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: '0.75rem', color: C.textSec, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: taskIdx === 0 ? 0.3 : 1, transition: 'all 0.2s' }}>
+                  <ChevronLeft size={20} />
+                </button>
+                <button onClick={markComplete} disabled={isDone || justDone}
+                  style={{ flex: 1, padding: '1rem', border: 'none', borderRadius: '0.75rem', fontWeight: 700, fontSize: '1rem', cursor: isDone ? 'default' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', transition: 'all 0.3s',
+                    background: isDone ? 'rgba(0,255,136,0.15)' : `linear-gradient(135deg, ${C.green}, #00cc6a)`,
+                    color: isDone ? C.green : '#000',
+                    border: isDone ? `1px solid rgba(0,255,136,0.3)` : 'none',
+                    boxShadow: isDone ? 'none' : `0 4px 20px rgba(0,255,136,0.3)` }}>
+                  {isDone ? <><CheckCircle2 size={18} />Done ✓</> : justDone ? '🎉 Crushed it!' : '✓ Mark Complete'}
+                </button>
+                <button onClick={() => { sounds.playClick(); setTaskIdx(i => Math.min(allTasks.length - 1, i + 1)) }}
+                  disabled={taskIdx === allTasks.length - 1}
+                  style={{ padding: '0.875rem', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: '0.75rem', color: C.textSec, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: taskIdx === allTasks.length - 1 ? 0.3 : 1, transition: 'all 0.2s' }}>
+                  <ChevronRight size={20} />
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, borderRadius: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem', textAlign: 'center' }}>
+              <div>
+                <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎉</div>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: C.green, marginBottom: '0.5rem' }}>All tasks complete!</h2>
+                <p style={{ color: C.textSec }}>You crushed this workflow. Time to publish.</p>
               </div>
             </div>
+          )}
+        </div>
 
-            {/* Pomodoro dots (4 per cycle) */}
-            <div className="flex gap-1.5 mb-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="w-2 h-2 rounded-full transition-all"
-                  style={{
-                    background: i < (pomodoro.pomodorosCompleted % 4)
-                      ? 'var(--cyan)'
-                      : 'var(--border)',
-                  }}
-                />
+        {/* Right sidebar */}
+        <div style={{ width: '280px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+          {/* Pomodoro */}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '1rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: phaseColor, marginBottom: '0.75rem' }}>{phaseLabel}</p>
+            <div style={{ position: 'relative', marginBottom: '0.75rem' }}>
+              <PomodoroRing progress={pom.progress} phase={pom.phase} />
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: '1.5rem', fontWeight: 900, fontFamily: 'monospace', color: C.text }}>{pom.formattedTime}</span>
+                <span style={{ fontSize: '0.7rem', color: C.textMut }}>#{pom.pomodorosCompleted + 1}</span>
+              </div>
+            </div>
+            {/* Dots */}
+            <div style={{ display: 'flex', gap: '0.375rem', marginBottom: '1rem' }}>
+              {[0,1,2,3].map(i => (
+                <div key={i} style={{ width: '0.5rem', height: '0.5rem', borderRadius: '50%', background: i < (pom.pomodorosCompleted % 4) ? C.cyan : C.border, transition: 'all 0.3s' }} />
               ))}
             </div>
-
             {/* Controls */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  sounds.playClick()
-                  pomodoro.isRunning ? pomodoro.pause() : pomodoro.start()
-                }}
-                className="btn btn-primary flex-1 py-2 text-sm"
-              >
-                {pomodoro.isRunning ? <Pause size={14} /> : <Play size={14} />}
-                {pomodoro.isRunning ? 'Pause' : 'Start'}
+            <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+              <button onClick={() => { sounds.playClick(); pom.isRunning ? pom.pause() : pom.start() }}
+                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.375rem', padding: '0.5rem', background: `linear-gradient(135deg, ${C.cyan}, #0099cc)`, border: 'none', borderRadius: '0.75rem', color: '#000', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.875rem' }}>
+                {pom.isRunning ? <Pause size={14} /> : <Play size={14} />}
+                {pom.isRunning ? 'Pause' : 'Start'}
               </button>
-              <button
-                onClick={() => { sounds.playClick(); pomodoro.reset() }}
-                className="btn btn-ghost p-2"
-                title="Reset"
-              >
-                <RefreshCw size={14} />
-              </button>
-              <button
-                onClick={() => { sounds.playClick(); pomodoro.skip() }}
-                className="btn btn-ghost p-2"
-                title="Skip phase"
-              >
-                <SkipForward size={14} />
-              </button>
+              <button onClick={() => { sounds.playClick(); pom.reset() }} style={{ padding: '0.5rem 0.75rem', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: '0.75rem', color: C.textSec, cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="Reset"><RefreshCw size={14} /></button>
+              <button onClick={() => { sounds.playClick(); pom.skip() }} style={{ padding: '0.5rem 0.75rem', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: '0.75rem', color: C.textSec, cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="Skip"><SkipForward size={14} /></button>
             </div>
-
-            {pomodoro.isBreak && (
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-xs text-center mt-3"
-                style={{ color: 'var(--green)' }}
-              >
-                {pomodoro.phase === 'shortBreak'
-                  ? '☕ Step away. Breathe. Stretch.'
-                  : '🌿 Longer break — well earned. Walk around.'}
-              </motion.p>
+            {pom.isBreak && (
+              <p style={{ fontSize: '0.75rem', textAlign: 'center', color: C.green, marginTop: '0.75rem' }}>
+                {pom.phase === 'shortBreak' ? '☕ Step away. Breathe. Stretch.' : '🌿 Longer break — walk around.'}
+              </p>
             )}
           </div>
 
           {/* Focus tip */}
-          <motion.div
-            key={tipIdx}
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="card p-4"
-          >
-            <p className="text-xs font-semibold tracking-widest uppercase mb-2"
-              style={{ color: 'var(--text-muted)' }}>
-              Focus Tip
-            </p>
-            <p className="font-semibold text-sm mb-1" style={{ color: 'var(--text-primary)' }}>
-              {tip.tip}
-            </p>
-            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              {tip.science}
-            </p>
-          </motion.div>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '1rem', padding: '1rem' }}>
+            <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.textMut, marginBottom: '0.5rem' }}>Focus Tip</p>
+            <p style={{ fontWeight: 600, fontSize: '0.875rem', color: C.text, marginBottom: '0.375rem' }}>{tip.tip}</p>
+            <p style={{ fontSize: '0.75rem', lineHeight: 1.5, color: C.textMut }}>{tip.science}</p>
+          </div>
 
           {/* Stage mini-map */}
-          <div className="card p-4">
-            <p className="text-xs font-semibold tracking-widest uppercase mb-3"
-              style={{ color: 'var(--text-muted)' }}>
-              Progress
-            </p>
-            <div className="flex flex-col gap-2">
-              {stages.map((stage) => {
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '1rem', padding: '1rem' }}>
+            <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.textMut, marginBottom: '0.75rem' }}>Progress</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+              {stages.map(stage => {
                 const tasks = stage.tasks ?? []
-                const done = tasks.filter((t) => completedIds.has(t.id)).length
-                const pct = tasks.length ? (done / tasks.length) * 100 : 0
-                const isActive = stage.id === currentStage?.id
+                const done = tasks.filter(t => completedIds.has(t.id)).length
+                const pct = tasks.length ? done / tasks.length * 100 : 0
+                const active = stage.id === currentStage?.id
                 return (
                   <div key={stage.id}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span
-                        className="text-xs"
-                        style={{ color: isActive ? 'var(--cyan)' : 'var(--text-muted)', fontWeight: isActive ? 600 : 400 }}
-                      >
-                        {stage.icon} {stage.name}
-                      </span>
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {done}/{tasks.length}
-                      </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                      <span style={{ fontSize: '0.75rem', color: active ? C.cyan : C.textMut, fontWeight: active ? 600 : 400 }}>{stage.icon} {stage.name}</span>
+                      <span style={{ fontSize: '0.75rem', color: C.textMut }}>{done}/{tasks.length}</span>
                     </div>
-                    <div className="progress-bar" style={{ height: '3px' }}>
-                      <div
-                        className="progress-fill"
-                        style={{ width: `${pct}%`, height: '100%' }}
-                      />
+                    <div style={{ height: '3px', background: C.border, borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, ${C.cyan}, ${C.purple})`, borderRadius: '2px', transition: 'width 0.4s ease' }} />
                     </div>
                   </div>
                 )
@@ -582,6 +306,8 @@ export default function FocusPage() {
           </div>
         </div>
       </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </main>
   )
 }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     

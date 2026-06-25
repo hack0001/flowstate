@@ -2,196 +2,141 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, X, Sparkles } from 'lucide-react'
 import { getWorkflowTypes, createSession } from '@/lib/supabase'
 import type { WorkflowType } from '@/types'
 import { sounds } from '@/lib/sounds'
 
-// Fallback for when Supabase isn't seeded yet
-const FALLBACK_WORKFLOWS: WorkflowType[] = [
-  { id: 'yt-short', name: 'YouTube Short', slug: 'youtube-short', description: 'Vertical video under 60 seconds', icon: '⚡', color: '#ff0000' },
-  { id: 'yt-long', name: 'YouTube Longform', slug: 'youtube-longform', description: 'Full-length educational video', icon: '🎬', color: '#ff4444' },
-  { id: 'tweet', name: 'Tweet / X Post', slug: 'tweet', description: 'High-impact text post', icon: '𝕏', color: '#1da1f2' },
-  { id: 'ig-post', name: 'Instagram Post', slug: 'instagram-post', description: 'Feed image or carousel', icon: '📸', color: '#e1306c' },
-  { id: 'ig-reel', name: 'Instagram Reel', slug: 'instagram-reel', description: 'Short vertical video', icon: '🎞️', color: '#833ab4' },
-  { id: 'linkedin', name: 'LinkedIn Post', slug: 'linkedin-post', description: 'Professional thought-leadership', icon: '💼', color: '#0077b5' },
-  { id: 'tiktok', name: 'TikTok', slug: 'tiktok', description: 'Trend-driven short video', icon: '🎵', color: '#69c9d0' },
+const FALLBACK: WorkflowType[] = [
+  { id: 'yt-short',   name: 'YouTube Short',    slug: 'youtube-short',    description: 'Vertical video under 60 seconds',   icon: '⚡',  color: '#ff0000' },
+  { id: 'yt-long',    name: 'YouTube Longform',  slug: 'youtube-longform', description: 'Full-length educational video',      icon: '🎬', color: '#ff4444' },
+  { id: 'tweet',      name: 'Tweet / X Post',    slug: 'tweet',            description: 'High-impact text post',              icon: '𝕏',  color: '#1da1f2' },
+  { id: 'ig-post',    name: 'Instagram Post',    slug: 'instagram-post',   description: 'Feed image or carousel',             icon: '📸', color: '#e1306c' },
+  { id: 'ig-reel',    name: 'Instagram Reel',    slug: 'instagram-reel',   description: 'Short vertical video',               icon: '🎞️', color: '#833ab4' },
+  { id: 'linkedin',   name: 'LinkedIn Post',     slug: 'linkedin-post',    description: 'Professional thought-leadership',    icon: '💼', color: '#0077b5' },
+  { id: 'tiktok',     name: 'TikTok',            slug: 'tiktok',           description: 'Trend-driven short video',           icon: '🎵', color: '#69c9d0' },
 ]
+
+const C = {
+  bg: '#0a0a0f', surface: '#12121a', card: '#1a1a26', border: '#2a2a3a',
+  cyan: '#00d4ff', amber: '#ffb800', text: '#f0f0ff', textSec: '#8888aa', textMut: '#4a4a6a',
+}
 
 export default function WorkflowsPage() {
   const router = useRouter()
   const [workflows, setWorkflows] = useState<WorkflowType[]>([])
   const [selected, setSelected] = useState<WorkflowType | null>(null)
-  const [sessionTitle, setSessionTitle] = useState('')
+  const [title, setTitle] = useState('')
   const [creating, setCreating] = useState(false)
-  const [supabaseAvailable, setSupabaseAvailable] = useState(true)
+  const [supabaseOk, setSupabaseOk] = useState(true)
 
   useEffect(() => {
     getWorkflowTypes()
-      .then((data) => setWorkflows(data?.length ? data : FALLBACK_WORKFLOWS))
-      .catch(() => {
-        setWorkflows(FALLBACK_WORKFLOWS)
-        setSupabaseAvailable(false)
-      })
+      .then(d => setWorkflows(d?.length ? d : FALLBACK))
+      .catch(() => { setWorkflows(FALLBACK); setSupabaseOk(false) })
   }, [])
 
-  function handleSelect(wf: WorkflowType) {
-    sounds.playClick()
-    setSelected(wf)
-    setSessionTitle('')
+  function select(wf: WorkflowType) {
+    sounds.playClick(); setSelected(wf); setTitle('')
   }
 
-  async function handleCreate() {
-    if (!selected || !sessionTitle.trim()) return
-    sounds.playClick()
-    setCreating(true)
+  async function create() {
+    if (!selected || !title.trim()) return
+    sounds.playClick(); setCreating(true)
     try {
-      const session = await createSession(selected.id, sessionTitle.trim())
+      const s = await createSession(selected.id, title.trim())
       sounds.playTaskComplete()
-      router.push(`/workflow/${session.id}`)
-    } catch (e) {
-      console.error(e)
-      setCreating(false)
-    }
+      router.push(`/workflow/${s.id}`)
+    } catch { setCreating(false) }
   }
+
+  const cardStyle = (wf: WorkflowType): React.CSSProperties => ({
+    width: '100%', textAlign: 'left', padding: '1.25rem',
+    display: 'flex', flexDirection: 'column', gap: '0.75rem',
+    background: selected?.id === wf.id ? `${wf.color}11` : C.card,
+    border: `1px solid ${selected?.id === wf.id ? C.cyan : C.border}`,
+    borderRadius: '1rem', cursor: 'pointer',
+    boxShadow: selected?.id === wf.id ? `0 0 20px ${C.cyan}22` : 'none',
+    transition: 'all 0.2s', fontFamily: 'inherit',
+  })
 
   return (
-    <main className="min-h-screen px-6 py-8 max-w-4xl mx-auto">
+    <main style={{ minHeight: '100vh', padding: '2rem 1.5rem', maxWidth: '56rem', margin: '0 auto', background: C.bg }}>
+
       {/* Back */}
       <button
         onClick={() => { sounds.playClick(); router.push('/') }}
-        className="flex items-center gap-2 mb-8 text-sm transition-colors"
-        style={{ color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}
+        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2rem', background: 'none', border: 'none', color: C.textSec, cursor: 'pointer', fontSize: '0.875rem', fontFamily: 'inherit' }}
       >
-        <ArrowLeft size={16} />
-        Back
+        <ArrowLeft size={16} />Back
       </button>
 
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-8"
-      >
-        <h1 className="text-4xl font-black mb-2" style={{ color: 'var(--text-primary)' }}>
-          Choose your{' '}
-          <span style={{ color: 'var(--cyan)' }}>workflow</span>
+      {/* Heading */}
+      <div style={{ marginBottom: '2rem' }}>
+        <h1 style={{ fontSize: 'clamp(1.8rem, 4vw, 2.5rem)', fontWeight: 900, color: C.text, marginBottom: '0.5rem' }}>
+          Choose your <span style={{ color: C.cyan }}>workflow</span>
         </h1>
-        <p style={{ color: 'var(--text-secondary)' }}>
-          What are you creating today?
-        </p>
-        {!supabaseAvailable && (
-          <p className="text-xs mt-2 px-3 py-1.5 rounded-lg inline-block"
-            style={{ background: 'rgba(255,184,0,0.1)', color: 'var(--amber)', border: '1px solid rgba(255,184,0,0.3)' }}>
-            ⚠️ Supabase not connected — sessions won&apos;t be saved
-          </p>
+        <p style={{ color: C.textSec }}>What are you creating today?</p>
+        {!supabaseOk && (
+          <span style={{ display: 'inline-block', marginTop: '0.5rem', padding: '0.3rem 0.75rem', borderRadius: '0.5rem', background: 'rgba(255,184,0,0.1)', border: '1px solid rgba(255,184,0,0.3)', color: C.amber, fontSize: '0.75rem' }}>
+            ⚠️ Supabase not connected — sessions won't be saved
+          </span>
         )}
-      </motion.div>
+      </div>
 
-      {/* Workflow Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
-        {workflows.map((wf, i) => (
-          <motion.div
-            key={wf.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05 }}
+      {/* Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+        {workflows.map(wf => (
+          <button key={wf.id} onClick={() => select(wf)} style={cardStyle(wf)}
+            onMouseEnter={e => { if (selected?.id !== wf.id) { (e.currentTarget as HTMLButtonElement).style.borderColor = C.cyan; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)' }}}
+            onMouseLeave={e => { if (selected?.id !== wf.id) { (e.currentTarget as HTMLButtonElement).style.borderColor = C.border; (e.currentTarget as HTMLButtonElement).style.transform = 'none' }}}
           >
-            <button
-              onClick={() => handleSelect(wf)}
-              className="w-full text-left card card-hover p-5 flex flex-col gap-3 transition-all duration-200 group"
-              style={{
-                borderColor: selected?.id === wf.id ? 'var(--cyan)' : 'var(--border)',
-                background: selected?.id === wf.id ? 'rgba(0,212,255,0.05)' : 'var(--card)',
-                boxShadow: selected?.id === wf.id ? '0 0 20px rgba(0,212,255,0.15)' : 'none',
-              }}
-            >
-              <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl"
-                style={{
-                  background: selected?.id === wf.id
-                    ? `${wf.color}22`
-                    : 'var(--surface)',
-                  border: selected?.id === wf.id
-                    ? `1px solid ${wf.color}55`
-                    : '1px solid var(--border)',
-                }}
-              >
-                {wf.icon}
+            <div style={{ width: '3rem', height: '3rem', borderRadius: '0.875rem', background: selected?.id === wf.id ? `${wf.color}22` : C.surface, border: `1px solid ${selected?.id === wf.id ? wf.color + '55' : C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem' }}>
+              {wf.icon}
+            </div>
+            <div>
+              <p style={{ fontWeight: 700, fontSize: '0.875rem', color: C.text, marginBottom: '0.2rem' }}>{wf.name}</p>
+              <p style={{ fontSize: '0.75rem', color: C.textSec, lineHeight: 1.4 }}>{wf.description}</p>
+            </div>
+            {selected?.id === wf.id && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: C.cyan, fontSize: '0.75rem', fontWeight: 700 }}>
+                <Sparkles size={11} />Selected
               </div>
-              <div>
-                <p className="font-bold text-sm leading-tight mb-1" style={{ color: 'var(--text-primary)' }}>
-                  {wf.name}
-                </p>
-                <p className="text-xs leading-snug" style={{ color: 'var(--text-secondary)' }}>
-                  {wf.description}
-                </p>
-              </div>
-              {selected?.id === wf.id && (
-                <div className="flex items-center gap-1 text-xs font-semibold" style={{ color: 'var(--cyan)' }}>
-                  <Sparkles size={12} />
-                  Selected
-                </div>
-              )}
-            </button>
-          </motion.div>
+            )}
+          </button>
         ))}
       </div>
 
-      {/* Session name modal / inline form */}
-      <AnimatePresence>
-        {selected && (
-          <motion.div
-            key="session-form"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            className="card p-6 max-w-lg"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{selected.icon}</span>
-                <div>
-                  <p className="font-bold" style={{ color: 'var(--text-primary)' }}>{selected.name}</p>
-                  <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Name this piece of content</p>
-                </div>
+      {/* Session name form */}
+      {selected && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '1rem', padding: '1.5rem', maxWidth: '28rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <span style={{ fontSize: '1.5rem' }}>{selected.icon}</span>
+              <div>
+                <p style={{ fontWeight: 700, color: C.text }}>{selected.name}</p>
+                <p style={{ fontSize: '0.75rem', color: C.textSec }}>Name this piece of content</p>
               </div>
-              <button
-                onClick={() => { sounds.playClick(); setSelected(null) }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-              >
-                <X size={18} />
-              </button>
             </div>
-
-            <input
-              type="text"
-              placeholder={`e.g. "How to build a habit in 30 days"`}
-              value={sessionTitle}
-              onChange={(e) => setSessionTitle(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-              autoFocus
-              className="w-full px-4 py-3 rounded-xl text-sm mb-4 outline-none transition-all"
-              style={{
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                color: 'var(--text-primary)',
-                fontFamily: 'inherit',
-              }}
-              onFocus={(e) => (e.target.style.borderColor = 'var(--cyan)')}
-              onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
-            />
-
-            <button
-              onClick={handleCreate}
-              disabled={!sessionTitle.trim() || creating}
-              className="btn btn-primary w-full"
-            >
-              {creating ? 'Creating...' : '🚀 Start Workflow'}
+            <button onClick={() => { sounds.playClick(); setSelected(null) }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.textMut, padding: '0.25rem' }}>
+              <X size={18} />
             </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </main>
-  )
-}
+          </div>
+          <input
+            type="text"
+            placeholder={`e.g. "How to build a habit in 30 days"`}
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && create()}
+            autoFocus
+            style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '0.75rem', fontSize: '0.875rem', marginBottom: '1rem', outline: 'none', background: C.surface, border: `1px solid ${C.border}`, color: C.text, fontFamily: 'inherit', boxSizing: 'border-box', transition: 'border-color 0.2s' }}
+            onFocus={e => (e.target.style.borderColor = C.cyan)}
+            onBlur={e => (e.target.style.borderColor = C.border)}
+          />
+          <button
+            onClick={create}
+            disabled={!title.trim() || creating}
+            style={{ width: '100%', padding: '0.75rem', background: `linear-gradient(135deg, ${C.cyan}, #0099cc)`, border: 'none', borderRadius: '0.75rem', color: '#000', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', fontFamily: 'inherit', opacity: (!title.trim() || creating) ? 0.5 : 1 }}
+          >
+          

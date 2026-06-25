@@ -2,270 +2,172 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { motion } from 'framer-motion'
 import { Play, Plus, Zap, Clock, ChevronRight, Star } from 'lucide-react'
 import { getPrioritySession, getSessions, setPrioritySession } from '@/lib/supabase'
 import type { WorkflowSession } from '@/types'
 import { sounds } from '@/lib/sounds'
 
-const FOCUS_QUOTES = [
-  { quote: "The secret of getting ahead is getting started.", author: "Mark Twain" },
-  { quote: "Focus on being productive instead of busy.", author: "Tim Ferriss" },
-  { quote: "One task. Full attention. Ship it.", author: "" },
-  { quote: "Small daily improvements are the key to staggering long-term results.", author: "Robin Sharma" },
-  { quote: "The quality of your output is determined by the quality of your focus.", author: "" },
-  { quote: "Don't watch the clock; do what it does. Keep going.", author: "Sam Levenson" },
-  { quote: "Energy flows where attention goes.", author: "" },
-  { quote: "Do the hard task first. Your future self will thank you.", author: "" },
+const QUOTES = [
+  { quote: 'The secret of getting ahead is getting started.', author: 'Mark Twain' },
+  { quote: 'Focus on being productive instead of busy.', author: 'Tim Ferriss' },
+  { quote: 'One task. Full attention. Ship it.', author: '' },
+  { quote: 'Small daily improvements are the key to staggering long-term results.', author: 'Robin Sharma' },
+  { quote: "Energy flows where attention goes.", author: '' },
+  { quote: "Don't watch the clock; do what it does. Keep going.", author: 'Sam Levenson' },
+  { quote: 'Done beats perfect. Ship it.', author: '' },
+  { quote: 'Do the hard task first. Your future self will thank you.', author: '' },
 ]
 
-function getGreeting() {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 17) return 'Good afternoon'
-  return 'Good evening'
+const C = {
+  bg: '#0a0a0f', surface: '#12121a', card: '#1a1a26', border: '#2a2a3a',
+  cyan: '#00d4ff', green: '#00ff88', amber: '#ffb800',
+  text: '#f0f0ff', textSec: '#8888aa', textMut: '#4a4a6a',
 }
 
-function getDayQuote() {
-  const idx = new Date().getDate() % FOCUS_QUOTES.length
-  return FOCUS_QUOTES[idx]
+function getGreeting() {
+  const h = new Date().getHours()
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
 }
 
 export default function HomePage() {
   const router = useRouter()
-  const [prioritySession, setPrioritySession_] = useState<WorkflowSession | null>(null)
+  const [priority, setPriority] = useState<WorkflowSession | null>(null)
   const [sessions, setSessions] = useState<WorkflowSession[]>([])
   const [loading, setLoading] = useState(true)
-  const [supabaseError, setSupabaseError] = useState(false)
-  const quote = getDayQuote()
+  const [error, setError] = useState(false)
+  const quote = QUOTES[new Date().getDate() % QUOTES.length]
 
   useEffect(() => {
-    async function load() {
-      try {
-        const [priority, all] = await Promise.all([getPrioritySession(), getSessions()])
-        setPrioritySession_(priority)
-        setSessions(all ?? [])
-      } catch {
-        setSupabaseError(true)
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
+    Promise.all([getPrioritySession(), getSessions()])
+      .then(([p, all]) => { setPriority(p); setSessions(all ?? []) })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false))
   }, [])
 
   function handleStart() {
     sounds.playClick()
-    if (prioritySession) {
-      router.push(`/workflow/${prioritySession.id}/focus`)
-    } else if (sessions.length > 0) {
-      router.push(`/workflow/${sessions[0].id}`)
-    } else {
-      router.push('/workflows')
-    }
+    if (priority) router.push(`/workflow/${priority.id}/focus`)
+    else if (sessions.length > 0) router.push(`/workflow/${sessions[0].id}`)
+    else router.push('/workflows')
   }
 
-  async function handleSetPriority(session: WorkflowSession) {
+  async function handleSetPriority(s: WorkflowSession) {
     sounds.playClick()
-    try {
-      await setPrioritySession(session.id)
-      setPrioritySession_(session)
-    } catch (e) {
-      console.error(e)
-    }
+    try { await setPrioritySession(s.id); setPriority(s) } catch {}
   }
 
   return (
-    <main className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
+    <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: C.bg }}>
+
       {/* Header */}
-      <div className="flex items-center justify-between px-8 py-6">
-        <div className="flex items-center gap-2">
-          <Zap size={20} style={{ color: 'var(--cyan)' }} />
-          <span className="font-bold text-lg tracking-tight" style={{ color: 'var(--text-primary)' }}>
-            FlowState
-          </span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem 2rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Zap size={20} color={C.cyan} />
+          <span style={{ fontWeight: 700, fontSize: '1.125rem', letterSpacing: '-0.025em', color: C.text }}>FlowState</span>
         </div>
         <button
           onClick={() => { sounds.playClick(); router.push('/workflows') }}
-          className="btn btn-ghost flex items-center gap-2 text-sm"
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.2rem', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: '0.75rem', color: C.textSec, cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600, fontFamily: 'inherit', transition: 'all 0.2s' }}
+          onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = C.cyan; (e.target as HTMLElement).style.color = C.cyan }}
+          onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = C.border; (e.target as HTMLElement).style.color = C.textSec }}
         >
-          <Plus size={16} />
-          New Workflow
+          <Plus size={15} />New Workflow
         </button>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center px-8 pb-16">
+      {/* Main */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 2rem 4rem' }}>
+
         {/* Greeting */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="text-center mb-12"
-        >
-          <p className="text-lg mb-1" style={{ color: 'var(--text-secondary)' }}>
-            {getGreeting()} 👋
-          </p>
-          <h1 className="text-5xl font-black tracking-tight mb-3" style={{ color: 'var(--text-primary)' }}>
-            Ready to{' '}
-            <span className="text-glow-cyan" style={{ color: 'var(--cyan)' }}>
-              create?
-            </span>
+        <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+          <p style={{ fontSize: '1.1rem', color: C.textSec, marginBottom: '0.5rem' }}>{getGreeting()} 👋</p>
+          <h1 style={{ fontSize: 'clamp(2.5rem, 5vw, 3.5rem)', fontWeight: 900, letterSpacing: '-0.03em', color: C.text, margin: '0 0 0.75rem' }}>
+            Ready to <span style={{ color: C.cyan, textShadow: `0 0 20px ${C.cyan}99` }}>create?</span>
           </h1>
-          <p className="text-base max-w-sm mx-auto" style={{ color: 'var(--text-secondary)' }}>
-            {loading ? '...' : supabaseError
-              ? 'Connect Supabase to save your sessions'
-              : prioritySession
-              ? `Your priority: "${prioritySession.title}"`
-              : sessions.length > 0
-              ? 'Select a workflow to continue or start something new'
+          <p style={{ fontSize: '1rem', color: C.textSec, maxWidth: '28rem', margin: '0 auto' }}>
+            {loading ? '...' : error ? 'Connect Supabase to save sessions'
+              : priority ? `Priority: "${priority.title}"`
+              : sessions.length > 0 ? 'Select a workflow to continue or start something new'
               : 'Start your first workflow to get going'}
           </p>
-        </motion.div>
+        </div>
 
-        {/* Big START Button */}
-        {!supabaseError && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.2, type: 'spring', bounce: 0.4 }}
-            className="mb-12"
-          >
-            <button
-              onClick={handleStart}
-              className="relative group"
-              style={{ outline: 'none', background: 'none', border: 'none', cursor: 'pointer' }}
-            >
+        {/* START button */}
+        {!error && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '3rem' }}>
+            <div style={{ position: 'relative' }}>
               {/* Glow ring */}
-              <div
-                className="absolute inset-0 rounded-full animate-pulse-glow"
-                style={{
-                  background: 'radial-gradient(circle, rgba(0,212,255,0.15) 0%, transparent 70%)',
-                  transform: 'scale(1.5)',
-                }}
-              />
-              <div
-                className="relative flex items-center justify-center w-40 h-40 rounded-full font-black text-2xl tracking-wide glow-cyan transition-all duration-200 group-hover:scale-105 group-active:scale-95"
-                style={{
-                  background: 'linear-gradient(135deg, var(--cyan), #0099cc)',
-                  color: '#000',
-                }}
+              <div style={{ position: 'absolute', inset: '-30px', borderRadius: '50%', background: `radial-gradient(circle, ${C.cyan}22 0%, transparent 70%)`, animation: 'pulseGlow 2s ease-in-out infinite', pointerEvents: 'none' }} />
+              <button
+                onClick={handleStart}
+                style={{ width: '10rem', height: '10rem', borderRadius: '50%', background: `linear-gradient(135deg, ${C.cyan}, #0099cc)`, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 30px ${C.cyan}55, 0 8px 32px rgba(0,0,0,0.4)`, transition: 'transform 0.2s, box-shadow 0.2s', color: '#000' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.06)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 0 50px ${C.cyan}88, 0 8px 32px rgba(0,0,0,0.4)` }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 0 30px ${C.cyan}55, 0 8px 32px rgba(0,0,0,0.4)` }}
+                onMouseDown={e => (e.currentTarget as HTMLButtonElement).style.transform = 'scale(0.95)'}
+                onMouseUp={e => (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.06)'}
               >
-                <Play size={40} fill="currentColor" />
-              </div>
-            </button>
-            <p className="text-center mt-4 text-sm font-semibold tracking-widest uppercase"
-              style={{ color: 'var(--text-secondary)' }}>
-              {prioritySession ? 'Continue Focus' : sessions.length > 0 ? 'Pick a Session' : 'Start Here'}
+                <Play size={44} fill="#000" color="#000" />
+              </button>
+            </div>
+            <p style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.textSec, marginTop: '1rem' }}>
+              {priority ? 'Continue Focus' : sessions.length > 0 ? 'Pick a Session' : 'Start Here'}
             </p>
-          </motion.div>
+          </div>
         )}
 
-        {/* Supabase setup notice */}
-        {supabaseError && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="card p-6 max-w-md text-center mb-8"
-          >
-            <p className="font-bold mb-2" style={{ color: 'var(--amber)' }}>⚠️ Supabase Not Connected</p>
-            <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
-              Copy <code className="px-1 rounded" style={{ background: 'var(--surface)', color: 'var(--cyan)' }}>.env.local.example</code>{' '}
-              to <code className="px-1 rounded" style={{ background: 'var(--surface)', color: 'var(--cyan)' }}>.env.local</code>{' '}
-              and add your Supabase credentials to enable sessions.
+        {/* Supabase error */}
+        {error && (
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '1rem', padding: '1.5rem', maxWidth: '28rem', textAlign: 'center', marginBottom: '2rem' }}>
+            <p style={{ fontWeight: 700, color: C.amber, marginBottom: '0.5rem' }}>⚠️ Supabase Not Connected</p>
+            <p style={{ fontSize: '0.875rem', color: C.textSec, marginBottom: '1rem' }}>
+              Add your Supabase URL and anon key as environment variables in Vercel.
             </p>
-            <button
-              onClick={() => { sounds.playClick(); router.push('/workflows') }}
-              className="btn btn-primary text-sm"
-            >
-              Browse Workflows (preview only)
+            <button onClick={() => router.push('/workflows')} style={{ padding: '0.6rem 1.2rem', background: `linear-gradient(135deg, ${C.cyan}, #0099cc)`, border: 'none', borderRadius: '0.75rem', color: '#000', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Browse Workflows
             </button>
-          </motion.div>
+          </div>
         )}
 
         {/* Sessions list */}
-        {!supabaseError && !loading && sessions.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="w-full max-w-lg"
-          >
-            <p className="text-xs font-semibold tracking-widest uppercase mb-3"
-              style={{ color: 'var(--text-muted)' }}>
-              Active Sessions
-            </p>
-            <div className="flex flex-col gap-2">
-              {sessions.map((session) => (
+        {!error && !loading && sessions.length > 0 && (
+          <div style={{ width: '100%', maxWidth: '32rem' }}>
+            <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.textMut, marginBottom: '0.75rem' }}>Active Sessions</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {sessions.map(s => (
                 <div
-                  key={session.id}
-                  className="card card-hover flex items-center gap-3 p-4 cursor-pointer"
-                  onClick={() => { sounds.playClick(); router.push(`/workflow/${session.id}`) }}
+                  key={s.id}
+                  onClick={() => { sounds.playClick(); router.push(`/workflow/${s.id}`) }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem', background: C.card, border: `1px solid ${C.border}`, borderRadius: '1rem', cursor: 'pointer', transition: 'all 0.2s' }}
+                  onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = C.cyan; el.style.boxShadow = `0 0 16px ${C.cyan}22`; el.style.transform = 'translateY(-1px)' }}
+                  onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = C.border; el.style.boxShadow = 'none'; el.style.transform = 'none' }}
                 >
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
-                    style={{ background: 'var(--surface)' }}
-                  >
-                    {session.workflow_type?.icon ?? '📋'}
+                  <div style={{ width: '2.5rem', height: '2.5rem', borderRadius: '0.75rem', background: C.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', flexShrink: 0 }}>
+                    {s.workflow_type?.icon ?? '📋'}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>
-                      {session.title}
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {session.workflow_type?.name}
-                    </p>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontWeight: 600, fontSize: '0.875rem', color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</p>
+                    <p style={{ fontSize: '0.75rem', color: C.textSec }}>{s.workflow_type?.name}</p>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {session.is_priority && (
-                      <span className="streak-badge text-xs">
-                        <Star size={10} fill="currentColor" /> Priority
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                    {s.is_priority && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: 'rgba(255,184,0,0.1)', border: '1px solid rgba(255,184,0,0.3)', color: C.amber, padding: '0.2rem 0.6rem', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 700 }}>
+                        <Star size={10} fill="currentColor" />Priority
                       </span>
                     )}
-                    {!session.is_priority && (
+                    {!s.is_priority && (
                       <button
-                        className="text-xs px-2 py-1 rounded-lg transition-colors"
-                        style={{ color: 'var(--text-muted)', background: 'var(--surface)' }}
-                        onClick={(e) => { e.stopPropagation(); handleSetPriority(session) }}
-                      >
-                        Set Priority
-                      </button>
+                        style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', borderRadius: '0.5rem', background: C.surface, border: 'none', color: C.textMut, cursor: 'pointer', fontFamily: 'inherit' }}
+                        onClick={e => { e.stopPropagation(); handleSetPriority(s) }}
+                      >Set Priority</button>
                     )}
-                    <ChevronRight size={16} style={{ color: 'var(--text-muted)' }} />
+                    <ChevronRight size={15} color={C.textMut} />
                   </div>
                 </div>
               ))}
             </div>
-          </motion.div>
+          </div>
         )}
 
         {/* Quote */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-          className="mt-12 text-center max-w-sm"
-        >
-          <p className="focus-tip">
-            &ldquo;{quote.quote}&rdquo;
-          </p>
-          {quote.author && (
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-              — {quote.author}
-            </p>
-          )}
-        </motion.div>
-      </div>
-
-      {/* Bottom quick stats */}
-      {!supabaseError && !loading && (
-        <div className="flex items-center justify-center gap-8 pb-8">
-          <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-            <Clock size={14} />
-            {sessions.length} active session{sessions.length !== 1 ? 's' : ''}
-          </div>
-        </div>
-      )}
-    </main>
-  )
-}
+        <div style={{ marginTop: '3rem', textAlign: 'center', maxWidth: '24rem' }}>
+          <p style={{ fontSize: '0.875rem'

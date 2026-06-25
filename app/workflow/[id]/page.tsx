@@ -2,17 +2,21 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Zap, Target, ChevronRight, CheckCircle2, Copy, ExternalLink } from 'lucide-react'
 import { getSession, getStagesForWorkflow, getCompletions, completeTask, uncompleteTask } from '@/lib/supabase'
 import type { WorkflowSession, Stage, Task, TaskCompletion } from '@/types'
 import { sounds } from '@/lib/sounds'
 import { useCelebration } from '@/hooks/useCelebration'
 
+const C = {
+  bg: '#0a0a0f', surface: '#12121a', card: '#1a1a26', border: '#2a2a3a',
+  cyan: '#00d4ff', green: '#00ff88', purple: '#8b5cf6', amber: '#ffb800',
+  text: '#f0f0ff', textSec: '#8888aa', textMut: '#4a4a6a',
+}
+
 export default function WorkflowPage() {
   const router = useRouter()
-  const params = useParams()
-  const sessionId = params.id as string
+  const { id: sessionId } = useParams() as { id: string }
 
   const [session, setSession] = useState<WorkflowSession | null>(null)
   const [stages, setStages] = useState<Stage[]>([])
@@ -22,12 +26,10 @@ export default function WorkflowPage() {
   const [loading, setLoading] = useState(true)
   const { celebrate } = useCelebration()
 
-  const completedIds = new Set(completions.map((c) => c.task_id))
-
-  const allTasks = stages.flatMap((s) => s.tasks ?? [])
-  const totalTasks = allTasks.length
-  const totalCompleted = allTasks.filter((t) => completedIds.has(t.id)).length
-  const overallProgress = totalTasks ? (totalCompleted / totalTasks) * 100 : 0
+  const completedIds = new Set(completions.map(c => c.task_id))
+  const allTasks = stages.flatMap(s => s.tasks ?? [])
+  const totalCompleted = allTasks.filter(t => completedIds.has(t.id)).length
+  const progress = allTasks.length ? totalCompleted / allTasks.length : 0
 
   const load = useCallback(async () => {
     try {
@@ -37,347 +39,179 @@ export default function WorkflowPage() {
       setStages(st ?? [])
       const c = await getCompletions(sessionId)
       setCompletions(c ?? [])
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
-    }
+    } catch (e) { console.error(e) }
+    finally { setLoading(false) }
   }, [sessionId])
 
   useEffect(() => { load() }, [load])
 
   async function toggleTask(task: Task) {
-    const isDone = completedIds.has(task.id)
-    if (isDone) {
+    const done = completedIds.has(task.id)
+    if (done) {
       sounds.playClick()
       await uncompleteTask(sessionId, task.id)
-      setCompletions((prev) => prev.filter((c) => c.task_id !== task.id))
+      setCompletions(prev => prev.filter(c => c.task_id !== task.id))
     } else {
       sounds.playTaskComplete()
       await completeTask(sessionId, task.id)
-      setCompletions((prev) => [
-        ...prev,
-        { id: Date.now().toString(), session_id: sessionId, task_id: task.id, completed_at: new Date().toISOString(), pomodoros_used: 0 },
-      ])
-      // Check if stage complete
-      const currentStageTasks = stages[activeStageIdx]?.tasks ?? []
-      const newCompleted = [...completedIds, task.id]
-      const stageComplete = currentStageTasks.every((t) => newCompleted.includes(t.id))
-      if (stageComplete) {
-        sounds.playStageComplete()
-        celebrate('stage')
-      }
+      const newC = [...completions, { id: Date.now().toString(), session_id: sessionId, task_id: task.id, completed_at: new Date().toISOString(), pomodoros_used: 0 }]
+      setCompletions(newC)
+      const newIds = new Set(newC.map(c => c.task_id))
+      const stageDone = (stages[activeStageIdx]?.tasks ?? []).every(t => newIds.has(t.id))
+      if (stageDone) { sounds.playStageComplete(); celebrate('stage') }
     }
   }
 
-  function stageCompletionPercent(stage: Stage) {
+  function stagePct(stage: Stage) {
     const tasks = stage.tasks ?? []
     if (!tasks.length) return 0
-    const done = tasks.filter((t) => completedIds.has(t.id)).length
-    return Math.round((done / tasks.length) * 100)
+    return Math.round(tasks.filter(t => completedIds.has(t.id)).length / tasks.length * 100)
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="flex items-center gap-3" style={{ color: 'var(--text-secondary)' }}>
-          <div className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'var(--cyan)', borderTopColor: 'transparent' }} />
-          Loading...
-        </div>
-      </div>
-    )
-  }
+  if (loading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg, gap: '0.75rem', color: C.textSec }}>
+      <div style={{ width: '1.25rem', height: '1.25rem', borderRadius: '50%', border: `2px solid ${C.cyan}`, borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
+      Loading...
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  )
 
   const activeStage = stages[activeStageIdx]
   const stageTasks = activeStage?.tasks ?? []
 
   return (
-    <main className="min-h-screen max-w-3xl mx-auto px-6 py-8">
-      {/* Top nav */}
-      <div className="flex items-center justify-between mb-8">
-        <button
-          onClick={() => { sounds.playClick(); router.push('/') }}
-          className="flex items-center gap-2 text-sm transition-colors"
-          style={{ color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}
-        >
-          <ArrowLeft size={16} />
-          Home
+    <main style={{ minHeight: '100vh', maxWidth: '48rem', margin: '0 auto', padding: '2rem 1.5rem', background: C.bg }}>
+
+      {/* Nav */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem' }}>
+        <button onClick={() => { sounds.playClick(); router.push('/') }}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'none', border: 'none', color: C.textSec, cursor: 'pointer', fontSize: '0.875rem', fontFamily: 'inherit' }}>
+          <ArrowLeft size={16} />Home
         </button>
-        <button
-          onClick={() => { sounds.playClick(); router.push(`/workflow/${sessionId}/focus`) }}
-          className="btn btn-primary text-sm flex items-center gap-2"
-        >
-          <Zap size={14} />
-          Focus Mode
+        <button onClick={() => { sounds.playClick(); router.push(`/workflow/${sessionId}/focus`) }}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 1.2rem', background: `linear-gradient(135deg, ${C.cyan}, #0099cc)`, border: 'none', borderRadius: '0.75rem', color: '#000', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.875rem' }}>
+          <Zap size={14} />Focus Mode
         </button>
       </div>
 
       {/* Session header */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <span className="text-2xl">{session?.workflow_type?.icon}</span>
-          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            {session?.workflow_type?.name}
-          </span>
+      <div style={{ marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
+          <span style={{ fontSize: '1.5rem' }}>{session?.workflow_type?.icon}</span>
+          <span style={{ fontSize: '0.875rem', color: C.textSec }}>{session?.workflow_type?.name}</span>
         </div>
-        <h1 className="text-2xl font-black mb-4" style={{ color: 'var(--text-primary)' }}>
-          {session?.title}
-        </h1>
-
-        {/* Overall progress */}
-        <div className="flex items-center gap-3">
-          <div className="progress-bar flex-1">
-            <div
-              className="progress-fill"
-              style={{ width: `${overallProgress}%` }}
-            />
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 900, color: C.text, marginBottom: '1rem' }}>{session?.title}</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ flex: 1, height: '6px', background: C.border, borderRadius: '3px', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${progress * 100}%`, background: `linear-gradient(90deg, ${C.cyan}, ${C.purple})`, borderRadius: '3px', transition: 'width 0.6s ease' }} />
           </div>
-          <span className="text-sm font-semibold" style={{ color: 'var(--cyan)' }}>
-            {totalCompleted}/{totalTasks}
-          </span>
+          <span style={{ fontSize: '0.875rem', fontWeight: 700, color: C.cyan }}>{totalCompleted}/{allTasks.length}</span>
         </div>
-      </motion.div>
+      </div>
 
       {/* Stage pills */}
-      <div className="flex gap-2 flex-wrap mb-6">
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
         {stages.map((stage, idx) => {
-          const pct = stageCompletionPercent(stage)
-          const isComplete = pct === 100
+          const pct = stagePct(stage)
+          const done = pct === 100
+          const active = idx === activeStageIdx
           return (
-            <button
-              key={stage.id}
-              onClick={() => { sounds.playClick(); setActiveStageIdx(idx) }}
-              className={`stage-pill ${idx === activeStageIdx ? 'active' : ''} ${isComplete ? 'completed' : ''}`}
-            >
-              {isComplete ? <CheckCircle2 size={13} /> : <span>{stage.icon}</span>}
+            <button key={stage.id} onClick={() => { sounds.playClick(); setActiveStageIdx(idx) }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', padding: '0.375rem 0.875rem', borderRadius: '9999px', fontSize: '0.875rem', fontWeight: 500, border: `1px solid ${done ? 'rgba(0,255,136,0.4)' : active ? C.cyan : C.border}`, background: done ? 'rgba(0,255,136,0.1)' : active ? `${C.cyan}1a` : C.surface, color: done ? C.green : active ? C.cyan : C.textSec, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s' }}>
+              {done ? <CheckCircle2 size={13} /> : <span>{stage.icon}</span>}
               {stage.name}
-              {pct > 0 && !isComplete && (
-                <span className="ml-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                  {pct}%
-                </span>
-              )}
+              {pct > 0 && !done && <span style={{ color: C.textMut, fontSize: '0.75rem' }}>{pct}%</span>}
             </button>
           )
         })}
       </div>
 
-      {/* Stage tasks */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeStageIdx}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-          transition={{ duration: 0.2 }}
-        >
-          {activeStage && (
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                  {activeStage.icon} {activeStage.name}
-                </h2>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  {activeStage.description}
-                </p>
+      {/* Stage content */}
+      {activeStage && (
+        <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div>
+            <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: C.text, margin: '0 0 0.2rem' }}>{activeStage.icon} {activeStage.name}</h2>
+            <p style={{ fontSize: '0.875rem', color: C.textSec }}>{activeStage.description}</p>
+          </div>
+          <span style={{ fontSize: '0.875rem', color: C.textSec, flexShrink: 0 }}>
+            {stageTasks.filter(t => completedIds.has(t.id)).length}/{stageTasks.length} done
+          </span>
+        </div>
+      )}
+
+      {/* Tasks */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+        {stageTasks.map(task => {
+          const done = completedIds.has(task.id)
+          const expanded = expandedTask === task.id
+          return (
+            <div key={task.id} style={{ background: done ? 'rgba(0,255,136,0.03)' : C.card, border: `1px solid ${done ? 'rgba(0,255,136,0.3)' : expanded ? C.cyan : C.border}`, borderRadius: '1rem', overflow: 'hidden', transition: 'all 0.2s' }}>
+              {/* Task row */}
+              <div onClick={() => { sounds.playClick(); setExpandedTask(expanded ? null : task.id) }}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem', cursor: 'pointer' }}>
+                {/* Checkbox */}
+                <div onClick={e => { e.stopPropagation(); toggleTask(task) }}
+                  style={{ width: '1.25rem', height: '1.25rem', borderRadius: '0.375rem', border: `2px solid ${done ? C.green : C.border}`, background: done ? C.green : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer', transition: 'all 0.2s', boxShadow: done ? `0 0 10px ${C.green}66` : 'none' }}>
+                  {done && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="#000" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontWeight: 600, fontSize: '0.875rem', color: done ? C.textMut : C.text, textDecoration: done ? 'line-through' : 'none', marginBottom: '0.15rem' }}>{task.title}</p>
+                  <p style={{ fontSize: '0.75rem', color: C.textSec }}>{task.description}{task.estimated_minutes && <span style={{ marginLeft: '0.5rem', color: C.textMut }}>~{task.estimated_minutes}m</span>}</p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                  {!done && (
+                    <button onClick={e => { e.stopPropagation(); sounds.playClick(); router.push(`/workflow/${sessionId}/focus?task=${task.id}`) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', padding: '0.25rem 0.5rem', borderRadius: '0.5rem', background: `${C.cyan}1a`, color: C.cyan, border: `1px solid ${C.cyan}33`, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <Target size={11} />Focus
+                    </button>
+                  )}
+                  <ChevronRight size={16} color={C.textMut} style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                {stageTasks.filter((t) => completedIds.has(t.id)).length} / {stageTasks.length} done
-              </div>
-            </div>
-          )}
 
-          <div className="flex flex-col gap-3">
-            {stageTasks.map((task, taskIdx) => {
-              const isDone = completedIds.has(task.id)
-              const isExpanded = expandedTask === task.id
-
-              return (
-                <motion.div
-                  key={task.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: taskIdx * 0.04 }}
-                  className="card overflow-hidden"
-                  style={{
-                    borderColor: isDone ? 'rgba(0,255,136,0.3)' : isExpanded ? 'var(--cyan)' : 'var(--border)',
-                    background: isDone ? 'rgba(0,255,136,0.03)' : 'var(--card)',
-                  }}
-                >
-                  {/* Task header row */}
-                  <div
-                    className="flex items-center gap-3 p-4 cursor-pointer"
-                    onClick={() => {
-                      sounds.playClick()
-                      setExpandedTask(isExpanded ? null : task.id)
-                    }}
-                  >
-                    {/* Checkbox */}
-                    <div
-                      className={`task-checkbox ${isDone ? 'checked' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        toggleTask(task)
-                      }}
-                    >
-                      {isDone && (
-                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                          <path d="M1 4L3.5 6.5L9 1" stroke="#000" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className="font-semibold text-sm"
-                        style={{
-                          color: isDone ? 'var(--text-muted)' : 'var(--text-primary)',
-                          textDecoration: isDone ? 'line-through' : 'none',
-                        }}
-                      >
-                        {task.title}
-                      </p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                        {task.description}
-                        {task.estimated_minutes && (
-                          <span className="ml-2" style={{ color: 'var(--text-muted)' }}>
-                            ~{task.estimated_minutes}m
-                          </span>
-                        )}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {!isDone && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            sounds.playClick()
-                            router.push(`/workflow/${sessionId}/focus?task=${task.id}`)
-                          }}
-                          className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-all"
-                          style={{
-                            background: 'rgba(0,212,255,0.1)',
-                            color: 'var(--cyan)',
-                            border: '1px solid rgba(0,212,255,0.2)',
-                          }}
-                        >
-                          <Target size={11} />
-                          Focus
-                        </button>
-                      )}
-                      <ChevronRight
-                        size={16}
-                        style={{
-                          color: 'var(--text-muted)',
-                          transform: isExpanded ? 'rotate(90deg)' : 'none',
-                          transition: 'transform 0.2s',
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Expanded instructions */}
-                  <AnimatePresence>
-                    {isExpanded && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        style={{ overflow: 'hidden' }}
-                      >
-                        <div
-                          className="px-4 pb-4 pt-1"
-                          style={{ borderTop: '1px solid var(--border)' }}
-                        >
-                          <pre
-                            className="text-sm whitespace-pre-wrap leading-relaxed"
-                            style={{
-                              color: 'var(--text-secondary)',
-                              fontFamily: 'inherit',
-                            }}
-                          >
-                            {task.instructions}
-                          </pre>
-
-                          <div className="flex gap-2 mt-4">
-                            {task.has_prompt && task.prompt_text && (
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(task.prompt_text!)
-                                  sounds.playClick()
-                                }}
-                                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
-                                style={{
-                                  background: 'rgba(139,92,246,0.1)',
-                                  color: 'var(--purple)',
-                                  border: '1px solid rgba(139,92,246,0.3)',
-                                }}
-                              >
-                                <Copy size={11} />
-                                Copy Claude Prompt
-                              </button>
-                            )}
-                            {task.resource_url && (
-                              <a
-                                href={task.resource_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
-                                style={{
-                                  background: 'rgba(0,212,255,0.1)',
-                                  color: 'var(--cyan)',
-                                  border: '1px solid rgba(0,212,255,0.2)',
-                                  textDecoration: 'none',
-                                }}
-                              >
-                                <ExternalLink size={11} />
-                                Open Resource
-                              </a>
-                            )}
-                            <button
-                              onClick={() => toggleTask(task)}
-                              className="ml-auto flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all"
-                              style={{
-                                background: isDone ? 'rgba(0,255,136,0.1)' : 'rgba(0,255,136,0.15)',
-                                color: 'var(--green)',
-                                border: '1px solid rgba(0,255,136,0.3)',
-                              }}
-                            >
-                              <CheckCircle2 size={11} />
-                              {isDone ? 'Mark Incomplete' : 'Mark Complete'}
-                            </button>
-                          </div>
-                        </div>
-                      </motion.div>
+              {/* Expanded */}
+              {expanded && (
+                <div style={{ padding: '0 1rem 1rem', borderTop: `1px solid ${C.border}` }}>
+                  <pre style={{ fontSize: '0.875rem', whiteSpace: 'pre-wrap', lineHeight: 1.7, color: C.textSec, fontFamily: 'inherit', paddingTop: '0.75rem' }}>{task.instructions}</pre>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                    {task.has_prompt && task.prompt_text && (
+                      <button onClick={() => { navigator.clipboard.writeText(task.prompt_text!); sounds.playClick() }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', padding: '0.375rem 0.75rem', borderRadius: '0.5rem', background: 'rgba(139,92,246,0.1)', color: C.purple, border: '1px solid rgba(139,92,246,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        <Copy size={11} />Copy Claude Prompt
+                      </button>
                     )}
-                  </AnimatePresence>
-                </motion.div>
-              )
-            })}
-          </div>
+                    {task.resource_url && (
+                      <a href={task.resource_url} target="_blank" rel="noopener noreferrer"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', padding: '0.375rem 0.75rem', borderRadius: '0.5rem', background: `${C.cyan}1a`, color: C.cyan, border: `1px solid ${C.cyan}33`, textDecoration: 'none' }}>
+                        <ExternalLink size={11} />Open Resource
+                      </a>
+                    )}
+                    <button onClick={() => toggleTask(task)} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', padding: '0.375rem 0.75rem', borderRadius: '0.5rem', background: 'rgba(0,255,136,0.15)', color: C.green, border: '1px solid rgba(0,255,136,0.3)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <CheckCircle2 size={11} />{done ? 'Mark Incomplete' : 'Mark Complete'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
 
-          {/* Stage navigation */}
-          <div className="flex justify-between mt-6">
-            <button
-              disabled={activeStageIdx === 0}
-              onClick={() => { sounds.playClick(); setActiveStageIdx((i) => i - 1) }}
-              className="btn btn-ghost text-sm"
-              style={{ opacity: activeStageIdx === 0 ? 0.3 : 1 }}
-            >
-              ← Previous Stage
-            </button>
-            <button
-              disabled={activeStageIdx === stages.length - 1}
-              onClick={() => { sounds.playClick(); setActiveStageIdx((i) => i + 1) }}
-              className="btn btn-ghost text-sm"
-              style={{ opacity: activeStageIdx === stages.length - 1 ? 0.3 : 1 }}
-            >
-              Next Stage →
-            </button>
-          </div>
-        </motion.div>
-      </AnimatePresence>
+      {/* Stage nav */}
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <button onClick={() => { sounds.playClick(); setActiveStageIdx(i => Math.max(0, i - 1)) }}
+          disabled={activeStageIdx === 0}
+          style={{ padding: '0.6rem 1.2rem', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: '0.75rem', color: C.textSec, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, opacity: activeStageIdx === 0 ? 0.3 : 1, transition: 'all 0.2s' }}>
+          ← Previous
+        </button>
+        <button onClick={() => { sounds.playClick(); setActiveStageIdx(i => Math.min(stages.length - 1, i + 1)) }}
+          disabled={activeStageIdx === stages.length - 1}
+          style={{ padding: '0.6rem 1.2rem', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: '0.75rem', color: C.textSec, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, opacity: activeStageIdx === stages.length - 1 ? 0.3 : 1, transition: 'all 0.2s' }}>
+          Next →
+        </button>
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </main>
   )
 }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
