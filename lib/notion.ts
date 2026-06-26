@@ -5,13 +5,14 @@
 const NOTION_API = 'https://api.notion.com/v1'
 
 export const NOTION_DB = {
-  tasks:   '18aed686-b47d-8199-b3fc-000b35ee161d',
+  // "master" database on Dashboard — tasks have task/vault = "task"
+  tasks:   '35bed686-b47d-80ac-bbd6-000b3217e9d7',
   events:  '18aed686-b47d-8180-acdf-000bddf631f2',
   content: 'afd3c664-639c-471f-9911-718b3d48d341',
 }
 
 export const NOTION_LINKS = {
-  daily:   'https://app.notion.com/p/18aed686b47d817dbf68ee02b891bfe6',
+  daily:   'https://app.notion.com/p/351ed686b47d804caaeef2ab4effa270', // Master Tasks page
   content: 'https://app.notion.com/p/0d954d1bafee4c48b365c65bc873bace',
 }
 
@@ -94,8 +95,14 @@ function titleProp(text: string) { return { title: [{ text: { content: text } }]
 export type NotionTask = {
   id: string; url: string; type: 'task'
   title: string
-  status: string  // 'Not done' | 'Missed' | 'Done'
+  status: string          // 'Not started' | 'In progress' | 'Done'
   dueDate: string | null
+  priority: string | null // 'Low' | 'Medium' | 'High'
+  taskType: string | null // 'Flow' | 'Recurring' | 'Quick Task' | 'Admin' | 'Personal'
+  urgency: string | null  // 'Urgent' | 'Habit' | 'Non Urgent'
+  importance: string | null // 'Moved the Needle' | 'Non Important' | 'Important'
+  timeCommitment: string | null // '60 + mins' | '30 - 60 mins' | '15 - 30 mins' | '< 15mins'
+  isFrog: boolean         // the frog checkbox = top priority task of day
 }
 
 export type NotionEvent = {
@@ -110,35 +117,64 @@ export type NotionContent = {
 
 // ---- Tasks ----
 
-export async function getTasksForDate(date: string): Promise<NotionTask[]> {
-  const pages = await queryDB(NOTION_DB.tasks, {
-    property: 'Due date', date: { equals: date }
-  })
-  return pages.map(p => ({
+function parseTask(p: NotionPage): NotionTask {
+  return {
     id: p.id, url: p.url, type: 'task' as const,
     title: titleText(p.properties['Name']),
-    status: p.properties['Status']?.status?.name ?? 'Not done',
-    dueDate: p.properties['Due date']?.date?.start ?? null,
-  }))
+    status: p.properties['Status']?.status?.name ?? 'Not started',
+    dueDate: p.properties['Due Date']?.date?.start ?? null,
+    priority: p.properties['Priority ']?.status?.name ?? null,
+    taskType: p.properties['Type']?.select?.name ?? null,
+    urgency: p.properties['Urgency']?.select?.name ?? null,
+    importance: p.properties['Importance']?.select?.name ?? null,
+    timeCommitment: p.properties['Time Commitment']?.select?.name ?? null,
+    isFrog: p.properties['🐸']?.checkbox ?? false,
+  }
+}
+
+// Tasks for a specific date (filters task/vault=task AND due date)
+export async function getTasksForDate(date: string): Promise<NotionTask[]> {
+  const pages = await queryDB(NOTION_DB.tasks, {
+    and: [
+      { property: 'task/vault', select: { equals: 'task' } },
+      { property: 'Due Date', date: { equals: date } },
+    ]
+  })
+  return pages.map(parseTask)
+}
+
+// Active tasks for today (not done, task/vault=task)
+export async function getActiveTasks(): Promise<NotionTask[]> {
+  const pages = await queryDB(NOTION_DB.tasks, {
+    and: [
+      { property: 'task/vault', select: { equals: 'task' } },
+      { property: 'Status', status: { does_not_equal: 'Done' } },
+    ]
+  })
+  return pages.map(parseTask)
 }
 
 export async function createTask(title: string, dueDate: string): Promise<NotionTask> {
   const page = await createPage(NOTION_DB.tasks, {
     'Name': titleProp(title),
-    'Due date': { date: { start: dueDate } },
-    'Status': { status: { name: 'Not done' } },
+    'Due Date': { date: { start: dueDate } },
+    'Status': { status: { name: 'Not started' } },
+    'task/vault': { select: { name: 'task' } },
   })
   return {
     id: page.id, url: page.url, type: 'task' as const,
-    title, status: 'Not done', dueDate,
+    title, status: 'Not started', dueDate,
+    priority: null, taskType: null, urgency: null,
+    importance: null, timeCommitment: null, isFrog: false,
   }
 }
 
-export async function updateTask(pageId: string, data: { title?: string; status?: string; dueDate?: string }): Promise<void> {
+export async function updateTask(pageId: string, data: { title?: string; status?: string; dueDate?: string; isFrog?: boolean }): Promise<void> {
   const props: Record<string, unknown> = {}
   if (data.title !== undefined) props['Name'] = titleProp(data.title)
   if (data.status !== undefined) props['Status'] = { status: { name: data.status } }
-  if (data.dueDate !== undefined) props['Due date'] = { date: { start: data.dueDate } }
+  if (data.dueDate !== undefined) props['Due Date'] = { date: { start: data.dueDate } }
+  if (data.isFrog !== undefined) props['🐸'] = { checkbox: data.isFrog }
   await updatePage(pageId, props)
 }
 

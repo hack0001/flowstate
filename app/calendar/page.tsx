@@ -9,7 +9,7 @@ const C = { bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a', c
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const EVENT_CATS = ['Personal','Work','Home']
-const TASK_STATUSES = ['Not done','Done','Missed']
+const TASK_STATUSES = ['Not started','In progress','Done']
 const REFRESH_MS = 5 * 60 * 1000 // auto-refresh every 5 min
 
 type DayData = { tasks: NotionTask[]; events: NotionEvent[] }
@@ -108,7 +108,7 @@ function TaskRow({ task, onUpdate, onDelete }: {
 
   async function toggleDone() {
     setBusy(true)
-    await onUpdate(task.id, { status: done ? 'Not done' : 'Done' })
+    await onUpdate(task.id, { status: done ? 'Not started' : 'Done' })
     setBusy(false)
   }
 
