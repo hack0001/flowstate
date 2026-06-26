@@ -6,6 +6,14 @@ import { getPrioritySession, getSessions, setPrioritySession } from '@/lib/supab
 import type { WorkflowSession } from '@/types'
 
 const C = { bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a', cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a' }
+const IDENTITY_LINES = [
+  'You are building a media empire, one video at a time.',
+  'Every piece of content you publish compounds your authority.',
+  'You are the creator, the brand, and the business.',
+  'Builders ship. You are a builder.',
+  'Your audience is waiting for what only you can make.',
+  'You don\'t need permission to build something great.',
+]
 const QUOTES = [
   { q:'The secret of getting ahead is getting started.', a:'Mark Twain' },
   { q:'Focus on being productive instead of busy.', a:'Tim Ferriss' },
@@ -20,6 +28,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const quote = QUOTES[new Date().getDate() % QUOTES.length]
+  const identityLine = IDENTITY_LINES[new Date().getDate() % IDENTITY_LINES.length]
   const h = new Date().getHours()
   const greeting = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
 
@@ -132,7 +141,13 @@ export default function Home() {
           </div>
         )}
 
-        <div style={{ marginTop:'3rem', textAlign:'center', maxWidth:'24rem' }}>
+        {/* Identity affirmation */}
+        <div style={{ marginTop:'2rem', padding:'0.875rem 1.5rem', background:'linear-gradient(135deg,rgba(0,212,255,0.06),rgba(139,92,246,0.06))', border:'1px solid rgba(0,212,255,0.15)', borderRadius:'1rem', maxWidth:'28rem', textAlign:'center' }}>
+          <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:C.cyan, marginBottom:'0.375rem' }}>Who you are</p>
+          <p style={{ fontSize:'0.9rem', fontWeight:600, color:C.text, lineHeight:1.5 }}>{identityLine}</p>
+        </div>
+
+        <div style={{ marginTop:'1.5rem', textAlign:'center', maxWidth:'24rem' }}>
           <p style={{ fontSize:'0.875rem', color:C.sec, fontStyle:'italic', lineHeight:1.6 }}>"{quote.q}"</p>
           {quote.a && <p style={{ fontSize:'0.75rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
         </div>

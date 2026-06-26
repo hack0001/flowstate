@@ -186,6 +186,12 @@ export default function MorningPage() {
                 : 'Loading your day...'
               }
             </p>
+            <div style={{ marginTop:'2rem', padding:'1rem 1.5rem', background:'linear-gradient(135deg,rgba(0,212,255,0.06),rgba(139,92,246,0.06))', border:'1px solid rgba(0,212,255,0.2)', borderRadius:'1rem', animation:'slideIn 0.6s ease both' }}>
+              <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:C.cyan, marginBottom:'0.375rem' }}>Remember who you are</p>
+              <p style={{ fontSize:'1rem', fontWeight:600, color:C.text, lineHeight:1.5 }}>
+                You are building a media empire, one video at a time.
+              </p>
+            </div>
           </div>
         )}
 

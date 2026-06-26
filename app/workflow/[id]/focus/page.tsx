@@ -9,12 +9,18 @@ import { usePomodoro } from '@/hooks/usePomodoro'
 import { useCelebration } from '@/hooks/useCelebration'
 
 const C = { bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a', cyan:'#00d4ff', green:'#00ff88', purple:'#8b5cf6', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a' }
-const TIPS = [
-  { tip:'One task. One screen. One focus.', science:'Task-switching costs 23 minutes of recovery time.' },
-  { tip:'Done beats perfect. Ship it.', science:'Perfectionism is procrastination with better PR.' },
-  { tip:'Momentum is a superpower.', science:'Completing small tasks triggers dopamine.' },
-  { tip:'The next 25 minutes are all that exist.', science:'Pomodoro technique removes decision fatigue.' },
+const IDENTITY = [
+  { tip:'Builders create while others consume.', science:'Every task you complete is a brick in your empire.' },
+  { tip:'Your audience is waiting for this.', science:'Each video you publish compounds your authority.' },
+  { tip:'Ship it. Improve the next one.', science:'The best creators publish more, not perfect.' },
+  { tip:'You are the media company.', science:'Leverage beats labour. Systems beat hustle.' },
+  { tip:'Discipline is freedom.', science:'The reps you put in today are unreachable in a year.' },
+  { tip:'Done is the engine of more.', science:'Perfectionism is procrastination with better PR.' },
 ]
+
+// Accountability thresholds (seconds)
+const WARN_1 = 45 * 60  // 45 min - gentle check-in
+const WARN_2 = 75 * 60  // 75 min - strong nudge
 
 type AmbientMode = 'off' | 'whitenoise' | 'waves'
 
@@ -49,7 +55,9 @@ export default function FocusPage() {
   const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(true)
   const [ambient, setAmbient] = useState<AmbientMode>('off')
-  const [tipIdx] = useState(() => Math.floor(Math.random() * TIPS.length))
+  const [tipIdx] = useState(() => Math.floor(Math.random() * IDENTITY.length))
+  const [pomosOnTask, setPomosOnTask] = useState(0)
+  const lastPomosRef = useRef(0)
   const taskStartRef = useRef<number>(Date.now())
   const { celebrate } = useCelebration()
 
@@ -64,8 +72,18 @@ export default function FocusPage() {
   const onBreak = useCallback(() => { sounds.playBreakStart() }, [])
   const pom = usePomodoro({ onWorkComplete: onWork, onBreakComplete: onBreak })
 
-  // Track time on task
-  useEffect(() => { taskStartRef.current = Date.now() }, [taskIdx])
+  // Track time on task -- reset pomo counter when task changes
+  useEffect(() => {
+    taskStartRef.current = Date.now()
+    setPomosOnTask(0)
+    lastPomosRef.current = pom.pomodorosCompleted
+  }, [taskIdx]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Count pomodoros completed on THIS task
+  useEffect(() => {
+    const newPomos = pom.pomodorosCompleted - lastPomosRef.current
+    if (newPomos > pomosOnTask) setPomosOnTask(newPomos)
+  }, [pom.pomodorosCompleted, pomosOnTask])
 
   // Ambient control
   function toggleAmbient(mode: AmbientMode) {
@@ -119,7 +137,7 @@ export default function FocusPage() {
 
   const phaseColor = pom.phase==='work' ? C.cyan : pom.phase==='shortBreak' ? C.green : C.purple
   const phaseLabel = pom.phase==='work' ? 'Focus Time' : pom.phase==='shortBreak' ? 'Short Break' : 'Long Break'
-  const tip = TIPS[tipIdx]
+  const identity = IDENTITY[tipIdx % IDENTITY.length]
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:C.bg, color:C.sec, gap:'0.75rem' }}>
@@ -255,11 +273,11 @@ export default function FocusPage() {
             )}
           </div>
 
-          {/* Focus tip */}
-          <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1rem' }}>
-            <p style={{ fontSize:'0.7rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.5rem' }}>Focus Tip</p>
-            <p style={{ fontWeight:600, fontSize:'0.875rem', color:C.text, marginBottom:'0.375rem' }}>{tip.tip}</p>
-            <p style={{ fontSize:'0.75rem', lineHeight:1.5, color:C.muted }}>{tip.science}</p>
+          {/* Identity */}
+          <div style={{ background:'linear-gradient(135deg,rgba(0,212,255,0.06),rgba(139,92,246,0.06))', border:'1px solid rgba(0,212,255,0.2)', borderRadius:'1rem', padding:'1rem' }}>
+            <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.cyan, marginBottom:'0.5rem' }}>Mindset</p>
+            <p style={{ fontWeight:700, fontSize:'0.9rem', color:C.text, marginBottom:'0.375rem', lineHeight:1.4 }}>{identity.tip}</p>
+            <p style={{ fontSize:'0.75rem', lineHeight:1.5, color:C.sec }}>{identity.science}</p>
           </div>
 
           {/* Stage progress minimap */}
@@ -286,7 +304,7 @@ export default function FocusPage() {
           {/* Time on this task */}
           <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1rem' }}>
             <p style={{ fontSize:'0.7rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.5rem' }}>Time Tracking</p>
-            <TimeOnTask startRef={taskStartRef} isDone={isDone} task={task} />
+            <TimeOnTask startRef={taskStartRef} isDone={isDone} task={task} pomosOnTask={pomosOnTask} />
           </div>
         </div>
       </div>
@@ -295,27 +313,12 @@ export default function FocusPage() {
   )
 }
 
-function TimeOnTask({ startRef, isDone, task }: { startRef: React.MutableRefObject<number>; isDone: boolean; task: Task | null }) {
+function TimeOnTask({ startRef, isDone, task, pomosOnTask }: {
+  startRef: React.MutableRefObject<number>; isDone: boolean; task: Task | null; pomosOnTask: number
+}) {
   const [elapsed, setElapsed] = useState(0)
   useEffect(() => {
     if (isDone) return
     const id = setInterval(() => setElapsed(Math.round((Date.now() - startRef.current) / 1000)), 1000)
     return () => clearInterval(id)
-  }, [isDone, startRef])
-  if (!task) return null
-  const est = (task.estimated_minutes ?? 10) * 60
-  const over = elapsed > est
-  return (
-    <div>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'0.375rem' }}>
-        <span style={{ fontSize:'0.875rem', fontWeight:700, color:over ? '#ff6b6b' : C.text }}>{fmt(elapsed)}</span>
-        <span style={{ fontSize:'0.75rem', color:C.muted }}>est. {fmt(est)}</span>
-      </div>
-      <div style={{ height:'4px', background:C.border, borderRadius:'2px', overflow:'hidden' }}>
-        <div style={{ height:'100%', width:Math.min(elapsed/est*100, 100)+'%', background:over?'#ff6b6b':'linear-gradient(90deg,'+C.cyan+','+C.purple+')', borderRadius:'2px', transition:'width 0.9s linear' }}/>
-      </div>
-      {over && <p style={{ fontSize:'0.7rem', color:'#ff6b6b', marginTop:'0.375rem' }}>Over estimate by {fmt(elapsed-est)}</p>}
-      {isDone && <p style={{ fontSize:'0.7rem', color:C.green, marginTop:'0.375rem' }}>Completed in {fmt(elapsed)}</p>}
-    </div>
-  )
-}
+  }, [isDone, 
