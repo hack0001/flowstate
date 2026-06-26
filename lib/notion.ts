@@ -5,10 +5,11 @@
 const NOTION_API = 'https://api.notion.com/v1'
 
 export const NOTION_DB = {
-  // "master" database on Dashboard — tasks have task/vault = "task"
+  // "master" database on Dashboard — single DB for tasks + content
+  // task/vault="task" = tasks, task/vault="vault" + YT Pipeline Stage = content
   tasks:   '35bed686-b47d-80ac-bbd6-000b3217e9d7',
-  events:  '18aed686-b47d-8180-acdf-000bddf631f2',
-  content: 'afd3c664-639c-471f-9911-718b3d48d341',
+  events:  '35bed686-b47d-80ac-bbd6-000b3217e9d7', // same master DB (no separate events DB)
+  content: '35bed686-b47d-80ac-bbd6-000b3217e9d7', // same master DB
 }
 
 export const NOTION_LINKS = {
@@ -183,34 +184,31 @@ export async function deleteTask(pageId: string): Promise<void> {
 }
 
 // ---- Events ----
+// No separate events DB — events are tasks with Type set, shown by due date
+// We return tasks-as-events for any task on the date that isn't in the master tasks filter
 
 export async function getEventsForDate(date: string): Promise<NotionEvent[]> {
-  const pages = await queryDB(NOTION_DB.events, {
-    property: 'Date', date: { equals: date }
-  })
-  return pages.map(p => ({
-    id: p.id, url: p.url, type: 'event' as const,
-    title: titleText(p.properties['Name']),
-    date: p.properties['Date']?.date?.start ?? date,
-    category: p.properties['Category']?.select?.name ?? null,
-  }))
+  // No separate events database; return empty (calendar shows tasks instead)
+  return []
 }
 
 export async function createEvent(title: string, date: string, category?: string): Promise<NotionEvent> {
-  const props: Record<string, unknown> = {
+  // Create as a task in the master DB with the category stored in Type field
+  const typeMap: Record<string, string> = { 'Work': 'Flow', 'Personal': 'Personal', 'Home': 'Recurring' }
+  const page = await createPage(NOTION_DB.tasks, {
     'Name': titleProp(title),
-    'Date': { date: { start: date } },
-  }
-  if (category) props['Category'] = { select: { name: category } }
-  const page = await createPage(NOTION_DB.events, props)
+    'Due Date': { date: { start: date } },
+    'Status': { status: { name: 'Not started' } },
+    'task/vault': { select: { name: 'task' } },
+    ...(category ? { 'Type': { select: { name: typeMap[category] ?? 'Personal' } } } : {}),
+  })
   return { id: page.id, url: page.url, type: 'event' as const, title, date, category: category ?? null }
 }
 
 export async function updateEvent(pageId: string, data: { title?: string; date?: string; category?: string }): Promise<void> {
   const props: Record<string, unknown> = {}
   if (data.title !== undefined) props['Name'] = titleProp(data.title)
-  if (data.date !== undefined) props['Date'] = { date: { start: data.date } }
-  if (data.category !== undefined) props['Category'] = { select: { name: data.category } }
+  if (data.date !== undefined) props['Due Date'] = { date: { start: data.date } }
   await updatePage(pageId, props)
 }
 
@@ -218,24 +216,26 @@ export async function deleteEvent(pageId: string): Promise<void> {
   await archivePage(pageId)
 }
 
-// ---- Content (read-only) ----
+// ---- Content (YouTube pipeline from master DB) ----
 
 export async function getContentForMonth(year: number, month: number): Promise<NotionContent[]> {
   const pad = (n: number) => String(n).padStart(2, '0')
   const start = `${year}-${pad(month)}-01`
   const days = new Date(year, month, 0).getDate()
   const end = `${year}-${pad(month)}-${pad(days)}`
+  // Query master DB for items with a YT Pipeline Stage (content items) and a due date in range
   const pages = await queryDB(NOTION_DB.content, {
     and: [
-      { property: 'Publish Date', date: { on_or_after: start } },
-      { property: 'Publish Date', date: { on_or_before: end } },
+      { property: 'YT Pipeline Stage', select: { is_not_empty: true } },
+      { property: 'Due Date', date: { on_or_after: start } },
+      { property: 'Due Date', date: { on_or_before: end } },
     ]
   })
   return pages.map(p => ({
     id: p.id, url: p.url, type: 'content' as const,
-    title: titleText(p.properties['Video Title']),
-    date: p.properties['Publish Date']?.date?.start ?? null,
-    status: p.properties['Status']?.select?.name ?? 'Idea',
+    title: titleText(p.properties['Name']),
+    date: p.properties['Due Date']?.date?.start ?? null,
+    status: p.properties['YT Pipeline Stage']?.select?.name ?? 'Idea',
     format: p.properties['Format']?.select?.name ?? null,
   }))
 }

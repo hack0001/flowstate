@@ -50,19 +50,15 @@ export async function GET() {
     })
   }
 
-  const [tasks, events, content] = await Promise.all([
-    testDB('tasks', NOTION_DB.tasks, token),
-    testDB('events', NOTION_DB.events, token),
-    testDB('content', NOTION_DB.content, token),
-  ])
-
-  const allOk = [tasks, events, content].every(d => d.status === 'OK')
+  // All data comes from the single master database
+  const master = await testDB('master (tasks + content)', NOTION_DB.tasks, token)
+  const allOk = master.status === 'OK'
 
   return NextResponse.json({
     token: 'VALID',
     integration: me.name ?? me.bot?.owner?.user?.name ?? 'Connected',
-    databases: { tasks, events, content },
+    databases: { master },
     allOk,
-    fix: allOk ? null : 'For any database showing ERROR: open that database in Notion → click ... top right → Connections → add your integration.',
+    fix: allOk ? null : 'Share the master database with your integration: open your Dashboard in Notion → click ... top right → Connections → add Toms Connection. Then share the Master Tasks page the same way.',
   })
 }
