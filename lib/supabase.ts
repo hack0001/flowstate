@@ -5,7 +5,7 @@ const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 export const supabase = createClient(url, key)
 
 export async function getWorkflowTypes() {
-  const { data, error } = await supabase.from('workflow_types').select('*').order('name')
+  const { data, error } = await supabase.from('workflow_types').select('*').order('order_index')
   if (error) throw error
   return data
 }
@@ -79,10 +79,10 @@ export async function getCompletions(sessionId: string) {
   return data
 }
 
-export async function completeTask(sessionId: string, taskId: string, pomodorosUsed = 0) {
+export async function completeTask(sessionId: string, taskId: string, pomodorosUsed = 0, timeSpentSeconds = 0) {
   const { error } = await supabase
     .from('task_completions')
-    .upsert({ session_id: sessionId, task_id: taskId, pomodoros_used: pomodorosUsed })
+    .upsert({ session_id: sessionId, task_id: taskId, pomodoros_used: pomodorosUsed, time_spent_seconds: timeSpentSeconds })
   if (error) throw error
 }
 
@@ -93,4 +93,14 @@ export async function uncompleteTask(sessionId: string, taskId: string) {
     .eq('session_id', sessionId)
     .eq('task_id', taskId)
   if (error) throw error
+}
+
+export async function getSessionStats(sessionId: string) {
+  const { data, error } = await supabase
+    .from('task_completions')
+    .select('*, task:tasks(title, estimated_minutes, stage:stages(name))')
+    .eq('session_id', sessionId)
+    .order('completed_at')
+  if (error) throw error
+  return data
 }
