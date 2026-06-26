@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation'
 import { Play, Plus, Zap, Star, ChevronRight } from 'lucide-react'
 import { getPrioritySession, getSessions, setPrioritySession } from '@/lib/supabase'
 import type { WorkflowSession } from '@/types'
-import { sounds } from '@/lib/sounds'
 
 const C = { bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a', cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a' }
 const QUOTES = [
@@ -32,14 +31,12 @@ export default function Home() {
   }, [])
 
   function handleStart() {
-    sounds.playClick()
     if (priority) router.push('/workflow/' + priority.id + '/focus')
     else if (sessions.length > 0) router.push('/workflow/' + sessions[0].id)
     else router.push('/workflows')
   }
 
   async function setP(s: WorkflowSession) {
-    sounds.playClick()
     try { await setPrioritySession(s.id); setPriority(s) } catch {}
   }
 
@@ -50,7 +47,7 @@ export default function Home() {
           <Zap size={20} color={C.cyan} />
           <span style={{ fontWeight:700, fontSize:'1.125rem', color:C.text }}>FlowState</span>
         </div>
-        <button onClick={() => { sounds.playClick(); router.push('/workflows') }}
+        <button onClick={() => { router.push('/workflows') }}
           style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.2rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontSize:'0.875rem', fontWeight:600, fontFamily:'inherit' }}
           onMouseEnter={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.cyan; el.style.color=C.cyan }}
           onMouseLeave={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.border; el.style.color=C.sec }}>
@@ -99,7 +96,7 @@ export default function Home() {
             <p style={{ fontSize:'0.7rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active Sessions</p>
             <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
               {sessions.map(s => (
-                <div key={s.id} onClick={() => { sounds.playClick(); router.push('/workflow/'+s.id) }}
+                <div key={s.id} onClick={() => { router.push('/workflow/'+s.id) }}
                   style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', cursor:'pointer', transition:'all 0.2s' }}
                   onMouseEnter={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.cyan; el.style.transform='translateY(-1px)' }}
                   onMouseLeave={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.border; el.style.transform='none' }}>
