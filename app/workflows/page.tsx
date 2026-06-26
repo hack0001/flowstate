@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, X, ArrowRight, Clock } from 'lucide-react'
+import { SiYoutube, SiX, SiInstagram, SiLinkedin, SiTiktok } from 'react-icons/si'
 import { getWorkflowTypes, createSession } from '@/lib/supabase'
 import type { WorkflowType } from '@/types'
 
@@ -21,86 +22,42 @@ const EST: Record<string, number> = {
   'yt-short': 45, 'yt-long': 180, 'tweet': 20, 'ig-post': 40, 'ig-reel': 60, 'linkedin': 35, 'tiktok': 50,
 }
 
+const ICON_BG: Record<string, string> = {
+  'yt-long':  '#FF0000',
+  'yt-short': '#FF0000',
+  'tweet':    '#000000',
+  'ig-post':  '#E1306C',
+  'ig-reel':  '#833AB4',
+  'linkedin': '#0A66C2',
+  'tiktok':   '#010101',
+}
+
 function PlatformIcon({ slug }: { slug: string }) {
-  const s: React.CSSProperties = { width:'100%', height:'100%' }
-
-  // YouTube (long + short)
-  if (slug === 'yt-long') return (
-    <svg viewBox="0 0 48 48" style={s}>
-      <rect width="48" height="48" rx="10" fill="#FF0000"/>
-      {/* YouTube wordmark play button - rounded rect + triangle */}
-      <rect x="9" y="15" width="30" height="18" rx="5" fill="white"/>
-      <path d="M20 19.5l12 4.5-12 4.5z" fill="#FF0000"/>
-    </svg>
+  const bg = ICON_BG[slug] ?? '#2a2a3a'
+  const iconStyle = { color:'white', width:'55%', height:'55%' }
+  const wrapStyle: React.CSSProperties = {
+    width:'100%', height:'100%', borderRadius:'10px', position:'relative',
+    background: slug === 'ig-post' || slug === 'ig-reel'
+      ? 'radial-gradient(circle at 30% 110%, #FFDC80, #FCAF45 25%, #F77737 40%, #FD1D1D 60%, #E1306C 75%, #833AB4 100%)'
+      : bg,
+    display:'flex', alignItems:'center', justifyContent:'center',
+  }
+  const icon = (() => {
+    if (slug === 'yt-long' || slug === 'yt-short') return <SiYoutube style={iconStyle}/>
+    if (slug === 'tweet')    return <SiX style={iconStyle}/>
+    if (slug === 'ig-post' || slug === 'ig-reel') return <SiInstagram style={iconStyle}/>
+    if (slug === 'linkedin') return <SiLinkedin style={iconStyle}/>
+    if (slug === 'tiktok')   return <SiTiktok style={iconStyle}/>
+    return null
+  })()
+  return (
+    <div style={wrapStyle}>
+      {icon}
+      {slug === 'yt-short' && (
+        <span style={{ position:'absolute', bottom:'3px', right:'4px', fontSize:'5px', fontWeight:900, color:'white', letterSpacing:'0.02em', fontFamily:'Arial,sans-serif' }}>S</span>
+      )}
+    </div>
   )
-  if (slug === 'yt-short') return (
-    <svg viewBox="0 0 48 48" style={s}>
-      <rect width="48" height="48" rx="10" fill="#FF0000"/>
-      {/* Shorts logo: play button + lightning bolt */}
-      <rect x="9" y="13" width="30" height="18" rx="5" fill="white"/>
-      <path d="M20 17.5l12 4.5-12 4.5z" fill="#FF0000"/>
-      <text x="24" y="41" textAnchor="middle" fontSize="8" fontWeight="800" fontFamily="Arial,sans-serif" fill="white">SHORTS</text>
-    </svg>
-  )
-
-  // X (formerly Twitter)
-  if (slug === 'tweet') return (
-    <svg viewBox="0 0 48 48" style={s}>
-      <rect width="48" height="48" rx="10" fill="#000000"/>
-      <path d="M8 8h9.5l7.2 10.2L34.5 8H42L28.8 23.8 43 40h-9.5L25.8 28.8 14.5 40H7l14-16.8L8 8zm3.5 3 16.5 23.5h4L15.5 11H11.5zm18.8 0L14.5 37H18l15.8-23h-3.5z" fill="white"/>
-    </svg>
-  )
-
-  // Instagram
-  if (slug === 'ig-post' || slug === 'ig-reel') return (
-    <svg viewBox="0 0 48 48" style={s}>
-      <defs>
-        <linearGradient id={"ig-grad-"+slug} x1="0" y1="1" x2="1" y2="0">
-          <stop offset="0%" stopColor="#FFDC80"/>
-          <stop offset="20%" stopColor="#FCAF45"/>
-          <stop offset="40%" stopColor="#F77737"/>
-          <stop offset="55%" stopColor="#F56040"/>
-          <stop offset="70%" stopColor="#FD1D1D"/>
-          <stop offset="85%" stopColor="#E1306C"/>
-          <stop offset="100%" stopColor="#833AB4"/>
-        </linearGradient>
-      </defs>
-      <rect width="48" height="48" rx="10" fill={"url(#ig-grad-"+slug+")"}/>
-      {/* Camera outline */}
-      <rect x="12" y="12" width="24" height="24" rx="6" fill="none" stroke="white" strokeWidth="2.5"/>
-      {/* Lens */}
-      <circle cx="24" cy="24" r="6" fill="none" stroke="white" strokeWidth="2.5"/>
-      {/* Dot */}
-      <circle cx="32.5" cy="15.5" r="2" fill="white"/>
-      {slug === 'ig-reel' && <path d="M21 20l9 4-9 4z" fill="white" opacity="0.9"/>}
-    </svg>
-  )
-
-  // LinkedIn
-  if (slug === 'linkedin') return (
-    <svg viewBox="0 0 48 48" style={s}>
-      <rect width="48" height="48" rx="10" fill="#0A66C2"/>
-      {/* "in" logo */}
-      <rect x="10" y="19" width="7" height="20" rx="1" fill="white"/>
-      <circle cx="13.5" cy="13.5" r="4" fill="white"/>
-      <path d="M21 19h6.5v3.2c1-1.8 3.2-3.7 6.5-3.7 5.5 0 8 3.5 8 9.5V39h-7v-9.8c0-2.8-1-4.7-3.5-4.7-2.8 0-4 2-4 5V39H21V19z" fill="white"/>
-    </svg>
-  )
-
-  // TikTok
-  if (slug === 'tiktok') return (
-    <svg viewBox="0 0 48 48" style={s}>
-      <rect width="48" height="48" rx="10" fill="#010101"/>
-      {/* Cyan shadow layer */}
-      <path d="M27.5 7.5c.5 4 2.8 6.5 6.5 8v5.5c-2.2-.3-4.2-1.1-6-2.3V28c0 6-4.8 11-11 11S6 34 6 28s4.8-11 11-11c.6 0 1.1.05 1.6.1v6c-.5-.1-1-.15-1.6-.15-2.8 0-5 2.3-5 5s2.2 5 5 5 5-2.3 5-5V7.5h5.5z" fill="#69C9D0" opacity="0.9"/>
-      {/* Red shadow layer */}
-      <path d="M29.5 7.5c.5 4 2.8 6.5 6.5 8v5.5c-2.2-.3-4.2-1.1-6-2.3V28c0 6-4.8 11-11 11S8 34 8 28s4.8-11 11-11c.6 0 1.1.05 1.6.1v6c-.5-.1-1-.15-1.6-.15-2.8 0-5 2.3-5 5s2.2 5 5 5 5-2.3 5-5V7.5h5.5z" fill="#FF0050" opacity="0.9"/>
-      {/* White main layer */}
-      <path d="M28.5 7.5c.5 4 2.8 6.5 6.5 8v5.5c-2.2-.3-4.2-1.1-6-2.3V28c0 6-4.8 11-11 11S7 34 7 28s4.8-11 11-11c.6 0 1.1.05 1.6.1v6c-.5-.1-1-.15-1.6-.15-2.8 0-5 2.3-5 5s2.2 5 5 5 5-2.3 5-5V7.5h5.5z" fill="white"/>
-    </svg>
-  )
-
-  return <svg viewBox="0 0 48 48" style={s}><rect width="48" height="48" rx="10" fill="#2a2a3a"/></svg>
 }
 
 function PlatformMini({ slug }: { slug: string }) {
