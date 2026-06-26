@@ -321,39 +321,4 @@ function TimeOnTask({ startRef, isDone, task, pomosOnTask }: {
     if (isDone) return
     const id = setInterval(() => setElapsed(Math.round((Date.now() - startRef.current) / 1000)), 1000)
     return () => clearInterval(id)
-  }, [isDone, startRef])
-  if (!task) return null
-  const est = (task.estimated_minutes ?? 10) * 60
-  const over = elapsed > est
-  const warn1 = !isDone && elapsed >= WARN_1 && elapsed < WARN_2
-  const warn2 = !isDone && elapsed >= WARN_2
-
-  return (
-    <div>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'0.375rem' }}>
-        <span style={{ fontSize:'0.875rem', fontWeight:700, color:warn2?'#ff4444':warn1?'#ffb800':over?'#ff6b6b':C.text }}>{fmt(elapsed)}</span>
-        <span style={{ fontSize:'0.75rem', color:C.muted }}>est. {fmt(est)}</span>
-      </div>
-      <div style={{ height:'4px', background:C.border, borderRadius:'2px', overflow:'hidden' }}>
-        <div style={{ height:'100%', width:Math.min(elapsed/est*100,100)+'%', background:warn2?'#ff4444':warn1?'#ffb800':over?'#ff6b6b':'linear-gradient(90deg,#00d4ff,#8b5cf6)', borderRadius:'2px', transition:'width 0.9s linear' }}/>
-      </div>
-      {warn2 && (
-        <div style={{ marginTop:'0.625rem', padding:'0.625rem', background:'rgba(255,68,68,0.08)', border:'1px solid rgba(255,68,68,0.3)', borderRadius:'0.625rem' }}>
-          <p style={{ fontSize:'0.75rem', fontWeight:700, color:'#ff4444', marginBottom:'0.25rem' }}>75 min on one task</p>
-          <p style={{ fontSize:'0.7rem', color:'#ff8888', lineHeight:1.4 }}>Ship what you have and move on. Builders iterate, they don&apos;t perfect.</p>
-        </div>
-      )}
-      {warn1 && !warn2 && (
-        <div style={{ marginTop:'0.625rem', padding:'0.625rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'0.625rem' }}>
-          <p style={{ fontSize:'0.75rem', fontWeight:700, color:'#ffb800', marginBottom:'0.25rem' }}>45 min check-in</p>
-          <p style={{ fontSize:'0.7rem', color:'#ffcc44', lineHeight:1.4 }}>Still making progress? If stuck, break this into smaller steps.</p>
-        </div>
-      )}
-      {over && !warn1 && !warn2 && <p style={{ fontSize:'0.7rem', color:'#ff6b6b', marginTop:'0.375rem' }}>Over estimate by {fmt(elapsed-est)}</p>}
-      {isDone && <p style={{ fontSize:'0.7rem', color:'#00ff88', marginTop:'0.375rem' }}>Completed in {fmt(elapsed)}</p>}
-      {pomosOnTask > 0 && !isDone && (
-        <p style={{ fontSize:'0.65rem', color:'#4a4a6a', marginTop:'0.25rem' }}>{pomosOnTask} pomo{pomosOnTask!==1?'s':''} on this task</p>
-      )}
-    </div>
-  )
-}
+  }, [isDone, 

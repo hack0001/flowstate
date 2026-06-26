@@ -304,16 +304,4 @@ export default function MorningPage() {
         </button>
         <button onClick={next} disabled={stage==='start'}
           style={{ padding:'0.6rem', background:'rgba(255,255,255,0.04)', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:stage==='start'?'not-allowed':'pointer', fontFamily:'inherit', opacity:stage==='start'?0.3:1 }}>
-          <SkipForward size={14}/>
-        </button>
-      </div>
-
-      <style>{`
-        @keyframes float{0%{transform:translateY(0);opacity:0.4}50%{opacity:0.7}100%{transform:translateY(-100vh);opacity:0}}
-        @keyframes breathe{0%,100%{transform:translateX(-50%) scale(1);opacity:0.6}50%{transform:translateX(-50%) scale(1.08);opacity:1}}
-        @keyframes pulse{0%,100%{transform:scale(1);opacity:0.6}50%{transform:scale(1.05);opacity:1}}
-        @keyframes slideIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
-      `}</style>
-    </main>
-  )
-}
+          <SkipForward size={14}/

@@ -125,34 +125,4 @@ export default function Home() {
                     {(s.workflow_type?.icon ?? 'WF').slice(0,3)}
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <p style={{ fontWeight:600, fontSize:'0.875rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.title}</p>
-                    <p style={{ fontSize:'0.75rem', color:C.sec }}>{s.workflow_type?.name ?? 'Workflow'}</p>
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexShrink:0 }}>
-                    {s.is_priority
-                      ? <span style={{ display:'inline-flex', alignItems:'center', gap:'0.25rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', color:C.amber, padding:'0.2rem 0.6rem', borderRadius:'9999px', fontSize:'0.7rem', fontWeight:700 }}><Star size={10} fill="currentColor" />Priority</span>
-                      : <button style={{ fontSize:'0.7rem', padding:'0.2rem 0.5rem', borderRadius:'0.5rem', background:C.surface, border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit' }} onClick={e => { e.stopPropagation(); setP(s) }}>Set Priority</button>
-                    }
-                    <ChevronRight size={15} color={C.muted} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Identity affirmation */}
-        <div style={{ marginTop:'2rem', padding:'0.875rem 1.5rem', background:'linear-gradient(135deg,rgba(0,212,255,0.06),rgba(139,92,246,0.06))', border:'1px solid rgba(0,212,255,0.15)', borderRadius:'1rem', maxWidth:'28rem', textAlign:'center' }}>
-          <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:C.cyan, marginBottom:'0.375rem' }}>Who you are</p>
-          <p style={{ fontSize:'0.9rem', fontWeight:600, color:C.text, lineHeight:1.5 }}>{identityLine}</p>
-        </div>
-
-        <div style={{ marginTop:'1.5rem', textAlign:'center', maxWidth:'24rem' }}>
-          <p style={{ fontSize:'0.875rem', color:C.sec, fontStyle:'italic', lineHeight:1.6 }}>"{quote.q}"</p>
-          {quote.a && <p style={{ fontSize:'0.75rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
-        </div>
-      </div>
-      <style>{`@keyframes pulse{0%,100%{opacity:.6;transform:scale(1)}50%{opacity:1;transform:scale(1.05)}}`}</style>
-    </main>
-  )
-}
+                    <p style={{ fontWeight:600, fontSize:'0.875rem', color:C
