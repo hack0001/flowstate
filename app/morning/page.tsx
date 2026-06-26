@@ -104,7 +104,7 @@ export default function MorningPage() {
     })
   }, [dateStr, year, month])
 
-  const focusTasks = tasks.filter(t => t.focus==='Deep Work' || t.priority==='High').slice(0,3)
+  const focusTasks = tasks.filter(t => t.status !== 'Done').slice(0,3)
   const todayEvents = events.slice(0,4)
   const todayContent = content.slice(0,3)
 
