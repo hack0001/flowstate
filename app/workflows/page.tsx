@@ -23,54 +23,83 @@ const EST: Record<string, number> = {
 
 function PlatformIcon({ slug }: { slug: string }) {
   const s: React.CSSProperties = { width:'100%', height:'100%' }
-  if (slug === 'yt-short' || slug === 'yt-long') return (
+
+  // YouTube (long + short)
+  if (slug === 'yt-long') return (
     <svg viewBox="0 0 48 48" style={s}>
       <rect width="48" height="48" rx="10" fill="#FF0000"/>
-      <path d="M19 14l18 10-18 10V14z" fill="white"/>
-      {slug === 'yt-short' && <rect x="10" y="36" width="8" height="8" rx="2" fill="white" opacity="0.9"/>}
-      {slug === 'yt-short' && <path d="M11 37.5 l2-2 2 2 2-2 2 2" stroke="#FF0000" strokeWidth="1.2" fill="none"/>}
+      {/* YouTube wordmark play button - rounded rect + triangle */}
+      <rect x="9" y="15" width="30" height="18" rx="5" fill="white"/>
+      <path d="M20 19.5l12 4.5-12 4.5z" fill="#FF0000"/>
     </svg>
   )
+  if (slug === 'yt-short') return (
+    <svg viewBox="0 0 48 48" style={s}>
+      <rect width="48" height="48" rx="10" fill="#FF0000"/>
+      {/* Shorts logo: play button + lightning bolt */}
+      <rect x="9" y="13" width="30" height="18" rx="5" fill="white"/>
+      <path d="M20 17.5l12 4.5-12 4.5z" fill="#FF0000"/>
+      <text x="24" y="41" textAnchor="middle" fontSize="8" fontWeight="800" fontFamily="Arial,sans-serif" fill="white">SHORTS</text>
+    </svg>
+  )
+
+  // X (formerly Twitter)
   if (slug === 'tweet') return (
     <svg viewBox="0 0 48 48" style={s}>
-      <rect width="48" height="48" rx="10" fill="#111111"/>
-      <path d="M10 11h7l7 10.5L33 11h5L26.5 24 38 37h-7l-7.5-11L14 37H9l11.5-13.5L10 11z" fill="white"/>
+      <rect width="48" height="48" rx="10" fill="#000000"/>
+      <path d="M8 8h9.5l7.2 10.2L34.5 8H42L28.8 23.8 43 40h-9.5L25.8 28.8 14.5 40H7l14-16.8L8 8zm3.5 3 16.5 23.5h4L15.5 11H11.5zm18.8 0L14.5 37H18l15.8-23h-3.5z" fill="white"/>
     </svg>
   )
+
+  // Instagram
   if (slug === 'ig-post' || slug === 'ig-reel') return (
     <svg viewBox="0 0 48 48" style={s}>
       <defs>
-        <linearGradient id={"ig"+slug} x1="0" y1="48" x2="48" y2="0" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#F09433"/>
-          <stop offset="30%" stopColor="#E6683C"/>
-          <stop offset="55%" stopColor="#DC2743"/>
-          <stop offset="75%" stopColor="#CC2366"/>
-          <stop offset="100%" stopColor="#BC1888"/>
+        <linearGradient id={"ig-grad-"+slug} x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0%" stopColor="#FFDC80"/>
+          <stop offset="20%" stopColor="#FCAF45"/>
+          <stop offset="40%" stopColor="#F77737"/>
+          <stop offset="55%" stopColor="#F56040"/>
+          <stop offset="70%" stopColor="#FD1D1D"/>
+          <stop offset="85%" stopColor="#E1306C"/>
+          <stop offset="100%" stopColor="#833AB4"/>
         </linearGradient>
       </defs>
-      <rect width="48" height="48" rx="10" fill={"url(#ig"+slug+")"}/>
-      <rect x="13" y="13" width="22" height="22" rx="5" fill="none" stroke="white" strokeWidth="2.5"/>
-      <circle cx="24" cy="24" r="5.5" fill="none" stroke="white" strokeWidth="2.5"/>
-      <circle cx="33" cy="15" r="2" fill="white"/>
-      {slug === 'ig-reel' && <path d="M20 19l10 5-10 5V19z" fill="white" opacity="0.8"/>}
+      <rect width="48" height="48" rx="10" fill={"url(#ig-grad-"+slug+")"}/>
+      {/* Camera outline */}
+      <rect x="12" y="12" width="24" height="24" rx="6" fill="none" stroke="white" strokeWidth="2.5"/>
+      {/* Lens */}
+      <circle cx="24" cy="24" r="6" fill="none" stroke="white" strokeWidth="2.5"/>
+      {/* Dot */}
+      <circle cx="32.5" cy="15.5" r="2" fill="white"/>
+      {slug === 'ig-reel' && <path d="M21 20l9 4-9 4z" fill="white" opacity="0.9"/>}
     </svg>
   )
+
+  // LinkedIn
   if (slug === 'linkedin') return (
     <svg viewBox="0 0 48 48" style={s}>
-      <rect width="48" height="48" rx="10" fill="#0077B5"/>
-      <rect x="11" y="20" width="6" height="18" fill="white"/>
-      <circle cx="14" cy="14" r="4" fill="white"/>
-      <path d="M21 20h6v3c1-2 3.5-3.5 6-3.5 5 0 7 3 7 8.5V38h-6V28.5c0-2.5-1-4-3.5-4S27 26.5 27 29V38h-6V20z" fill="white"/>
+      <rect width="48" height="48" rx="10" fill="#0A66C2"/>
+      {/* "in" logo */}
+      <rect x="10" y="19" width="7" height="20" rx="1" fill="white"/>
+      <circle cx="13.5" cy="13.5" r="4" fill="white"/>
+      <path d="M21 19h6.5v3.2c1-1.8 3.2-3.7 6.5-3.7 5.5 0 8 3.5 8 9.5V39h-7v-9.8c0-2.8-1-4.7-3.5-4.7-2.8 0-4 2-4 5V39H21V19z" fill="white"/>
     </svg>
   )
+
+  // TikTok
   if (slug === 'tiktok') return (
     <svg viewBox="0 0 48 48" style={s}>
       <rect width="48" height="48" rx="10" fill="#010101"/>
-      <path d="M29 8c.5 3.5 2.5 6 6 7.5v5c-2-.3-3.8-1-5.5-2.2V29c0 5.5-4.5 10-10 10S9.5 34.5 9.5 29 14 19 19.5 19c.5 0 1 0 1.5.1v5.4c-.5-.1-1-.2-1.5-.2-2.5 0-4.5 2-4.5 4.7s2 4.7 4.5 4.7 4.5-2.1 4.5-4.7V8H29z" fill="white"/>
-      <path d="M32 8c.5 3.5 2.5 6 6 7.5v5c-2-.3-3.8-1-5.5-2.2" fill="none" stroke="#69C9D0" strokeWidth="2"/>
-      <path d="M35 7c.3 2 1.5 3.8 3.5 5" stroke="#FF0050" strokeWidth="1.5" fill="none"/>
+      {/* Cyan shadow layer */}
+      <path d="M27.5 7.5c.5 4 2.8 6.5 6.5 8v5.5c-2.2-.3-4.2-1.1-6-2.3V28c0 6-4.8 11-11 11S6 34 6 28s4.8-11 11-11c.6 0 1.1.05 1.6.1v6c-.5-.1-1-.15-1.6-.15-2.8 0-5 2.3-5 5s2.2 5 5 5 5-2.3 5-5V7.5h5.5z" fill="#69C9D0" opacity="0.9"/>
+      {/* Red shadow layer */}
+      <path d="M29.5 7.5c.5 4 2.8 6.5 6.5 8v5.5c-2.2-.3-4.2-1.1-6-2.3V28c0 6-4.8 11-11 11S8 34 8 28s4.8-11 11-11c.6 0 1.1.05 1.6.1v6c-.5-.1-1-.15-1.6-.15-2.8 0-5 2.3-5 5s2.2 5 5 5 5-2.3 5-5V7.5h5.5z" fill="#FF0050" opacity="0.9"/>
+      {/* White main layer */}
+      <path d="M28.5 7.5c.5 4 2.8 6.5 6.5 8v5.5c-2.2-.3-4.2-1.1-6-2.3V28c0 6-4.8 11-11 11S7 34 7 28s4.8-11 11-11c.6 0 1.1.05 1.6.1v6c-.5-.1-1-.15-1.6-.15-2.8 0-5 2.3-5 5s2.2 5 5 5 5-2.3 5-5V7.5h5.5z" fill="white"/>
     </svg>
   )
+
   return <svg viewBox="0 0 48 48" style={s}><rect width="48" height="48" rx="10" fill="#2a2a3a"/></svg>
 }
 
