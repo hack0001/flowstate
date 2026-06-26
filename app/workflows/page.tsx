@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, X, Sparkles } from 'lucide-react'
 import { getWorkflowTypes, createSession } from '@/lib/supabase'
 import type { WorkflowType } from '@/types'
-import { sounds } from '@/lib/sounds'
 
 const C = { bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a', cyan:'#00d4ff', amber:'#ffb800', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a' }
 const FALLBACK: WorkflowType[] = [
@@ -33,7 +32,7 @@ export default function WorkflowsPage() {
 
   async function create() {
     if (!selected || !title.trim()) return
-    sounds.playClick(); setCreating(true)
+    setCreating(true)
     try { const s = await createSession(selected.id, title.trim()); router.push('/workflow/'+s.id) }
     catch { setCreating(false) }
   }
@@ -51,7 +50,7 @@ export default function WorkflowsPage() {
 
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:'1rem', marginBottom:'2rem' }}>
         {workflows.map(wf => (
-          <button key={wf.id} onClick={() => { sounds.playClick(); setSelected(wf); setTitle('') }}
+          <button key={wf.id} onClick={() => { setSelected(wf); setTitle('') }}
             style={{ width:'100%', textAlign:'left', padding:'1.25rem', display:'flex', flexDirection:'column', gap:'0.75rem', background:selected?.id===wf.id ? wf.color+'11' : C.card, border:'1px solid '+(selected?.id===wf.id ? C.cyan : C.border), borderRadius:'1rem', cursor:'pointer', transition:'all 0.2s', fontFamily:'inherit' }}
             onMouseEnter={e=>{ if(selected?.id!==wf.id)(e.currentTarget as HTMLButtonElement).style.borderColor=C.cyan }}
             onMouseLeave={e=>{ if(selected?.id!==wf.id)(e.currentTarget as HTMLButtonElement).style.borderColor=C.border }}>
@@ -74,7 +73,7 @@ export default function WorkflowsPage() {
               <p style={{ fontWeight:700, color:C.text }}>{selected.name}</p>
               <p style={{ fontSize:'0.75rem', color:C.sec }}>Name this piece of content</p>
             </div>
-            <button onClick={() => { sounds.playClick(); setSelected(null) }} style={{ background:'none', border:'none', cursor:'pointer', color:C.muted }}><X size={18} /></button>
+            <button onClick={() => { setSelected(null) }} style={{ background:'none', border:'none', cursor:'pointer', color:C.muted }}><X size={18} /></button>
           </div>
           <input type="text" placeholder="e.g. How to build a habit in 30 days" value={title}
             onChange={e => setTitle(e.target.value)} onKeyDown={e => e.key==='Enter' && create()} autoFocus
