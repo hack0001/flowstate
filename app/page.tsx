@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Play, Plus, Zap, Star, ChevronRight } from 'lucide-react'
+import { Play, Plus, Zap, Star, ChevronRight, CalendarDays } from 'lucide-react'
 import { getPrioritySession, getSessions, setPrioritySession } from '@/lib/supabase'
 import type { WorkflowSession } from '@/types'
 
@@ -47,12 +47,18 @@ export default function Home() {
           <Zap size={20} color={C.cyan} />
           <span style={{ fontWeight:700, fontSize:'1.125rem', color:C.text }}>FlowState</span>
         </div>
-        <button onClick={() => { router.push('/workflows') }}
-          style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.2rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontSize:'0.875rem', fontWeight:600, fontFamily:'inherit' }}
-          onMouseEnter={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.cyan; el.style.color=C.cyan }}
-          onMouseLeave={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.border; el.style.color=C.sec }}>
-          <Plus size={15} />New Workflow
-        </button>
+        <div style={{ display:'flex', gap:'0.5rem' }}>
+          <button onClick={() => router.push('/calendar')}
+            style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.2rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontSize:'0.875rem', fontWeight:600, fontFamily:'inherit' }}
+            onMouseEnter={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.cyan; el.style.color=C.cyan }}
+            onMouseLeave={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.border; el.style.color=C.sec }}>
+            <CalendarDays size={15}/>Calendar
+          </button>
+          <button onClick={() => router.push('/workflows')}
+            style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.2rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', cursor:'pointer', fontSize:'0.875rem', fontWeight:700, fontFamily:'inherit' }}>
+            <Plus size={15}/>New Workflow
+          </button>
+        </div>
       </div>
 
       <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'0 2rem 4rem' }}>
