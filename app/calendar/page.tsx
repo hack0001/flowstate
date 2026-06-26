@@ -203,4 +203,207 @@ export default function CalendarPage() {
     setDayData(d => ({ ...d, events: d.events.map(e => e.id===id ? { ...e, ...v } : e) }))
   }
 
-  async function h
+  async function handleDeleteEvent(id: string) {
+    await fetch('/api/notion/events', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) })
+    setDayData(d => ({ ...d, events: d.events.filter(e => e.id!==id) }))
+  }
+
+  // ---- Task CRUD ----
+  async function handleAddTask(v: { title: string; dueDate: string }) {
+    const r = await fetch('/api/notion/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(v) })
+    const newTask = await r.json()
+    if (!newTask.error) setDayData(d => ({ ...d, tasks: [...d.tasks, newTask] }))
+    setAddingTask(false)
+  }
+
+  async function handleUpdateTask(id: string, v: { title?: string; status?: string }) {
+    await fetch('/api/notion/tasks', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id, ...v }) })
+    setDayData(d => ({ ...d, tasks: d.tasks.map(t => t.id===id ? { ...t, ...v } : t) }))
+  }
+
+  async function handleDeleteTask(id: string) {
+    await fetch('/api/notion/tasks', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) })
+    setDayData(d => ({ ...d, tasks: d.tasks.filter(t => t.id!==id) }))
+  }
+
+  // Calendar grid
+  const cells: { day: number; cur: boolean }[] = []
+  for (let i=firstDay-1; i>=0; i--) cells.push({ day: daysInPrev-i, cur: false })
+  for (let i=1; i<=daysInMonth; i++) cells.push({ day:i, cur:true })
+  while (cells.length < 42) cells.push({ day: cells.length-daysInMonth-firstDay+2, cur:false })
+
+  const totalItems = dayData.events.length + dayData.tasks.length
+
+  return (
+    <main style={{ minHeight:'100vh', background:C.bg, display:'flex', flexDirection:'column' }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'1rem 1.5rem', borderBottom:'1px solid '+C.border, flexWrap:'wrap', gap:'0.5rem' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+          <button onClick={() => router.push('/')} style={{ display:'flex', alignItems:'center', gap:'0.375rem', background:'none', border:'none', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.85rem' }}>
+            <ArrowLeft size={14}/>Home
+          </button>
+          <span style={{ color:C.border }}>|</span>
+          <span style={{ fontWeight:800, color:C.text }}>Calendar</span>
+          {refreshing && <div style={{ width:'12px', height:'12px', borderRadius:'50%', border:'2px solid '+C.cyan, borderTopColor:'transparent', animation:'spin 1s linear infinite' }}/>}
+          {lastSync && !refreshing && <span style={{ fontSize:'0.65rem', color:C.muted }}>synced {lastSync.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</span>}
+        </div>
+        <div style={{ display:'flex', gap:'0.5rem' }}>
+          <button onClick={() => loadDay(true)} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:600 }}>
+            <RefreshCw size={12}/>Refresh
+          </button>
+          <button onClick={() => router.push('/morning')} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'0.75rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
+            <Sun size={12}/>Morning
+          </button>
+          <a href={NOTION_LINKS.daily} target="_blank" rel="noopener noreferrer" style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, textDecoration:'none', fontSize:'0.8rem', fontWeight:600 }}>
+            <ExternalLink size={12}/>Notion
+          </a>
+        </div>
+      </div>
+
+      <div style={{ flex:1, display:'flex', overflow:'hidden', flexWrap:'wrap' }}>
+        {/* Left: Calendar grid */}
+        <div style={{ width:'340px', flexShrink:0, padding:'1.25rem', borderRight:'1px solid '+C.border, overflowY:'auto' }}>
+          {/* Month nav */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
+            <button onClick={() => setCur(new Date(year, month-1, 1))} style={{ padding:'0.4rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>{'<'}</button>
+            <div style={{ textAlign:'center' }}>
+              <p style={{ fontWeight:800, fontSize:'1rem', color:C.text }}>{MONTHS[month]} {year}</p>
+              <button onClick={() => { setCur(new Date(today.getFullYear(),today.getMonth(),1)); setSelectedDay(today.getDate()) }}
+                style={{ fontSize:'0.65rem', color:C.muted, background:'none', border:'none', cursor:'pointer', textDecoration:'underline', fontFamily:'inherit' }}>Today</button>
+            </div>
+            <button onClick={() => setCur(new Date(year, month+1, 1))} style={{ padding:'0.4rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>{'>'}</button>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:'2px', marginBottom:'4px' }}>
+            {DAYS.map(d => <div key={d} style={{ textAlign:'center', fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.08em', color:C.muted, padding:'0.2rem 0' }}>{d}</div>)}
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:'2px' }}>
+            {cells.map((cell,i) => {
+              const todayCell = cell.cur && isToday(cell.day)
+              const sel = cell.cur && selectedDay===cell.day
+              const dots = cell.cur ? contentDots(cell.day) : []
+              return (
+                <button key={i} onClick={() => cell.cur && setSelectedDay(cell.day)}
+                  style={{ aspectRatio:'1', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-start', paddingTop:'0.3rem', borderRadius:'0.5rem', border:'1px solid '+(sel?C.cyan:todayCell?'rgba(0,212,255,0.25)':'transparent'), background:sel?'rgba(0,212,255,0.1)':todayCell?'rgba(0,212,255,0.04)':'transparent', cursor:cell.cur?'pointer':'default', fontFamily:'inherit' }}>
+                  <span style={{ fontSize:'0.75rem', fontWeight:sel||todayCell?700:400, color:!cell.cur?C.muted:sel||todayCell?C.cyan:C.text }}>{cell.day}</span>
+                  {dots.length>0 && <div style={{ width:'4px', height:'4px', borderRadius:'50%', background:C.purple, marginTop:'1px' }}/>}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Content sidebar */}
+          {content.length>0 && (
+            <div style={{ marginTop:'1.25rem' }}>
+              <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.625rem' }}>Content This Month</p>
+              {content.sort((a,b)=>(a.date??'').localeCompare(b.date??'')).map(c => (
+                <a key={c.id} href={c.url} target="_blank" rel="noopener noreferrer" style={{ display:'block', textDecoration:'none', marginBottom:'0.375rem' }}>
+                  <div style={{ padding:'0.5rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:'0.375rem', marginBottom:'0.1rem' }}>
+                      <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:c.status==='Live'?C.green:c.status==='Scheduled'?C.cyan:c.status==='In Progress'?C.amber:C.muted }}/>
+                      <span style={{ fontSize:'0.65rem', color:C.muted }}>{c.date ? fmt(c.date) : 'TBD'}</span>
+                    </div>
+                    <p style={{ fontSize:'0.75rem', fontWeight:600, color:C.text, lineHeight:1.3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.title}</p>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Right: Day panel */}
+        <div style={{ flex:1, minWidth:'300px', display:'flex', flexDirection:'column' }}>
+          {/* Day header */}
+          <div style={{ padding:'1rem 1.5rem', borderBottom:'1px solid '+C.border, display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.5rem', flexWrap:'wrap' }}>
+            <div>
+              <p style={{ fontWeight:700, fontSize:'1rem', color:C.text }}>
+                {new Date(selDate+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}
+              </p>
+              <p style={{ fontSize:'0.75rem', color:C.sec }}>
+                {totalItems} item{totalItems!==1?'s':''}
+                {dayData.events.length>0 ? ` (${dayData.events.length} event${dayData.events.length!==1?'s':''})` : ''}
+                {dayData.tasks.length>0 ? ` (${dayData.tasks.length} task${dayData.tasks.length!==1?'s':''})` : ''}
+              </p>
+            </div>
+            <div style={{ display:'flex', gap:'0.375rem' }}>
+              <button onClick={() => { setAddingEvent(true); setAddingTask(false) }}
+                style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.45rem 0.875rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
+                <Plus size={12}/>Event
+              </button>
+              <button onClick={() => { setAddingTask(true); setAddingEvent(false) }}
+                style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.45rem 0.875rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'0.75rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
+                <Plus size={12}/>Task
+              </button>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div style={{ flex:1, overflowY:'auto', padding:'1rem 1.5rem' }}>
+            {loading && (
+              <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', color:C.sec, padding:'2rem 0' }}>
+                <div style={{ width:'14px', height:'14px', borderRadius:'50%', border:'2px solid '+C.cyan, borderTopColor:'transparent', animation:'spin 1s linear infinite' }}/>
+                Loading from Notion...
+              </div>
+            )}
+
+            {!loading && noToken && (
+              <div style={{ padding:'1.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', maxWidth:'380px' }}>
+                <p style={{ fontWeight:700, color:C.amber, marginBottom:'0.5rem' }}>Notion not connected</p>
+                <p style={{ fontSize:'0.8rem', color:C.sec, lineHeight:1.6, marginBottom:'0.75rem' }}>
+                  Add <code style={{ background:C.surface, padding:'0.1rem 0.3rem', borderRadius:'0.25rem' }}>NOTION_TOKEN</code> to Vercel env vars, then share your Tasks and Events databases with your integration.
+                </p>
+                <a href="https://notion.so/my-integrations" target="_blank" rel="noopener noreferrer"
+                  style={{ display:'inline-flex', alignItems:'center', gap:'0.25rem', fontSize:'0.8rem', color:C.cyan, textDecoration:'none' }}>
+                  Create integration<ExternalLink size={10}/>
+                </a>
+              </div>
+            )}
+
+            {!loading && !noToken && (
+              <>
+                {/* Add forms */}
+                {addingEvent && (
+                  <EventForm dateStr={selDate} onSave={handleAddEvent} onCancel={() => setAddingEvent(false)}/>
+                )}
+                {addingTask && (
+                  <TaskForm dateStr={selDate} onSave={handleAddTask} onCancel={() => setAddingTask(false)}/>
+                )}
+
+                {/* Events section */}
+                {(dayData.events.length>0 || addingEvent) && (
+                  <div style={{ marginBottom:'1.25rem' }}>
+                    <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.cyan, marginBottom:'0.5rem' }}>Events</p>
+                    {dayData.events.map(ev => (
+                      <EventRow key={ev.id} ev={ev} onUpdate={handleUpdateEvent} onDelete={handleDeleteEvent}/>
+                    ))}
+                  </div>
+                )}
+
+                {/* Tasks section */}
+                {(dayData.tasks.length>0 || addingTask) && (
+                  <div style={{ marginBottom:'1.25rem' }}>
+                    <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.amber, marginBottom:'0.5rem' }}>Tasks</p>
+                    {dayData.tasks.map(task => (
+                      <TaskRow key={task.id} task={task} onUpdate={handleUpdateTask} onDelete={handleDeleteTask}/>
+                    ))}
+                  </div>
+                )}
+
+                {/* Empty state */}
+                {totalItems===0 && !addingEvent && !addingTask && (
+                  <div style={{ textAlign:'center', padding:'3rem 0', color:C.muted }}>
+                    <p style={{ marginBottom:'0.75rem' }}>Nothing scheduled for this day.</p>
+                    <div style={{ display:'flex', gap:'0.5rem', justifyContent:'center' }}>
+                      <button onClick={() => setAddingEvent(true)} style={{ padding:'0.4rem 0.875rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:'0.625rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>+ Add event</button>
+                      <button onClick={() => setAddingTask(true)} style={{ padding:'0.4rem 0.875rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'0.625rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>+ Add task</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </main>
+  )
+}
