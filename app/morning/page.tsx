@@ -202,7 +202,7 @@ export default function MorningPage() {
                   <div style={{ textAlign:'left', flex:1 }}>
                     <p style={{ fontWeight:700, fontSize:'1.05rem', color:C.text }}>{t.title}</p>
                     <p style={{ fontSize:'0.75rem', color:C.sec, marginTop:'0.15rem' }}>
-                      {t.priority} priority {t.timeCommitment ? '| '+t.timeCommitment : ''}
+                      {t.dueDate ?? ''}
                     </p>
                   </div>
                 </div>
