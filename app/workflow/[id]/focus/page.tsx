@@ -295,7 +295,7 @@ export default function FocusPage() {
   )
 }
 
-function TimeOnTask({ startRef, isDone, task }: { startRef: React.RefObject<number>; isDone: boolean; task: Task | null }) {
+function TimeOnTask({ startRef, isDone, task }: { startRef: React.MutableRefObject<number>; isDone: boolean; task: Task | null }) {
   const [elapsed, setElapsed] = useState(0)
   useEffect(() => {
     if (isDone) return
