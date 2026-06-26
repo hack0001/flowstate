@@ -1,11 +1,11 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Play, Plus, Zap, Star, ChevronRight, CalendarDays } from 'lucide-react'
+import { Play, Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise } from 'lucide-react'
 import { getPrioritySession, getSessions, setPrioritySession } from '@/lib/supabase'
 import type { WorkflowSession } from '@/types'
 
-const C = { bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a', cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a' }
+const C = { bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a', cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a' }
 const QUOTES = [
   { q:'The secret of getting ahead is getting started.', a:'Mark Twain' },
   { q:'Focus on being productive instead of busy.', a:'Tim Ferriss' },
@@ -48,6 +48,12 @@ export default function Home() {
           <span style={{ fontWeight:700, fontSize:'1.125rem', color:C.text }}>FlowState</span>
         </div>
         <div style={{ display:'flex', gap:'0.5rem' }}>
+          <button onClick={() => router.push('/morning')}
+            style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.2rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontSize:'0.875rem', fontWeight:600, fontFamily:'inherit' }}
+            onMouseEnter={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.amber; el.style.color=C.amber }}
+            onMouseLeave={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.border; el.style.color=C.sec }}>
+            <Sunrise size={15}/>Morning
+          </button>
           <button onClick={() => router.push('/calendar')}
             style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.2rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontSize:'0.875rem', fontWeight:600, fontFamily:'inherit' }}
             onMouseEnter={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.cyan; el.style.color=C.cyan }}
