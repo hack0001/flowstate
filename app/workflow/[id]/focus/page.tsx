@@ -69,6 +69,10 @@ export default function FocusPage() {
   const [ambient, setAmbient] = useState<AmbientMode>('off')
   const [showPomodoro, setShowPomodoro] = useState(false)
   const [cardKey, setCardKey] = useState(0)
+  const [sprintActive, setSprintActive] = useState(false)
+  const [sprintSecs, setSprintSecs] = useState(300)
+  const [sprintDone, setSprintDone] = useState(false)
+  const sprintRef = useRef<NodeJS.Timeout | null>(null)
   const taskStartRef = useRef<number>(Date.now())
   const { celebrate } = useCelebration()
 
@@ -106,6 +110,39 @@ export default function FocusPage() {
   }, [taskIdx])
 
   useEffect(() => () => { sounds.stopAmbient() }, [])
+
+  // Sprint timer
+  useEffect(() => {
+    if (!sprintActive) return
+    sprintRef.current = setInterval(() => {
+      setSprintSecs(s => {
+        if (s <= 1) {
+          clearInterval(sprintRef.current!)
+          setSprintActive(false)
+          setSprintDone(true)
+          sounds.playTimerEnd()
+          return 300
+        }
+        return s - 1
+      })
+    }, 1000)
+    return () => { if (sprintRef.current) clearInterval(sprintRef.current) }
+  }, [sprintActive])
+
+  function startSprint() {
+    setSprintSecs(300)
+    setSprintDone(false)
+    setSprintActive(true)
+  }
+  function stopSprint() {
+    if (sprintRef.current) clearInterval(sprintRef.current)
+    setSprintActive(false)
+    setSprintSecs(300)
+    setSprintDone(false)
+  }
+  const sprintMins = Math.floor(sprintSecs / 60)
+  const sprintSecsDisp = String(sprintSecs % 60).padStart(2, '0')
+  const sprintProg = 1 - sprintSecs / 300
 
   function toggleAmbient(mode: AmbientMode) {
     if (ambient === mode) { sounds.stopAmbient(); setAmbient('off') }
@@ -334,6 +371,48 @@ export default function FocusPage() {
               </div>
             </div>
 
+            {/* -- 5-min sprint -- */}
+            {sprintDone && !isDone && (
+              <div style={{ padding: '0.875rem 1.25rem', background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.3)', borderRadius: '0.875rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', animation: 'slideUp 0.3s ease' }}>
+                <div>
+                  <p style={{ fontSize: '0.85rem', fontWeight: 800, color: C.green }}>5 minutes done &mdash; you started!</p>
+                  <p style={{ fontSize: '0.7rem', color: C.sec, marginTop: '0.2rem' }}>
+                    &ldquo;The first 5 minutes is the hardest. The rest is momentum.&rdquo;
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button onClick={startSprint}
+                    style={{ padding: '0.4rem 0.75rem', background: 'rgba(0,212,255,0.12)', border: '1px solid rgba(0,212,255,0.3)', borderRadius: '0.5rem', color: C.cyan, cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.75rem', fontWeight: 700 }}>
+                    +5 more
+                  </button>
+                  <button onClick={stopSprint}
+                    style={{ padding: '0.4rem 0.75rem', background: 'none', border: '1px solid ' + C.border, borderRadius: '0.5rem', color: C.muted, cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.75rem' }}>
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+            {sprintActive && (
+              <div style={{ padding: '0.75rem 1.25rem', background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '0.875rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.purple }}>5-min sprint</span>
+                    <span style={{ fontSize: '1.25rem', fontWeight: 900, fontFamily: 'monospace', color: C.text }}>{sprintMins}:{sprintSecsDisp}</span>
+                  </div>
+                  <button onClick={stopSprint}
+                    style={{ fontSize: '0.65rem', color: C.muted, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    cancel
+                  </button>
+                </div>
+                <div style={{ height: '3px', background: C.border, borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: (sprintProg * 100) + '%', background: 'linear-gradient(90deg,' + C.purple + ',' + C.cyan + ')', borderRadius: '2px', transition: 'width 1s linear' }} />
+                </div>
+                <p style={{ fontSize: '0.65rem', color: C.muted, marginTop: '0.375rem', fontStyle: 'italic' }}>
+                  Just focus for 5 minutes. You can stop after that.
+                </p>
+              </div>
+            )}
+
             {/* -- Action buttons -- */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <button onClick={() => setTaskIdx(i => Math.max(0, i - 1))} disabled={taskIdx === 0}
@@ -346,11 +425,22 @@ export default function FocusPage() {
                   style={{ flex: 1, padding: '1.0625rem', border: 'none', borderRadius: '0.875rem', fontWeight: 800, fontSize: '1.0625rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'linear-gradient(135deg,' + C.cyan + ',#0099cc)', color: '#000', animation: 'pulseBtn 2s ease-in-out infinite', letterSpacing: '-0.01em' }}>
                   Next Task &rarr;
                 </button>
-              ) : (
+              ) : sprintActive ? (
                 <button onClick={markDone}
-                  style={{ flex: 1, padding: '1.0625rem', border: 'none', borderRadius: '0.875rem', fontWeight: 800, fontSize: '1.0625rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'linear-gradient(135deg,' + C.green + ',#00cc6a)', color: '#000', boxShadow: '0 4px 24px rgba(0,255,136,0.28)', letterSpacing: '-0.01em' }}>
+                  style={{ flex: 1, padding: '1.0625rem', border: 'none', borderRadius: '0.875rem', fontWeight: 800, fontSize: '1.0625rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'linear-gradient(135deg,' + C.green + ',#00cc6a)', color: '#000', letterSpacing: '-0.01em' }}>
                   <CheckCircle2 size={18} />Mark Complete
                 </button>
+              ) : (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <button onClick={markDone}
+                    style={{ width: '100%', padding: '1.0625rem', border: 'none', borderRadius: '0.875rem', fontWeight: 800, fontSize: '1.0625rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'linear-gradient(135deg,' + C.green + ',#00cc6a)', color: '#000', boxShadow: '0 4px 24px rgba(0,255,136,0.28)', letterSpacing: '-0.01em' }}>
+                    <CheckCircle2 size={18} />Mark Complete
+                  </button>
+                  <button onClick={startSprint}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid rgba(139,92,246,0.4)', borderRadius: '0.75rem', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', background: 'rgba(139,92,246,0.08)', color: C.purple, letterSpacing: '0.02em' }}>
+                    Just 5 minutes &mdash; start now
+                  </button>
+                </div>
               )}
 
               <button onClick={() => setTaskIdx(i => Math.min(allTasks.length - 1, i + 1))} disabled={taskIdx === allTasks.length - 1}
