@@ -7,9 +7,9 @@ const NOTION_API = 'https://api.notion.com/v1'
 export const NOTION_DB = {
   // "master" database on Dashboard — single DB for tasks + content
   // task/vault="task" = tasks, task/vault="vault" + YT Pipeline Stage = content
-  tasks:   '35bed686-b47d-80ac-bbd6-000b3217e9d7',
-  events:  '35bed686-b47d-80ac-bbd6-000b3217e9d7', // same master DB (no separate events DB)
-  content: '35bed686-b47d-80ac-bbd6-000b3217e9d7', // same master DB
+  tasks:   '35bed686-b47d-8035-84d6-eddd6fcb1bb1',
+  events:  '35bed686-b47d-8035-84d6-eddd6fcb1bb1', // same master DB (no separate events DB)
+  content: '35bed686-b47d-8035-84d6-eddd6fcb1bb1', // same master DB
 }
 
 export const NOTION_LINKS = {
