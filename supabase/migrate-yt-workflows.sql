@@ -31,18 +31,22 @@ DELETE FROM stages WHERE workflow_type_id IN (
 
 -- =============================================================
 -- YOUTUBE LONGFORM  (workflow_type_id: ...0002)
--- 8 Stages | ~8–10 hours total
+-- 10 Stages | ~10–12 hours total
+-- Format: voiceover + animation/meme (faceless fast-cut)
+-- Sources: Shane Hummus + Dave Jeltman + Finance Brand SOPs
 -- =============================================================
 
 INSERT INTO stages (id, workflow_type_id, name, description, order_index) VALUES
   ('33330002-0001-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'System Setup', 'One-time: build your voice and strategy files so Claude always sounds like you', 1),
-  ('33330002-0002-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Idea', 'Find the proven opportunity, pick your video type, validate the angle', 2),
-  ('33330002-0003-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Packaging', 'Holy Trifecta: title, thumbnail, hook — built before the script', 3),
-  ('33330002-0004-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Script Plan', 'Architecture first — foundation, brain dump, creativity, locked structure', 4),
-  ('33330002-0005-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Script', 'Write with full retention mechanics — Setup, Tension, Payoff every block', 5),
-  ('33330002-0006-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Record', 'Energy beats perfection — best take wins', 6),
-  ('33330002-0007-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Edit', 'Cut, b-roll, captions, repurpose to Shorts', 7),
-  ('33330002-0008-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Launch', 'Full 10-step upload strategy — first 2 hours decide distribution', 8);
+  ('33330002-0002-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Idea', 'Find the proven opportunity, validate the angle, create project folder', 2),
+  ('33330002-0002-0001-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Research', 'Build the facts, stories, stats, and meme potential before writing a word', 3),
+  ('33330002-0003-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Packaging', 'Holy Trifecta: title, thumbnail, hook — built before the script', 4),
+  ('33330002-0004-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Script Plan', 'Architecture first — foundation, brain dump, creativity, locked structure', 5),
+  ('33330002-0005-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Script', 'Write with retention mechanics, meme markers, b-roll markers, and chart markers', 6),
+  ('33330002-0005-0001-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Asset Gathering', 'Source every meme, b-roll clip, and chart before you record — missing assets = edit hell', 7),
+  ('33330002-0006-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Voiceover', 'VO-only format — energy, clarity, section by section', 8),
+  ('33330002-0007-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Edit', 'Fast-cut faceless format — VO first, everything hangs off it', 9),
+  ('33330002-0008-0000-0000-000000000001', '11111111-0000-0000-0000-000000000002', 'Launch', 'Full upload strategy — first 2 hours decide distribution', 10);
 
 
 -- =============================================================
@@ -88,6 +92,7 @@ INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, promp
 -- =============================================================
 -- STAGE 2: IDEA
 -- Shane Hummus: outlier filter, comment mining, video types
+-- Finance Brand SOP 01: news sources, angle formula, folder
 -- =============================================================
 
 INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, prompt_text, resource_url, estimated_minutes, order_index) VALUES
@@ -120,11 +125,77 @@ INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, promp
  15, 3),
 
 ('33330002-0002-0000-0000-000000000001',
- 'Lock your angle',
- 'Specific beats broad. The new algo sorts into sub-niches, not broad topics.',
- E'Write your video idea as a locked hypothesis:\n\n"I help [AUDIENCE] understand/do [SPECIFIC THING] by showing them [YOUR UNIQUE ANGLE]"\n\nYour angle must genuinely differ from the outlier you found — not higher quality, a different perspective, structure, or take.\n\nAlso confirm:\n  Which video type: Listicle / How to / Case study / Testimonial\n  Where it sits in your funnel\n  The one emotion this video is designed to create\n\nOnce written, move to Packaging. Do not start scripting without a locked angle.',
+ 'Lock your angle and one-line pitch',
+ 'Specific beats broad. If you cannot say it in one line, it is probably two videos.',
+ E'Write your locked angle using the finance brand formula:\n\nANGLE FORMULA: big topic + unexpected frame\n  Examples:\n    "The 2008 crash explained through a pub argument"\n    "Why your savings account is legally stealing from you"\n    "The accidental invention that created modern banking"\n\nThen write the one-line pitch:\n  "This video explains [X] by showing [Y]."\n  If you cannot do it in one line — it is two videos. Split it.\n\nAlso confirm:\n  Which video type: Listicle / How to / Case study / Historical explainer\n  Where it sits in your funnel\n  The emotion this video creates: outrage / curiosity / vindication / shock\n  Is there a Short hiding in this topic? (one wild stat, one absurd fact, one historical moment)\n\nOnce locked: create the project folder.\n  Naming: /videos/YYYY-MM_topic-name/\n  Subfolders: /script/ /assets/memes/ /assets/broll/ /assets/charts/ /vo/ /edit/\n\nDo not start research without a locked one-line pitch.',
  false, null, null,
- 10, 4);
+ 10, 4),
+
+-- Finance brand news and current events sources
+('33330002-0002-0000-0000-000000000001',
+ 'Mine news and Reddit for timely angles',
+ 'Economics content with a news hook gets pushed harder. Check these sources before locking the idea.',
+ E'SOURCES TO CHECK FOR IDEA FUEL:\n\nNEWS:\n  Financial Times — headlines and FT Alphaville\n  The Economist — look for counterintuitive angles, not just the headline\n  Bloomberg / Reuters — for current market events\n  BBC Business — broader audience angles\n\nREDDIT (gold for audience language):\n  r/economics — academic debates your audience is having\n  r/wallstreetbets — retail investor sentiment, absurdity, emotion\n  r/personalfinance — questions your audience is actually asking\n  r/investing — what confuses people right now\n\nLOOK FOR:\n  A topic that is trending but covered badly (too dry, too shallow, no humour)\n  A counterintuitive angle nobody has taken yet\n  Reddit comments expressing confusion or outrage — these are your hook\n  A question being asked repeatedly that has a surprising answer\n\nTHE TEST: Can you find an angle that makes a smart person say "wait, I never thought about it that way"? If yes — that is your video.',
+ true,
+ E'I am looking for a fresh angle on: [TOPIC OR NEWS EVENT]\n\nHere are relevant Reddit comments/threads I found:\n[PASTE COMMENTS OR THREAD TITLES]\n\nHere are the existing YouTube videos covering this:\n[PASTE 2-3 VIDEO TITLES + VIEW COUNTS]\n\n1. What angle is missing from all existing coverage?\n2. What emotion is the Reddit audience expressing? (outrage / confusion / curiosity / vindication)\n3. Write 3 angle options using the formula: [big topic] + [unexpected frame]\n4. For each angle: write the one-line pitch "This video explains X by showing Y"\n5. Which angle has the most meme and story potential and why?\n6. Is there a Short hiding in any of these angles? (one wild stat or absurd fact that stands alone)',
+ null,
+ 15, 5);
+
+
+-- =============================================================
+-- STAGE 2b: RESEARCH (new stage — Finance Brand SOP 02)
+-- 60–90 min deep research before a word is written
+-- =============================================================
+
+INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, prompt_text, resource_url, estimated_minutes, order_index) VALUES
+
+('33330002-0002-0001-0000-000000000001',
+ 'Deep research session — 60 to 90 minutes',
+ 'Wikipedia footnotes, academic papers, news archives. Volume first, curation second.',
+ E'Set 60–90 minutes. No writing yet — just reading and collecting.\n\nSOURCES (in order of depth):\n  Wikipedia — read the article, then follow EVERY footnote that looks interesting\n  Google Scholar — search "[topic] economics history" for academic papers with usable stats\n  News archives — search Financial Times, Guardian, NYT for the original reporting\n  Archive.org — for historical documents, original speeches, old news footage\n  Academic papers — scan abstract and conclusion; pull the interesting numbers\n\nAS YOU READ, COLLECT:\n  Every wild statistic or counterintuitive fact — paste with source URL\n  Every date, name, institution that could be a character in your story\n  Every moment where reality was stranger than fiction\n  Any quote that is so good it sounds made up\n\nFILE EVERYTHING in a research doc in /script/ — one paste per source, URL attached.\n\nDo NOT write the script yet. Do not organise yet. Just fill the bucket.',
+ false, null, null,
+ 90, 1),
+
+('33330002-0002-0001-0000-000000000001',
+ 'Find 2–3 wild stats or counterintuitive facts',
+ 'These become your hook and your most shareable moments. Specificity is everything.',
+ E'From your research doc, pull the 2–3 facts that made you stop and re-read.\n\nTHE TEST FOR EACH STAT:\n  Did it surprise you, even knowing the topic well?\n  Can you say it in one sentence?\n  Is the number specific enough to be credible? ($700 trillion beats "a lot")\n  Would someone screenshot it and share it?\n\nFOR EACH STAT, NOTE:\n  The exact number (do not round — 23.4% beats "about a quarter")\n  The source URL\n  The year/context (so it is accurate)\n  How it connects to your one-line pitch\n\nThese 2–3 facts ARE your video. Everything else is context that supports them.\n\nThe strongest one goes in the hook. The second strongest opens act 2. The third is your payoff.',
+ true,
+ E'Here are the raw facts and stats I found in my research:\n[PASTE YOUR COLLECTED FACTS]\n\nMy video one-line pitch: [PITCH]\n\n1. Rank these by: surprise factor + shareability + connection to my angle\n2. For the top 3: write the exact stat as a single sentence (specific number, source)\n3. Suggest where each lands in the video structure: hook / act 2 opener / payoff\n4. Flag any stat that sounds too good to be true and needs extra verification\n5. Identify any stat that would work as a standalone Short hook',
+ null,
+ 20, 2),
+
+('33330002-0002-0001-0000-000000000001',
+ 'Find the historical parallel',
+ 'Economics repeats itself. The parallel is what turns a news story into a timeless video.',
+ E'Every great economics topic has happened before in a different costume.\n\nSEARCH FOR:\n  A previous financial crisis / bubble / policy failure that mirrors your topic\n  A historical figure who faced the same situation\n  A moment when the "experts" were wrong in exactly the same way\n\nCLASSIC PARALLELS THAT ALWAYS WORK:\n  Tulip Mania (1637) — any speculative bubble\n  Bretton Woods collapse (1971) — any currency/monetary policy story\n  South Sea Bubble (1720) — any fraud / hype cycle\n  Weimar hyperinflation (1923) — any inflation story\n  Great Depression bank runs — any banking crisis\n  Mississippi Company / John Law — any money printing story\n\nWHY IT MATTERS:\n  The parallel gives your video longevity — it is not just about this week\'s news\n  It gives you a story structure (then vs now)\n  It gives you b-roll opportunities (historical footage, archive images)\n  It makes smart viewers feel rewarded ("I see what you did there")\n\nWrite 1–2 sentences connecting the parallel to your current topic. This becomes a section of the script.',
+ true,
+ E'My video topic: [TOPIC]\nMy one-line pitch: [PITCH]\n\n1. What is the closest historical parallel? (specific event, year, name)\n2. What is the similarity that makes this parallel work?\n3. What is the key difference that makes it not a perfect parallel — and therefore interesting?\n4. Write a 2-sentence "history rhymes" transition I can use in the script\n5. What b-roll or archive footage could visually represent this parallel?',
+ null,
+ 15, 3),
+
+('33330002-0002-0001-0000-000000000001',
+ 'Identify the villain, hero, and turning point',
+ 'Good economics content always has a character or institution to root for or against.',
+ E'Great finance content tells a story. Stories need characters.\n\nIDENTIFY:\n\nTHE VILLAIN (could be a person, institution, policy, or systemic force):\n  Who or what caused the problem?\n  Who had the information and chose not to act?\n  Who profited while everyone else lost?\n\nTHE HERO (could be a whistleblower, maverick economist, ordinary person):\n  Who saw it coming?\n  Who tried to warn people?\n  Who eventually fixed it (if it got fixed)?\n\nTHE TURNING POINT:\n  The exact moment things changed\n  A specific date, meeting, decision, or event\n  This is your act 2 climax\n\nNOTE: Villain and hero do not have to be people — they can be:\n  A policy (villain: the Gold Standard, hero: Keynesian stimulus)\n  An institution (villain: the Fed, hero: a small regional bank)\n  A concept (villain: moral hazard, hero: deposit insurance)\n\nWrite one line for each. These become your narrative spine.',
+ false, null, null,
+ 15, 4),
+
+('33330002-0002-0001-0000-000000000001',
+ 'Scan for meme potential',
+ 'What existing meme templates does your audience already know? That recognition = instant connection.',
+ E'SOURCES TO CHECK:\n  Know Your Meme (knowyourmeme.com) — search your topic keywords\n  Twitter/X — search topic + recent viral meme threads\n  Reddit (r/economics, r/wallstreetbets) — look at the top posts for the meme language\n  imgflip — trending templates\n\nLOOK FOR:\n  Existing memes about your specific topic already circulating\n  Meme templates that fit your angle (Drake, Distracted Boyfriend, This is Fine, etc.)\n  In-jokes your audience already has (WSB terminology, economics Twitter memes)\n\nCOLLECT:\n  3–5 meme ideas with the template name and what text goes where\n  Note where in the script each meme could land (at which joke or punchline)\n  Save any existing memes you want to use to /assets/memes/\n\nWHY NOW (not in editing):\n  Meme potential shapes the script — you write to set up the meme, not the other way around\n  Finding a perfect meme now means you write the line that lands with it in mind',
+ false, null,
+ 'https://knowyourmeme.com',
+ 20, 5),
+
+('33330002-0002-0001-0000-000000000001',
+ 'Write the one key idea and source all facts',
+ 'The viewer leaves with one thing. Build back from that. And verify every stat before it goes in the script.',
+ E'TWO TASKS:\n\n1. WRITE THE ONE KEY IDEA:\n   "After watching this video, the viewer will understand that [ONE SENTENCE]."\n   Not a topic — a conclusion. Not "inflation" — "inflation is a tax on the poor that governments impose quietly because they cannot raise income tax politically."\n   Everything in the script either supports this idea or gets cut.\n\n2. SOURCE EVERY FACT:\n   Go through your research doc. For every stat, claim, or quote:\n     Paste the source URL next to it\n     Mark it as VERIFIED or CHECK\n     For any stat that surprised you: find a second source\n   NEVER publish a number you found in one place without checking it\n   Mark any [FILL IN: description] in the script for facts still needed\n\nFACT VERIFICATION SOURCES:\n  ONS (Office for National Statistics) — UK data\n  St. Louis Fed (FRED) — US economic data, free, excellent charts\n  World Bank Open Data — global comparisons\n  BIS (Bank for International Settlements) — financial stability data\n  IMF Data — global economic indicators',
+ false, null,
+ 'https://fred.stlouisfed.org',
+ 15, 6);
 
 
 -- =============================================================
@@ -137,16 +208,16 @@ INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, promp
 ('33330002-0003-0000-0000-000000000001',
  'Build your title — 3 options (or use cge-holy-trifecta)',
  'Use the cge-holy-trifecta skill for the full guided session, or use the prompt below to generate title options manually.',
- E'SKILL OPTION: Use cge-holy-trifecta in a Claude Cowork session — it builds the full Title + Thumbnail + Hook as a guided interactive session and checks congruency at the end.\n\nMANUAL OPTION (title only):\n\nTitle rules (Shane Hummus):\n  Keyword as close to the START as possible\n  Under 60 characters\n  ONE clear angle: Best / Worst / Avoid / How / Why / Warning — commit to one\n  Dollar amounts go in the thumbnail, not the title\n  Capitalise The First Letter Of Every Word (unless sad/mysterious vibe)\n  No year stamps\n  Read your title out loud — should sound natural in one breath\n\nWrite 3 title options. For each: one sentence on why it works. Pick the one that makes you stop scrolling.',
+ E'SKILL OPTION: Use cge-holy-trifecta in a Claude Cowork session — it builds the full Title + Thumbnail + Hook as a guided interactive session and checks congruency at the end.\n\nMANUAL OPTION (title only):\n\nFINANCE BRAND TITLE FORMULA:\n  [Wild Stat or Claim] + [The Surprising Reason]\n  Examples:\n    "The $700 Trillion Mistake Nobody''s Talking About"\n    "Why Saving Money Is Making You Poorer"\n    "The Accidental Decision That Broke the Global Economy"\n    "How One Man''s Lunch Order Started the 2008 Crash"\n\nGENERAL RULES (Shane Hummus):\n  Keyword as close to the START as possible\n  Under 60 characters\n  ONE clear angle — commit to it\n  No year stamps\n  Read your title out loud — should sound natural in one breath\n  Dollar/number in the title IS fine for finance content (unlike general content)\n\nWrite 3 title options. For each: one sentence on why it works. Pick the one that makes you stop scrolling.',
  true,
  E'Video topic: [TOPIC]\nTarget audience: [SPECIFIC PERSON]\nMy angle vs competitors: [YOUR ANGLE]\nVideo type: [LISTICLE / HOW TO / CASE STUDY / TESTIMONIAL]\nOutlier title I am modelling: [PASTE IT]\n\nWrite 3 title options:\n  Keyword first, under 60 characters\n  One clear angle each (Best / Worst / Avoid / How / Why / Warning)\n  For each: one sentence on why it works\n\nThen recommend the strongest and explain why.\n\nRules: no dollar amounts, no year stamps, capitalise first letter of every word, read-aloud natural.',
  null,
  15, 1),
 
 ('33330002-0003-0000-0000-000000000001',
- 'Design your thumbnail concept',
- 'Standalone-clear: cover the title, can a stranger still understand the video?',
- E'Thumbnail rules (Shane Hummus):\n  Standalone-clear — shrink to phone size, cover the title text, is the video topic still clear?\n  Text: 3–4 words MAX, ALL CAPS\n  Text must include the main keyword from the title\n  No years, no listicle numbers\n  3 colours max, big readable text with outline\n  Specific numbers beat round ones ($12,578 beats $12,000)\n  Text angle MUST match title angle — if title says WARNING, thumbnail cannot say BEST\n\nOutput format:\n  FACE: expression + position in frame (vary expressions — not always shocked)\n  TEXT: 3–4 word ALL CAPS phrase + 2 alternates\n  FOCAL: one prop, screenshot, graph, or background element that anchors the visual',
+ 'Design your thumbnail concept — faceless format',
+ 'No face means the graphic IS the brand. Bold, specific, readable at 120px.',
+ E'FACELESS THUMBNAIL RULES (finance brand):\n  No face — use charts, money visuals, bold typography, or dramatic imagery\n  The thumbnail is your brand identity. Consistency in style matters.\n  Bold graphic, minimal text (max 4–5 words), high contrast\n  Check at 120px wide (phone YouTube grid) — if you cannot read it, redesign it\n  A/B test: can someone identify the topic in 2 seconds without reading the title?\n\nFINANCE BRAND VISUAL OPTIONS:\n  A chart or graph with a dramatic spike or crash (animated in the edit, static thumbnail)\n  A dollar/pound amount in large text with a visual that creates contrast\n  A dramatic historical image (public domain from Archive.org or Wikimedia)\n  A bold typographic layout — the stat IS the thumbnail\n  A "before vs after" comparison layout\n\nTEXT:\n  3–5 words MAX, ALL CAPS or Title Case, high contrast\n  Specific numbers: $700 Trillion beats "A Lot"\n  No years, no listicle numbers\n  Text angle MUST match title angle\n\nOutput format:\n  VISUAL: the main graphic element (chart type / image / typography layout)\n  TEXT: 3–5 word phrase + 2 alternates\n  COLOUR SCHEME: 3 colours max (dark bg + accent + white text works for finance)',
  true,
  E'Video title: [CHOSEN TITLE]\nTopic: [TOPIC]\nEmotional tone: [warning / exciting / informative / contrarian]\n\nDesign 3 thumbnail concepts:\n\nFor each:\n  FACE: expression and position (rotate — not everything is shocked face)\n  TEXT: 3–4 word ALL CAPS phrase + 2 alternates\n  FOCAL: one specific prop, screenshot, graph, or background element\n  VIBE CHECK: does thumbnail tone match title tone?\n\nTest: must be understood at phone size without reading the title.',
  null,
@@ -227,7 +298,7 @@ INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, promp
 ('33330002-0005-0000-0000-000000000001',
  'Write the cold open (or use cge-scriptwriter)',
  'Use cge-scriptwriter for the full script from a 3-question setup. Or write manually starting here.',
- E'SKILL OPTION: Use cge-scriptwriter in a Claude Cowork session. It asks 3 questions (title, CTA goal, content details) and writes the full 800–1,200 word script with correct structure, like-button line, and [FILL IN] markers for missing facts. Fastest path to a complete script.\n\nMANUAL OPTION — cold open first:\n\nCold open structure:\n  1. Your chosen hook (verbatim from Stage 3)\n  2. Big promise: "By the end of this video, you will know [specific outcome]"\n  3. Roadmap: group into 2–3 categories — NOT a full list of every block\n     Pattern: "I''m going to show you [X]. We''ll cover [CATEGORY 1], [CATEGORY 2], and [THE SURPRISING THING]. By the end, [OUTCOME]."\n  4. Like-button line: "If you appreciate this type of content, gently tap that like button."\n  5. Sign-off — rotate: "Let''s dive in." / "Here we go." / "Let''s get to work."\n\nVoice rules (from your Writing Rules file):\n  Contractions everywhere\n  Numbers always numeric\n  No year stamps\n  Complete sentences. No fragments.',
+ E'FORMAT RHYTHM (finance brand — apply throughout the script):\n  Intense info → brief absurd joke or meme moment → back to info\n  Vary constantly. Never let the viewer predict the next beat.\n  New visual beat every 60–90 seconds on longform.\n  Read every line aloud. If you are bored reading it, the viewer is bored watching it. Cut.\n\nSCRIPT MARKERS (add as you write — these drive the edit):\n  [MEME: template name + text] — place at every joke word landing\n  [B-ROLL: specific description] — be specific: "[B-ROLL: stock market ticker going red, 2008 footage]"\n  [CHART: what it shows + animation type] — e.g. "[CHART: UK inflation 1970-1985, line graph build]"\n  [GRAPHIC: description] — text overlay, stat card, etc.\n  [FILL IN: description] — any fact still unverified — NEVER invent numbers\n\nSKILL OPTION: Use cge-scriptwriter in a Claude Cowork session. It asks 3 questions (title, CTA goal, content details) and writes the full 800–1,200 word script with correct structure, like-button line, and [FILL IN] markers for missing facts. Fastest path to a complete script.\n\nMANUAL OPTION — cold open first:\n\nCold open structure:\n  1. Your chosen hook (verbatim from Stage 3)\n  2. Big promise: "By the end of this video, you will know [specific outcome]"\n  3. Roadmap: group into 2–3 categories — NOT a full list of every block\n     Pattern: "I''m going to show you [X]. We''ll cover [CATEGORY 1], [CATEGORY 2], and [THE SURPRISING THING]. By the end, [OUTCOME]."\n  4. Like-button line: "If you appreciate this type of content, gently tap that like button."\n  5. Sign-off — rotate: "Let''s dive in." / "Here we go." / "Let''s get to work."\n\nVoice rules (from your Writing Rules file):\n  Contractions everywhere\n  Numbers always numeric\n  No year stamps\n  Complete sentences. No fragments.',
  true,
  E'Attach: Writing Rules file, Voice Profile file\n\nChosen hook (word for word): [PASTE FROM STAGE 3]\nBig promise (specific outcome): [WHAT THEY WILL KNOW/DO]\nBlock names: [Block 1], [Block 2], [Block 3]\n\nWrite my complete cold open (30–60 seconds when read aloud):\n  Hook verbatim\n  Big promise\n  Roadmap — 2–3 categories (not a list of every point)\n  Like-button line: "If you appreciate this type of content, gently tap that like button."\n  Sign-off line\n\nApply Writing Rules and Voice Profile throughout.',
  null,
@@ -236,7 +307,7 @@ INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, promp
 ('33330002-0005-0000-0000-000000000001',
  'Write all content blocks with full retention mechanics',
  'Setup → Tension → Payoff every block. Forward Pulls Level 3+ every 45–60 seconds. WHY moments with immediate re-tension.',
- E'RETENTION MECHANICS — apply exactly:\n\nSETUP (30–40% of each block):\n  Present the problem — do NOT hint at the solution\n  Make them realise WHY they need the payoff\n  ❌ Do not: "Today I''m going to show you how to fix this..."\n  ✅ Do: describe the problem so specifically they think you are watching them\n\nTENSION (40–50%):\n  Story of discovering the answer: Struggle → Complication → Discovery → Resolution → Lesson\n  Withhold the payoff until the end of this section\n  Include the vulnerability/credibility moment from your creativity questions\n\nPAYOFF (10–20%):\n  Deliver the answer and action steps\n  Land it. Move on. Do not belabour it.\n  Efficiency test: remove one sentence — does it still work? If yes, cut it.\n\nFORWARD PULLS every 45–60 seconds (Level 3 minimum):\n  Level 3: "Let me show you why this title is killing your reach"\n  Level 4: "...and it''s not what you think" (curiosity gap)\n  Level 5: "Before I show you how to fix this, you need to see why it fails — because if you skip this, the tactics won''t work"\n\nWHY MOMENTS:\n  "That means [implication for viewer]"\n  "That''s because [cause]"\n  ⚠️ ALWAYS follow every WHY moment with new tension within 1–2 sentences\n  If the WHY moment just ends — tension released with nothing pulling forward — you lose the viewer\n\nFORBIDDEN: "Here''s the thing", "At the end of the day", "Game-changer", "Let me break this down", "Something magical happens", question fragments, rhetorical questions\n\nFIX-IT TEST (for each structural beat):\n  What retention function does this beat serve? (Forward Pull / WHY moment / Setup / Tension / Payoff)\n  Does your version preserve that function?\n  Are you only changing HOW it says it — not WHAT it does?\n  If changing WHAT → flag it with [CREATOR: Review this beat]',
+ E'RETENTION MECHANICS — apply exactly:\n\nSETUP (30–40% of each block):\n  Present the problem — do NOT hint at the solution\n  Make them realise WHY they need the payoff\n  ❌ Do not: "Today I''m going to show you how to fix this..."\n  ✅ Do: describe the problem so specifically they think you are watching them\n\nTENSION (40–50%):\n  Story of discovering the answer: Struggle → Complication → Discovery → Resolution → Lesson\n  Withhold the payoff until the end of this section\n  Include the vulnerability/credibility moment from your creativity questions\n\nPAYOFF (10–20%):\n  Deliver the answer and action steps\n  Land it. Move on. Do not belabour it.\n  Efficiency test: remove one sentence — does it still work? If yes, cut it.\n\nFORWARD PULLS every 45–60 seconds (Level 3 minimum):\n  Level 3: "Let me show you why this title is killing your reach"\n  Level 4: "...and it''s not what you think" (curiosity gap)\n  Level 5: "Before I show you how to fix this, you need to see why it fails — because if you skip this, the tactics won''t work"\n\nWHY MOMENTS:\n  "That means [implication for viewer]"\n  "That''s because [cause]"\n  ⚠️ ALWAYS follow every WHY moment with new tension within 1–2 sentences\n  If the WHY moment just ends — tension released with nothing pulling forward — you lose the viewer\n\nFINANCE BRAND CTA STYLE — write conversationally, not like an ad:\n  "If that surprised you, wait for the next one"\n  "I promise this gets weirder"\n  "Stick around — the bit about [X] is genuinely unbelievable"\n  NEVER: "Smash that like button", "Don''t forget to subscribe", "Comment down below"\n\nFORBIDDEN: "Here''s the thing", "At the end of the day", "Game-changer", "Let me break this down", "Something magical happens", question fragments, rhetorical questions\n\nFIX-IT TEST (for each structural beat):\n  What retention function does this beat serve? (Forward Pull / WHY moment / Setup / Tension / Payoff)\n  Does your version preserve that function?\n  Are you only changing HOW it says it — not WHAT it does?\n  If changing WHAT → flag it with [CREATOR: Review this beat]',
  true,
  E'Attach: Writing Rules file, Voice Profile file\n\nLocked architecture: [PASTE FULL BLOCK STRUCTURE]\nFoundation: Audience=[X], Problem=[Y], Transformation=[Z]\nCreativity notes per block (tension loops, visual moments, stories, specificity swaps): [PASTE FROM STAGE 4]\n\nWrite all content blocks as continuous teleprompter-ready script.\n\nFor each block:\n  SETUP: introduce the problem without solving it (30–40%)\n  TENSION: story to the answer — Struggle → Complication → Discovery → Resolution → Lesson (40–50%)\n  PAYOFF: answer + action steps, land it and move on (10–20%)\n  Level 4+ Forward Pull every 45–60 seconds\n  WHY moment + immediate re-tension after each one\n  Visual moment on screen at the key teaching point\n\nUse [FILL IN: description] for any missing facts. Never invent stats, quotes, or names.\n\nApply Writing Rules throughout. Where architecture violates voice rules, fix the words but preserve the retention function.',
  null,
@@ -251,22 +322,62 @@ INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, promp
 
 
 -- =============================================================
--- STAGE 6: RECORD
+-- STAGE 6b: ASSET GATHERING (new — Finance Brand SOP 04)
+-- Source every meme, b-roll, and chart BEFORE recording
+-- =============================================================
+
+INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, prompt_text, resource_url, estimated_minutes, order_index) VALUES
+
+('33330002-0005-0001-0000-000000000001',
+ 'Source all memes',
+ 'Going into the edit without memes ready is the single biggest time killer.',
+ E'Open your script. Find every [MEME: ...] marker.\n\nSOURCES:\n  imgflip.com — search by template name, download or generate\n  giphy.com — for animated GIFs\n  Know Your Meme (knowyourmeme.com) — find the original for obscure references\n  Twitter/X and Reddit — for memes already circulating about your specific topic\n  r/wallstreetbets — for finance-specific meme templates your audience will recognise\n\nFOR EACH MEME MARKER:\n  Find or create the meme\n  Save to /assets/memes/ with a descriptive filename (e.g. "this-is-fine-fed-rates.jpg")\n  Note the filename next to the [MEME] marker in your script\n\nFOR SHORTS: find one trending or viral meme template relevant to the topic — this is your entire visual strategy for the Short.\n\nRULE: every [MEME] marker in the script must have a file in /assets/memes/ before you record. No exceptions.',
+ false, null,
+ 'https://imgflip.com',
+ 30, 1),
+
+('33330002-0005-0001-0000-000000000001',
+ 'Source all b-roll clips',
+ 'Dense visual coverage is non-negotiable for this format. New visual every 2–4 seconds.',
+ E'Open your script. Find every [B-ROLL: ...] marker.\n\nFREE SOURCES:\n  Pexels.com — high quality, truly free, no attribution needed\n  Pixabay.com — good variety, check licence per clip\n  Coverr.co — cinematic footage, free\n  Archive.org — ESSENTIAL for historical finance content. Has original news footage, speeches, old documentaries. Search by decade or event name.\n  Wikimedia Commons — historical images and some video\n\nPAID (worth it for quality):\n  Storyblocks — subscription, unlimited downloads, good for financial/business b-roll\n  Envato Elements — broader library\n\nFAIR USE NOTE: News clips under ~30 seconds used for commentary typically fall under fair use — but keep them brief and always add your own commentary over them.\n\nFOR EACH B-ROLL MARKER:\n  Download the clip\n  Save to /assets/broll/ with a descriptive filename\n  Note the filename next to the [B-ROLL] marker in your script\n  For Shorts: 3–5 punchy clips max, each under 3 seconds',
+ false, null,
+ 'https://archive.org',
+ 30, 2),
+
+('33330002-0005-0001-0000-000000000001',
+ 'Build all charts and data graphics',
+ 'A static chart held for 10+ seconds loses viewers. Animated builds are mandatory.',
+ E'Open your script. Find every [CHART: ...] and [GRAPHIC: ...] marker.\n\nTOOLS:\n  Datawrapper (datawrapper.de) — fast, free, beautiful. Best for line charts, bar charts, maps.\n  Flourish (flourish.studio) — more animation options, slightly more complex. Great for race charts and story-driven data viz.\n  Both export as MP4 with a build animation — use this export, not a static image.\n\nFOR EACH CHART MARKER:\n  Find the data (FRED, ONS, World Bank, IMF, BIS — all free)\n  Build the chart in Datawrapper or Flourish\n  Export as animated MP4 (not PNG/JPG)\n  Save to /assets/charts/ with a descriptive filename\n  Note the filename and duration next to the [CHART] marker in your script\n\nCHART DESIGN RULES for this format:\n  Dark background to match video aesthetic\n  Single highlight colour (your brand colour)\n  Large readable labels — no tiny axis text\n  Simple > complex. One point per chart.\n  The animation builds to the key number — not just a static reveal\n\nFor Shorts: one chart maximum, 2–3 second animated build, must read clearly vertical.',
+ false, null,
+ 'https://datawrapper.de',
+ 30, 3),
+
+('33330002-0005-0001-0000-000000000001',
+ 'Organise the project folder and do a final asset check',
+ 'A tidy project saves hours in the edit. Check every marker has a file.',
+ E'FOLDER STRUCTURE — confirm everything is in place:\n  /videos/YYYY-MM_topic-name/\n    /script/       → script_v1.txt (with all markers filled in)\n    /assets/\n      /memes/      → one file per [MEME] marker\n      /broll/      → one file per [B-ROLL] marker\n      /charts/     → one file per [CHART] / [GRAPHIC] marker\n      /audio/      → background music tracks (sourced now, used in edit)\n    /vo/           → empty, ready for recording\n    /edit/         → empty, ready for project file\n\nFINAL ASSET CHECK:\n  Open the script\n  Go through every marker: [MEME] [B-ROLL] [CHART] [GRAPHIC]\n  Confirm a file exists for each one\n  Mark any gap — source it before recording\n\nMUSIC (source now, use in edit):\n  Epidemicsound.com — subscription, excellent for finance/documentary vibe\n  Artlist.io — similar quality\n  YouTube Audio Library — free, check licence\n  Look for: "corporate documentary", "minimal piano", "tense underscore" — the music should feel, not be heard\n\nDo NOT record until every [FILL IN] marker in the script is resolved and every asset folder is complete.',
+ false, null,
+ 'https://epidemicsound.com',
+ 20, 4);
+
+
+-- =============================================================
+-- STAGE 6: VOICEOVER (VO-only faceless format — SOP 05)
 -- =============================================================
 
 INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, prompt_text, resource_url, estimated_minutes, order_index) VALUES
 
 ('33330002-0006-0000-0000-000000000001',
- 'Setup check — 30-second test first',
- 'Fix everything before the full take. 5 minutes here saves 30 later.',
- E'Before recording:\n  Audio: separate mic if possible. Clap once, listen back — no echo, hum, or hiss.\n  Lighting: natural light on your face (not behind you), or key light at 45 degrees.\n  Frame: face fills top 2/3 in landscape. Background: clean or one intentional element.\n  Script: teleprompter app, printed notes, or memorised — viewers cannot tell which.\n\nRecord a 30-second test. Watch it back. Fix anything before the full session.\n\nWatch the first 30 seconds WITHOUT sound. Does your video make sense if people hover over it? (Shane Hummus upload checklist rule.)',
+ 'Setup and acoustic check — 30-second test first',
+ 'Your voice is the whole performance. Capture it clean. Bad audio cannot be fixed in post.',
+ E'ECHO REMOVAL (critical for faceless VO — no visual to distract from audio quality):\n  Record inside a wardrobe full of clothes — best cheap solution\n  Heavy curtains, thick blankets around you — absorb reflections\n  Avoid hard parallel walls — stand in a corner if needed\n  Carpet beats hard floors\n\nSETUP:\n  Mic as close to your mouth as practical (6–12 inches) — closer = less room noise\n  Pop filter if available; if not, angle the mic slightly off-axis\n  Check gain levels — your loudest line should peak at -6dB, not hitting 0\n\n30-SECOND TEST:\n  Record 30 seconds at normal pace\n  Listen back on headphones (not speakers)\n  Check for: hiss, echo, room rumble, mic handling noise, breath pops\n  Fix every issue before the full session — you will hear every flaw a thousand times in the edit\n\nVOICE WARM-UP:\n  5 minutes speaking aloud before hitting record — cold voice sounds flat\n  Hum gently, read a paragraph aloud, do some lip trills\n  Have water nearby — sip between sections, not mid-sentence',
  false, null, null,
- 10, 1),
+ 15, 1),
 
 ('33330002-0006-0000-0000-000000000001',
- 'Record — minimum 3 full takes',
- 'Energy beats perfection. Best take wins, not cleanest.',
- E'Do NOT stop for mistakes. Keep rolling through each take.\n\nRecord 3 full takes:\n  Take 1: warm-up, get the words right\n  Take 2: find your energy\n  Take 3: trust yourself and perform\n\nPick the take with:\n  Best energy and pace\n  Most natural delivery\n  NOT necessarily the fewest mistakes — editing fixes mistakes, not energy\n\nSpeaking tip: talk to one specific person — the person from your Strategy file. Picture them across the table. That is the energy.',
+ 'Record section by section with file naming',
+ 'Record in chunks, not one long take. Labels saves hours in the edit.',
+ E'VO RECORDING APPROACH (faceless format):\n  Record section by section — one script chunk per take\n  This is not on-camera performance — you can stop and restart at section breaks\n  File naming: vo_01_hook.wav, vo_02_section1.wav, vo_03_section2.wav etc.\n  Save everything to /vo/ immediately\n\nFOR EACH SECTION:\n  Read through the section once silently to get the rhythm\n  Record 2 takes of each section (not the whole script — just that chunk)\n  Pick the better take immediately while it is fresh\n  Keep any spontaneous ad-libs or jokes you discover — often your best moments\n  Back up audio after every 3–4 sections\n\nENERGY GUIDE:\n  Match your energy to the script: fast sections fast, punchy moments punchy\n  For shocking stats: pause before them, let the silence work\n  For jokes: slight uptick in pace into the joke, deadpan delivery on the punchline\n  Re-record any line that sounds flat or unconvincing — you will hear every weak line a thousand times\n\nSHORTS: record in 1–2 takes, energy must be immediate from the first word — no warm-up preamble',
  false, null, null,
  60, 2);
 
@@ -278,18 +389,25 @@ INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, promp
 INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, prompt_text, resource_url, estimated_minutes, order_index) VALUES
 
 ('33330002-0007-0000-0000-000000000001',
- 'Rough cut — pace before polish',
- 'If it drags at 1.5x speed, there is more to cut.',
- E'Import all footage.\n\n1. Cut every pause over 0.5 seconds\n2. Keep only the best take per section\n3. Watch at 1.5x speed — if it feels slow, keep cutting\n4. Do NOT colour grade or add music yet\n\nUse Descript for AI-assisted rough cutting — put in your voiceover and let it handle the first pass. You review and control all final cuts. Do not let AI edit the full video unsupervised.',
+ 'Lay the VO — everything hangs off it',
+ 'VO goes on first. Do not place a single visual until the VO is final.',
+ E'THE GOLDEN RULES OF THIS FORMAT:\n  The VO goes on first. Everything else hangs off it.\n  Never see a blank or static frame. B-roll covers everything.\n  Memes land on the punchline word — not before, not after. Timing is everything.\n  New visual every 2–4 seconds on longform. Every 1–2 on Shorts.\n  Watch your edit at 2x speed. If it is boring at 2x, it is boring at 1x.\n\nSTEP 1 — VO ONLY:\n  Import all /vo/ files into bins\n  Lay the complete VO on the timeline in order\n  Do NOT start placing visuals yet\n\nSTEP 2 — CUT THE VO:\n  Remove every breath, pause, um, and stumble\n  Use Premiere auto-transcribe or Descript for speed\n  Cut between sections cleanly — tight edit, no dead air\n  For Shorts: cut VO to under 55 seconds. Every syllable earns its place.\n\nEDITING TOOLS:\n  Premiere Pro or DaVinci Resolve for the timeline\n  Descript — paste VO, edit the transcript, cuts sync automatically. Fastest for VO-heavy edits.\n\nDo not move to the next task until the VO cut is locked.',
  false, null, null,
- 60, 1),
+ 45, 1),
 
 ('33330002-0007-0000-0000-000000000001',
- 'B-roll, graphics, and captions',
- 'New visual every 30–60 seconds. Captions are not optional.',
- E'B-ROLL:\n  New visual every 30–60 seconds minimum\n  Screen recordings, stock (Pexels — free), your own footage\n  Graph or demo beats 1000 words\n\nGRAPHICS:\n  Text overlays for key stats, terms, and takeaways\n  Chapter markers so viewers can navigate\n  Any graphs, before/after comparisons, screenshots\n\nCAPTIONS:\n  Auto-captions in Premiere, DaVinci, or CapCut — check accuracy\n  Style: bold white text, black outline, readable at phone size\n  Position: mid-screen or lower third\n  80% of viewers watch without sound — captions are mandatory\n\nExport: H.264, 1920x1080, 30fps.',
+ 'Place b-roll, memes, and charts — dense visual coverage',
+ 'The viewer should never see a blank frame. This is where the channel personality lives.',
+ E'Open the script with all markers. Go through the timeline and fill it.\n\nB-ROLL (from /assets/broll/):\n  Place b-roll over every second of the VO timeline — no gaps\n  New clip every 2–4 seconds minimum\n  Cut b-roll to the rhythm of the VO — fast delivery = faster cuts\n  Add files from /assets/broll/ to match each [B-ROLL] marker in the script\n\nMEMES (from /assets/memes/):\n  Add at every [MEME] marker\n  CRITICAL: the meme arrives exactly as the joke WORD lands — not a beat before, not after\n  Timing is the craft. A meme one frame early kills the joke. Practice this.\n  For GIFs: loop them if needed to cover the beat\n  Sound effect on the meme pop — a well-timed sound effect hits every time\n\nCHARTS (from /assets/charts/):\n  Place animated MP4 charts at each [CHART] marker\n  Let the animation build fully before cutting away\n  Add a text overlay with the key number as the animation completes\n\nGRAPHICS / TEXT OVERLAYS:\n  Bold text overlays for every key stat and memorable line\n  High contrast, large, readable on phone\n\nCOLOUR GRADE:\n  Run a single LUT across all b-roll clips to unify footage from different sources\n  Dark, punchy, high contrast — consistent with your brand aesthetic\n\nSOUND:\n  Background music: low under talking, rises on key moments\n  Music should feel, not be heard\n  Sound effects on meme pops, chart animations, key stat reveals\n  For Shorts: burn in full captions — 85% of Shorts watched with sound off',
  false, null, null,
- 60, 2),
+ 90, 2),
+
+('33330002-0007-0000-0000-000000000001',
+ 'Final watch and export',
+ 'Watch the full edit once as a viewer before exporting. Fix what you flag. Then export.',
+ E'FINAL WATCH:\n  Watch the full edit at 1x speed as a viewer — not as an editor\n  Note every moment where your attention drifted\n  Fix those moments before export\n  Re-watch only the fixed sections\n\nEXPORT SETTINGS:\n  Long form: 1080p or 4K, 30fps, H.264\n  Short: 1080x1920 vertical, 30fps, H.264\n  Watch the exported file once through before saving as final — encoding artifacts happen\n  Save final exports to /edit/ with clear naming: "[topic]_longform_final.mp4" and "[topic]_short_final.mp4"',
+ false, null, null,
+ 20, 3),
 
 ('33330002-0007-0000-0000-000000000001',
  'Repurpose to Shorts',
@@ -376,6 +494,13 @@ INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, promp
  E'Take the Short clips you prepared in the Edit stage and publish them now.\n\nFor each Short:\n  Upload vertical video\n  Set title (under 60 characters, curiosity or bold claim)\n  Paste description: what it is (keyword included) + "Full video in description" + #Shorts\n  Do NOT set a custom thumbnail for Shorts\n  Publish immediately (do not schedule)\n  In the Short description: link to the full video\n\nWhy do this within 24 hours of the main upload?\n  The main video is at peak visibility — Shorts extend that reach\n  Viewers who find you via Shorts discover the full video in the description\n  This compounds your distribution without extra filming time',
  false, null, null,
  10, 9),
+
+('33330002-0008-0000-0000-000000000001',
+ '⑨b Promote on Twitter/X and Reddit',
+ 'Finance content travels on these platforms. A sentence of value first, then the link — never just a bare link.',
+ E'TWITTER/X:\n  Post the wildest stat from the video as the thread opener\n  Format: "[Shocking stat]. Here is how that happened. [thread]"\n  Keep the thread to 3–5 tweets — stat → context → twist → link\n  Do NOT just post "New video out!" — lead with the value\n\nREDDIT (do this for every video):\n  r/economics — academic-leaning audience, wants depth\n  r/personalfinance — practical angle, more mainstream\n  r/investing — market-focused audience\n  r/wallstreetbets — if there is any absurdity or meme angle\n\n  HOW TO POST ON REDDIT WITHOUT GETTING BANNED:\n    Add a sentence or two of genuine value in the post body first\n    Context, key insight, or the most interesting fact — before you link\n    Title: use the video title or a slight variant\n    Do not post to more than 2–3 subreddits on the same day (spam filter)\n    Reply to comments in the first hour — Reddit rewards engagement\n    Check subreddit rules before posting — some ban self-promotion entirely\n\n  RULE: never post a bare link. Always add value in the body first.',
+ false, null, null,
+ 15, 9),
 
 ('33330002-0008-0000-0000-000000000001',
  '⑩ 48-hour launch check — diagnose and carry the lesson',
@@ -475,6 +600,16 @@ INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, promp
  E'Open YouTube Studio → Content → your video → Monetisation → Ad breaks.\n\nMID-ROLL RULES:\n  Maximum 3 mid-roll placements\n  Place at natural pauses — end of a section, before a new point begins\n  NEVER place at a cliff-hanger or Forward Pull moment (viewers who came for the payoff will leave)\n  Minimum 2 minutes between placements\n  First mid-roll: no earlier than the 25% mark\n\nFIND YOUR NATURAL PAUSES:\n  End of each content block\n  Just before you start a new numbered point (in listicles)\n  After a story resolves and before the lesson begins\n\nSHANE HUMMUS NOTE: CPM from mid-rolls beats AdSense RPM on short videos. On a 10+ minute video, 3 well-placed mid-rolls can double your AdSense revenue per 1k views vs a video with no mid-rolls. Do not skip this step.\n\nAfter placing: note the timestamps in your Money file under "AdSense notes".',
  false, null, null,
  10, 14);
+
+
+-- Content Tracker log + improvement note (SOP 09 step 9-10)
+INSERT INTO tasks (stage_id, title, description, instructions, has_prompt, prompt_text, resource_url, estimated_minutes, order_index) VALUES
+('33330002-0008-0000-0000-000000000001',
+ '⑮ Log in Content Tracker and write one improvement note',
+ 'The feedback loop is only as good as your notes. One note per video, done consistently, compounds fast.',
+ E'CONTENT TRACKER (in Notion):\n  Log this video with:\n    Title, publish date, format (longform / Short)\n    Final thumbnail + title used\n    48-hour CTR, average view duration, impression count\n    Link to the YouTube video\n    Link to the project folder\n\nONE IMPROVEMENT NOTE:\n  What is the single biggest thing you would do differently on the next video?\n  Not a list — one thing. Specific and actionable.\n  Examples:\n    "Meme at 3:42 was one beat late — set a clip 0.5s earlier next time"\n    "The hook stat was not wild enough — next video opens with something more shocking"\n    "Reddit post on r/economics got 12 upvotes — try r/personalfinance next"\n  Save this note in your Content Tracker entry\n\nWHY THIS MATTERS:\n  10 videos with one improvement note each = 10 specific things you are better at\n  Most creators skip this. It is the entire feedback loop.',
+ false, null, null,
+ 10, 15);
 
 
 -- =============================================================
