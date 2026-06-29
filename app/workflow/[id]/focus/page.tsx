@@ -174,12 +174,12 @@ export default function FocusPage() {
   return (
     <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: C.bg, position: 'relative' }}>
 
-      {/* ── Top progress bar ── */}
+      {/* -- Top progress bar -- */}
       <div style={{ height: '3px', background: C.border, flexShrink: 0, position: 'relative' }}>
         <div style={{ position: 'absolute', inset: 0, width: (prog * 100) + '%', background: 'linear-gradient(90deg,' + C.cyan + ',' + C.purple + ')', transition: 'width 0.8s ease' }} />
       </div>
 
-      {/* ── Header ── */}
+      {/* -- Header -- */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1.5rem', borderBottom: '1px solid ' + C.border, flexShrink: 0 }}>
         <button onClick={() => { sounds.stopAmbient(); router.push('/workflow/' + sid) }}
           style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: 'none', border: 'none', color: C.sec, cursor: 'pointer', fontSize: '0.875rem', fontFamily: 'inherit' }}>
@@ -201,7 +201,7 @@ export default function FocusPage() {
         </div>
       </div>
 
-      {/* ── Pomodoro panel (collapsed by default) ── */}
+      {/* -- Pomodoro panel (collapsed by default) -- */}
       {showPomodoro && (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', padding: '0.625rem 1.5rem', borderBottom: '1px solid ' + C.border, background: C.surface, flexShrink: 0 }}>
           <span style={{ fontSize: '0.65rem', fontWeight: 700, color: phaseColor, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{phaseLabel}</span>
@@ -218,25 +218,25 @@ export default function FocusPage() {
         </div>
       )}
 
-      {/* ── Jim Rohn affirmation ── */}
+      {/* -- Jim Rohn affirmation -- */}
       <div style={{ textAlign: 'center', padding: '1.5rem 2rem 0.25rem', flexShrink: 0 }}>
         <p key={affirmKey} style={{ fontSize: '0.8rem', color: C.sec, fontStyle: 'italic', maxWidth: '540px', margin: '0 auto', lineHeight: 1.65, animation: 'fadeUp 0.7s ease forwards' }}>
           &ldquo;{ROHN[rohnIdx]}&rdquo;
-          <span style={{ display: 'block', fontSize: '0.63rem', color: C.muted, marginTop: '0.3rem', fontStyle: 'normal', letterSpacing: '0.05em' }}>— Jim Rohn</span>
+          <span style={{ display: 'block', fontSize: '0.63rem', color: C.muted, marginTop: '0.3rem', fontStyle: 'normal', letterSpacing: '0.05em' }}>&mdash; Jim Rohn</span>
         </p>
       </div>
 
-      {/* ── Main content ── */}
+      {/* -- Main content -- */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem 1.5rem 2.5rem' }}>
 
         {allComplete ? (
           <div style={{ textAlign: 'center', maxWidth: '480px', animation: 'fadeUp 0.6s ease' }}>
-            <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>🎉</div>
+            <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>[done]</div>
             <h1 style={{ fontSize: '2.25rem', fontWeight: 900, color: C.green, marginBottom: '0.75rem' }}>Workflow Complete!</h1>
             <p style={{ fontSize: '0.95rem', color: C.sec, fontStyle: 'italic', lineHeight: 1.7, marginBottom: '0.375rem' }}>
               &ldquo;Success is not to be pursued. It is to be attracted by the person you become.&rdquo;
             </p>
-            <p style={{ fontSize: '0.7rem', color: C.muted, marginBottom: '2rem' }}>— Jim Rohn</p>
+            <p style={{ fontSize: '0.7rem', color: C.muted, marginBottom: '2rem' }}>&mdash; Jim Rohn</p>
             <button onClick={() => router.push('/workflow/' + sid)}
               style={{ padding: '0.875rem 2.5rem', background: 'linear-gradient(135deg,' + C.cyan + ',#0099cc)', border: 'none', borderRadius: '0.875rem', color: '#000', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', fontFamily: 'inherit' }}>
               Back to Overview
@@ -258,7 +258,7 @@ export default function FocusPage() {
               </div>
             </div>
 
-            {/* ── Task card ── */}
+            {/* -- Task card -- */}
             <div style={{ position: 'relative' }} key={cardKey}>
               {/* Celebration burst */}
               {celebrating && (
@@ -334,17 +334,17 @@ export default function FocusPage() {
               </div>
             </div>
 
-            {/* ── Action buttons ── */}
+            {/* -- Action buttons -- */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <button onClick={() => setTaskIdx(i => Math.max(0, i - 1))} disabled={taskIdx === 0}
                 style={{ padding: '0.75rem 1.125rem', background: 'transparent', border: '1px solid ' + C.border, borderRadius: '0.875rem', color: C.sec, cursor: taskIdx === 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', opacity: taskIdx === 0 ? 0.3 : 1, fontFamily: 'inherit', fontSize: '0.82rem', fontWeight: 600, flexShrink: 0 }}>
-                ← Prev
+                &larr; Prev
               </button>
 
               {isDone ? (
                 <button onClick={advanceToNext}
                   style={{ flex: 1, padding: '1.0625rem', border: 'none', borderRadius: '0.875rem', fontWeight: 800, fontSize: '1.0625rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', background: 'linear-gradient(135deg,' + C.cyan + ',#0099cc)', color: '#000', animation: 'pulseBtn 2s ease-in-out infinite', letterSpacing: '-0.01em' }}>
-                  Next Task →
+                  Next Task &rarr;
                 </button>
               ) : (
                 <button onClick={markDone}
@@ -355,7 +355,7 @@ export default function FocusPage() {
 
               <button onClick={() => setTaskIdx(i => Math.min(allTasks.length - 1, i + 1))} disabled={taskIdx === allTasks.length - 1}
                 style={{ padding: '0.75rem 1.125rem', background: 'transparent', border: '1px solid ' + C.border, borderRadius: '0.875rem', color: C.sec, cursor: taskIdx === allTasks.length - 1 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', opacity: taskIdx === allTasks.length - 1 ? 0.3 : 1, fontFamily: 'inherit', fontSize: '0.82rem', fontWeight: 600, flexShrink: 0 }}>
-                Skip →
+                Skip &rarr;
               </button>
             </div>
 
@@ -365,22 +365,22 @@ export default function FocusPage() {
         ) : null}
       </div>
 
-      {/* ── Stage complete overlay ── */}
+      {/* Stage complete overlay */}
       {stageOverlay && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,15,0.96)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 200, animation: 'fadeIn 0.4s ease', padding: '2rem' }}>
           <div style={{ textAlign: 'center', maxWidth: '540px', animation: 'slideUp 0.5s ease' }}>
-            <div style={{ fontSize: '2.75rem', marginBottom: '1rem' }}>⚡</div>
+            <div style={{ fontSize: '2.75rem', marginBottom: '1rem' }}>&#9889;</div>
             <p style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: C.cyan, marginBottom: '0.625rem' }}>Stage Complete</p>
             <h2 style={{ fontSize: 'clamp(2rem,5vw,2.75rem)', fontWeight: 900, color: C.text, marginBottom: '2rem', lineHeight: 1.1, letterSpacing: '-0.03em' }}>{stageOverlay.name}</h2>
             <div style={{ padding: '1.5rem 2rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '1rem', marginBottom: '2rem' }}>
               <p style={{ fontSize: '1.0625rem', color: C.sec, fontStyle: 'italic', lineHeight: 1.75, marginBottom: '0.625rem' }}>
                 &ldquo;{stageOverlay.quote}&rdquo;
               </p>
-              <p style={{ fontSize: '0.7rem', color: C.muted }}>— Jim Rohn</p>
+              <p style={{ fontSize: '0.7rem', color: C.muted }}>&mdash; Jim Rohn</p>
             </div>
             <button onClick={advanceToNext}
               style={{ padding: '1rem 2.75rem', background: 'linear-gradient(135deg,' + C.cyan + ',#0099cc)', border: 'none', borderRadius: '1rem', color: '#000', fontWeight: 800, fontSize: '1rem', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 0 40px rgba(0,212,255,0.35)', letterSpacing: '-0.01em' }}>
-              Continue →
+              Continue &rarr;
             </button>
           </div>
         </div>
@@ -388,7 +388,6 @@ export default function FocusPage() {
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
-
         @keyframes fadeUp {
           from { opacity: 0; transform: translateY(12px) }
           to   { opacity: 1; transform: translateY(0) }

@@ -184,23 +184,39 @@ export async function deleteTask(pageId: string): Promise<void> {
 }
 
 // ---- Events ----
-// No separate events DB — events are tasks with Type set, shown by due date
-// We return tasks-as-events for any task on the date that isn't in the master tasks filter
+// Events live in the same master DB, distinguished by task/vault = 'event'
+// Notion auto-creates the 'event' select option on first write.
+
+function parseEvent(p: NotionPage): NotionEvent {
+  return {
+    id: p.id, url: p.url, type: 'event' as const,
+    title: titleText(p.properties['Name']),
+    date: p.properties['Due Date']?.date?.start ?? '',
+    category: p.properties['Type']?.select?.name ?? null,
+  }
+}
 
 export async function getEventsForDate(date: string): Promise<NotionEvent[]> {
-  // No separate events database; return empty (calendar shows tasks instead)
-  return []
+  try {
+    const pages = await queryDB(NOTION_DB.events, {
+      and: [
+        { property: 'task/vault', select: { equals: 'event' } },
+        { property: 'Due Date', date: { equals: date } },
+      ]
+    })
+    return pages.map(parseEvent)
+  } catch {
+    return []
+  }
 }
 
 export async function createEvent(title: string, date: string, category?: string): Promise<NotionEvent> {
-  // Create as a task in the master DB with the category stored in Type field
-  const typeMap: Record<string, string> = { 'Work': 'Flow', 'Personal': 'Personal', 'Home': 'Recurring' }
-  const page = await createPage(NOTION_DB.tasks, {
+  const page = await createPage(NOTION_DB.events, {
     'Name': titleProp(title),
     'Due Date': { date: { start: date } },
     'Status': { status: { name: 'Not started' } },
-    'task/vault': { select: { name: 'task' } },
-    ...(category ? { 'Type': { select: { name: typeMap[category] ?? 'Personal' } } } : {}),
+    'task/vault': { select: { name: 'event' } },
+    ...(category ? { 'Type': { select: { name: category } } } : {}),
   })
   return { id: page.id, url: page.url, type: 'event' as const, title, date, category: category ?? null }
 }
