@@ -76,6 +76,41 @@ function autoSchedule(tasks: NotionTask[]): Map<string, number> {
   return map
 }
 
+function taskScore(t: NotionTask): number {
+  let s = 0
+  if (t.isFrog) s += 10
+  if (t.urgency?.includes('Urgent')) s += 6
+  if (t.importance?.includes('needle')) s += 5
+  if (t.importance?.includes('Important')) s += 4
+  return s
+}
+
+type ReorgItem = { task: NotionTask; newDate: string }
+
+function buildReorgPlan(tasks: NotionTask[], today: string): { keep: NotionTask[]; move: ReorgItem[] } {
+  const sorted = [...tasks].sort((a, b) => taskScore(b) - taskScore(a))
+  const CAPACITY_MINS = 420 // ~7 hours productive work day
+  let used = 0
+  const keep: NotionTask[] = []
+  const move: ReorgItem[] = []
+
+  for (const t of sorted) {
+    const mins = commitMins(t.timeCommitment)
+    if (used + mins <= CAPACITY_MINS) {
+      keep.push(t)
+      used += mins
+    } else {
+      // Push to later day based on score (max 7 days, never approved beyond)
+      const score = taskScore(t)
+      const daysAhead = score >= 9 ? 1 : score >= 4 ? 2 : 3
+      const d = new Date(today + 'T00:00:00')
+      d.setDate(d.getDate() + Math.min(daysAhead, 7))
+      move.push({ task: t, newDate: d.toISOString().split('T')[0] })
+    }
+  }
+  return { keep, move }
+}
+
 // Parse a time string like "9:00 AM" or "14:30" -> hour number
 function parseTimeStr(t: string | null): number | null {
   if (!t) return null
@@ -206,6 +241,8 @@ export default function MorningPage() {
   const [doneTasks, setDoneTasks] = useState<Set<string>>(new Set())
   const [doneRoutine, setDoneRoutine] = useState<Set<string>>(new Set())
   const [unscheduled, setUnscheduled] = useState<string[]>([])
+  const [reorgPlan, setReorgPlan] = useState<{ keep: NotionTask[]; move: ReorgItem[] } | null>(null)
+  const [reorging, setReorging] = useState(false)
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -236,6 +273,28 @@ export default function MorningPage() {
   }, [dateStr])
 
   useEffect(() => { load() }, [load])
+
+  function openReorg() {
+    const plan = buildReorgPlan(tasks, dateStr)
+    setReorgPlan(plan)
+  }
+
+  async function executeReorg() {
+    if (!reorgPlan) return
+    setReorging(true)
+    try {
+      await Promise.all(reorgPlan.move.map(({ task, newDate }) =>
+        fetch('/api/notion/tasks', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: task.id, dueDate: newDate }),
+        })
+      ))
+      setReorgPlan(null)
+      await load(true)
+    } catch {}
+    setReorging(false)
+  }
 
   function toggleRoutine(id: string) {
     setDoneRoutine(prev => {
@@ -304,6 +363,9 @@ export default function MorningPage() {
           <span style={{ fontSize: '0.7rem', color: C.muted }}>
             Tasks: {tasksDoneCount}/{tasksTotal} &nbsp;|&nbsp; Routine: {routineDoneCount}/{routineTotal}
           </span>
+          <button onClick={openReorg} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.4)', borderRadius: '0.625rem', color: C.purple, cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.75rem', fontWeight: 700 }}>
+            Organise Day
+          </button>
           <button onClick={() => load(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', background: C.card, border: '1px solid ' + C.border, borderRadius: '0.625rem', color: C.sec, cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.75rem', fontWeight: 600 }}>
             <RefreshCw size={11} />Refresh
           </button>
@@ -430,7 +492,80 @@ export default function MorningPage() {
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+        @keyframes slideUp { from { opacity:0; transform:translateY(16px) } to { opacity:1; transform:translateY(0) } }
       `}</style>
+
+      {/* Reorganise Day Modal */}
+      {reorgPlan && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, animation: 'fadeIn 0.2s ease' }}>
+          <div style={{ background: C.surface, border: '1px solid ' + C.border, borderRadius: '1rem', padding: '1.5rem', width: '480px', maxWidth: '90vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column', gap: '1rem', animation: 'slideUp 0.25s ease' }}>
+            <div>
+              <p style={{ fontWeight: 800, fontSize: '1rem', color: C.text }}>Organise Day Plan</p>
+              <p style={{ fontSize: '0.75rem', color: C.muted, marginTop: '0.25rem' }}>Tasks sorted by urgency + importance. Overflow moved within 7 days max.</p>
+            </div>
+
+            <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {/* Staying today */}
+              <div>
+                <p style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.green, marginBottom: '0.375rem' }}>
+                  Staying today ({reorgPlan.keep.length})
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  {reorgPlan.keep.map(t => (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.375rem 0.625rem', background: 'rgba(0,255,136,0.04)', border: '1px solid rgba(0,255,136,0.15)', borderRadius: '0.5rem' }}>
+                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: C.green, flexShrink: 0 }} />
+                      <p style={{ fontSize: '0.75rem', color: C.text, flex: 1 }}>{t.isFrog ? '[F] ' : ''}{t.title}</p>
+                      <span style={{ fontSize: '0.6rem', color: C.muted }}>{commitMins(t.timeCommitment)}m</span>
+                    </div>
+                  ))}
+                  {reorgPlan.keep.length === 0 && <p style={{ fontSize: '0.7rem', color: C.muted, fontStyle: 'italic' }}>No tasks fit today</p>}
+                </div>
+              </div>
+
+              {/* Moving to later days */}
+              {reorgPlan.move.length > 0 && (
+                <div>
+                  <p style={{ fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.amber, marginBottom: '0.375rem' }}>
+                    Moving to later this week ({reorgPlan.move.length})
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    {reorgPlan.move.map(({ task: t, newDate }) => {
+                      const d = new Date(newDate + 'T00:00:00')
+                      const label = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+                      return (
+                        <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.375rem 0.625rem', background: 'rgba(255,184,0,0.04)', border: '1px solid rgba(255,184,0,0.15)', borderRadius: '0.5rem' }}>
+                          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: C.amber, flexShrink: 0 }} />
+                          <p style={{ fontSize: '0.75rem', color: C.text, flex: 1 }}>{t.title}</p>
+                          <span style={{ fontSize: '0.6rem', color: C.amber, fontWeight: 700 }}>{label}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p style={{ fontSize: '0.65rem', color: C.muted, marginTop: '0.5rem', fontStyle: 'italic' }}>
+                    Nothing pushed beyond 7 days. Tasks can be moved again from Notion if needed.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.625rem', justifyContent: 'flex-end', borderTop: '1px solid ' + C.border, paddingTop: '1rem' }}>
+              <button onClick={() => setReorgPlan(null)} style={{ padding: '0.5rem 1rem', background: 'none', border: '1px solid ' + C.border, borderRadius: '0.625rem', color: C.sec, cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.8rem', fontWeight: 600 }}>
+                Cancel
+              </button>
+              {reorgPlan.move.length === 0 ? (
+                <button onClick={() => setReorgPlan(null)} style={{ padding: '0.5rem 1rem', background: 'rgba(0,255,136,0.15)', border: '1px solid rgba(0,255,136,0.3)', borderRadius: '0.625rem', color: C.green, cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.8rem', fontWeight: 700 }}>
+                  Looks good &mdash; day fits!
+                </button>
+              ) : (
+                <button onClick={executeReorg} disabled={reorging} style={{ padding: '0.5rem 1rem', background: reorging ? C.card : 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.5)', borderRadius: '0.625rem', color: reorging ? C.muted : C.purple, cursor: reorging ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: '0.8rem', fontWeight: 700 }}>
+                  {reorging ? 'Updating Notion...' : 'Confirm &mdash; move ' + reorgPlan.move.length + ' task' + (reorgPlan.move.length !== 1 ? 's' : '')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
