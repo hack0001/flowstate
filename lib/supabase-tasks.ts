@@ -159,7 +159,7 @@ export async function getStreakInfo(today: string): Promise<StreakInfo> {
   let prev: string | null = null
   for (const dateStr of allDates) {
     if (prev) {
-      const prevD = new Date(prev + 'T00:00:00')
+      const prevD: Date = new Date(prev + 'T00:00:00')
       prevD.setDate(prevD.getDate() + 1)
       if (prevD.toISOString().split('T')[0] === dateStr) {
         run++

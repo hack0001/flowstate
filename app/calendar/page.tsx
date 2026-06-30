@@ -1,408 +1,398 @@
 'use client'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, RefreshCw, ExternalLink, Check, Trash2, X, Edit2, Sun } from 'lucide-react'
-import { NOTION_LINKS } from '@/lib/notion'
-import type { NotionTask, NotionEvent, NotionContent } from '@/lib/notion'
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X } from 'lucide-react'
 
-const C = { bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a', cyan:'#00d4ff', green:'#00ff88', purple:'#8b5cf6', amber:'#ffb800', red:'#ff4444', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a' }
-const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
-const EVENT_CATS = ['Personal','Work','Home']
-const TASK_STATUSES = ['Not started','In progress','Done']
-const REFRESH_MS = 5 * 60 * 1000 // auto-refresh every 5 min
-
-type DayData = { tasks: NotionTask[]; events: NotionEvent[] }
-
-function fmt(date: string) {
-  return new Date(date + 'T12:00:00').toLocaleDateString('en-GB', { day:'numeric', month:'short' })
+const C = {
+  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
+  cyan:'#00d4ff', green:'#00ff88', purple:'#8b5cf6', amber:'#ffb800',
+  red:'#ff4444', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
 }
 
-// ---- Inline edit form ----
-function EventForm({ initial, onSave, onCancel, dateStr }: {
-  initial?: Partial<NotionEvent>; onSave: (v: { title: string; date: string; category: string }) => void
-  onCancel: () => void; dateStr: string
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+
+type DailyTask = {
+  id: string; title: string; due_date: string | null; status: string
+  urgency: string | null; importance: string | null; time_commitment: string | null
+  task_type: string | null; is_frog: boolean; why_note: string | null
+}
+
+type OrgMove = { id: string; from: string; to: string; title: string }
+
+function getMondayOfWeek(d: Date): Date {
+  const day = d.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  const mon = new Date(d)
+  mon.setDate(d.getDate() + diff)
+  mon.setHours(0, 0, 0, 0)
+  return mon
+}
+
+function addDays(d: Date, n: number): Date {
+  const r = new Date(d); r.setDate(r.getDate() + n); return r
+}
+
+function toDateStr(d: Date): string {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+}
+
+function fmtWeekRange(start: Date): string {
+  const end = addDays(start, 6)
+  const sm = MONTHS[start.getMonth()].slice(0,3)
+  const em = MONTHS[end.getMonth()].slice(0,3)
+  if (start.getMonth() === end.getMonth()) return sm + ' ' + start.getDate() + ' - ' + end.getDate() + ', ' + start.getFullYear()
+  return sm + ' ' + start.getDate() + ' - ' + em + ' ' + end.getDate() + ', ' + end.getFullYear()
+}
+
+function buildOrganisePlan(allTasks: Record<string, DailyTask[]>, weekStart: Date): OrgMove[] {
+  const moves: OrgMove[] = []
+  const dates = Array.from({ length: 14 }, (_, i) => toDateStr(addDays(weekStart, i)))
+  const flowByDay: Record<string, DailyTask[]> = {}
+  for (const date of dates) {
+    flowByDay[date] = (allTasks[date] ?? []).filter(t => t.task_type === 'Flow' && t.status !== 'Done')
+  }
+  for (let i = 0; i < dates.length; i++) {
+    const date = dates[i]
+    const tasks = flowByDay[date]
+    if (tasks.length <= 2) continue
+    const overflow = tasks.splice(2)
+    for (const task of overflow) {
+      let moved = false
+      for (let j = i + 1; j < dates.length; j++) {
+        if (flowByDay[dates[j]].length < 2) {
+          const dest = dates[j]
+          if ((task.due_date ?? date) !== dest) moves.push({ id: task.id, from: task.due_date ?? date, to: dest, title: task.title })
+          flowByDay[dest].push({ ...task, due_date: dest })
+          moved = true; break
+        }
+      }
+      if (!moved) {
+        const fallback = dates[dates.length - 1]
+        if ((task.due_date ?? date) !== fallback) moves.push({ id: task.id, from: task.due_date ?? date, to: fallback, title: task.title })
+        flowByDay[fallback].push({ ...task, due_date: fallback })
+      }
+    }
+  }
+  return moves
+}
+
+function TaskCard({ task, onComplete, onDelete }: {
+  task: DailyTask; onComplete: (id: string) => void; onDelete: (id: string) => void
 }) {
-  const [title, setTitle] = useState(initial?.title ?? '')
-  const [date, setDate] = useState(initial?.date ?? dateStr)
-  const [cat, setCat] = useState(initial?.category ?? 'Work')
+  const [busy, setBusy] = useState(false)
+  const typeColor = task.task_type === 'Flow' ? C.cyan : task.task_type === 'Personal' ? C.purple : task.task_type === 'Admin' ? C.muted : C.amber
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', padding:'0.75rem', background:C.surface, border:'1px solid '+C.cyan, borderRadius:'0.75rem', marginBottom:'0.5rem' }}>
-      <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Event name"
-        style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'0.5rem 0.75rem', color:C.text, fontFamily:'inherit', fontSize:'0.875rem', outline:'none' }}/>
-      <div style={{ display:'flex', gap:'0.5rem' }}>
-        <input type="date" value={date} onChange={e=>setDate(e.target.value)}
-          style={{ flex:1, background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'0.5rem 0.75rem', color:C.text, fontFamily:'inherit', fontSize:'0.875rem', outline:'none' }}/>
-        <select value={cat} onChange={e=>setCat(e.target.value)}
-          style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.875rem', outline:'none' }}>
-          {EVENT_CATS.map(c => <option key={c}>{c}</option>)}
-        </select>
+    <div style={{ display:'flex', alignItems:'flex-start', gap:'0.375rem', padding:'0.45rem 0.5rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', marginBottom:'0.3rem', opacity:busy?0.5:1 }}>
+      <button onClick={() => { setBusy(true); onComplete(task.id) }}
+        style={{ width:'14px', height:'14px', borderRadius:'50%', border:'2px solid '+C.border, background:'transparent', cursor:'pointer', flexShrink:0, marginTop:'2px', padding:0 }} />
+      <div style={{ flex:1, minWidth:0 }}>
+        <p style={{ fontSize:'0.75rem', fontWeight:600, color:C.text, lineHeight:1.3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>
+          {task.is_frog && <span style={{ marginRight:'0.2rem' }}>&#128293;</span>}
+          {task.title}
+        </p>
+        <div style={{ display:'flex', gap:'0.2rem', marginTop:'0.15rem', flexWrap:'wrap' }}>
+          {task.task_type && <span style={{ fontSize:'0.55rem', color:typeColor, border:'1px solid '+typeColor, borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, opacity:0.85 }}>{task.task_type}</span>}
+          {task.urgency === 'Urgent' && <span style={{ fontSize:'0.55rem', color:C.red, border:'1px solid '+C.red, borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, opacity:0.85 }}>Urgent</span>}
+        </div>
       </div>
-      <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end' }}>
-        <button onClick={onCancel} style={{ padding:'0.35rem 0.75rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Cancel</button>
-        <button onClick={() => title.trim() && onSave({ title: title.trim(), date, category: cat })}
-          style={{ padding:'0.35rem 0.75rem', background:C.cyan, border:'none', borderRadius:'0.5rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Save</button>
-      </div>
+      <button onClick={() => { setBusy(true); onDelete(task.id) }}
+        style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'1px', flexShrink:0 }}>
+        <Trash2 size={10} />
+      </button>
     </div>
   )
 }
 
-function TaskForm({ onSave, onCancel, dateStr }: {
-  onSave: (v: { title: string; dueDate: string }) => void; onCancel: () => void; dateStr: string
+function QuickAdd({ date, onSave, onClose }: {
+  date: string; onSave: (title: string, type: string) => void; onClose: () => void
 }) {
   const [title, setTitle] = useState('')
-  const [date, setDate] = useState(dateStr)
+  const [type, setType] = useState('Flow')
+  const submit = () => { if (title.trim()) onSave(title.trim(), type) }
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', padding:'0.75rem', background:C.surface, border:'1px solid '+C.amber, borderRadius:'0.75rem', marginBottom:'0.5rem' }}>
-      <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Task name"
-        style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'0.5rem 0.75rem', color:C.text, fontFamily:'inherit', fontSize:'0.875rem', outline:'none' }}/>
-      <input type="date" value={date} onChange={e=>setDate(e.target.value)}
-        style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'0.5rem 0.75rem', color:C.text, fontFamily:'inherit', fontSize:'0.875rem', outline:'none' }}/>
-      <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end' }}>
-        <button onClick={onCancel} style={{ padding:'0.35rem 0.75rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Cancel</button>
-        <button onClick={() => title.trim() && onSave({ title: title.trim(), dueDate: date })}
-          style={{ padding:'0.35rem 0.75rem', background:C.amber, border:'none', borderRadius:'0.5rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Save</button>
+    <div style={{ padding:'0.5rem', background:C.surface, border:'1px solid '+C.cyan, borderRadius:'0.625rem', marginTop:'0.5rem' }}>
+      <input autoFocus value={title} onChange={e => setTitle(e.target.value)}
+        onKeyDown={e => { if (e.key==='Enter') submit(); if (e.key==='Escape') onClose() }}
+        placeholder="Task title..."
+        style={{ width:'100%', background:'transparent', border:'none', color:C.text, fontFamily:'inherit', fontSize:'0.75rem', outline:'none', marginBottom:'0.4rem', boxSizing:'border-box' }} />
+      <div style={{ display:'flex', gap:'0.2rem', marginBottom:'0.4rem', flexWrap:'wrap' }}>
+        {['Flow','Personal','Admin','Quick Task'].map(t => (
+          <button key={t} onClick={() => setType(t)} style={{ fontSize:'0.58rem', padding:'0.1rem 0.3rem', borderRadius:'0.2rem', border:'1px solid '+(type===t?C.cyan:C.border), background:type===t?'rgba(0,212,255,0.1)':'transparent', color:type===t?C.cyan:C.muted, cursor:'pointer', fontFamily:'inherit' }}>{t}</button>
+        ))}
+      </div>
+      <div style={{ display:'flex', gap:'0.25rem', justifyContent:'flex-end' }}>
+        <button onClick={onClose} style={{ fontSize:'0.65rem', padding:'0.2rem 0.4rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.25rem', color:C.muted, cursor:'pointer', fontFamily:'inherit' }}>Cancel</button>
+        <button onClick={submit} style={{ fontSize:'0.65rem', padding:'0.2rem 0.5rem', background:C.cyan, border:'none', borderRadius:'0.25rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>Add</button>
       </div>
     </div>
   )
 }
 
-// ---- Item rows ----
-function EventRow({ ev, onUpdate, onDelete }: {
-  ev: NotionEvent
-  onUpdate: (id: string, v: { title?: string; date?: string; category?: string }) => Promise<void>
-  onDelete: (id: string) => Promise<void>
-}) {
-  const [editing, setEditing] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const catColor = ev.category==='Work' ? C.cyan : ev.category==='Personal' ? C.purple : C.amber
-
-  if (editing) return (
-    <EventForm initial={ev} dateStr={ev.date}
-      onSave={async v => { setBusy(true); await onUpdate(ev.id, v); setBusy(false); setEditing(false) }}
-      onCancel={() => setEditing(false)}/>
-  )
-  return (
-    <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.625rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', marginBottom:'0.375rem', opacity:busy?0.5:1 }}>
-      <div style={{ width:'3px', height:'1.5rem', borderRadius:'2px', background:catColor, flexShrink:0 }}/>
-      <div style={{ flex:1, minWidth:0 }}>
-        <p style={{ fontSize:'0.875rem', fontWeight:600, color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ev.title}</p>
-        <p style={{ fontSize:'0.7rem', color:C.muted }}>{ev.category ?? 'Event'}</p>
-      </div>
-      <a href={ev.url} target="_blank" rel="noopener noreferrer" style={{ color:C.muted, flexShrink:0 }}><ExternalLink size={12}/></a>
-      <button onClick={() => setEditing(true)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'2px', flexShrink:0 }}><Edit2 size={12}/></button>
-      <button onClick={async () => { setBusy(true); await onDelete(ev.id) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'2px', flexShrink:0 }}><Trash2 size={12}/></button>
-    </div>
-  )
-}
-
-function TaskRow({ task, onUpdate, onDelete }: {
-  task: NotionTask
-  onUpdate: (id: string, v: { title?: string; status?: string }) => Promise<void>
-  onDelete: (id: string) => Promise<void>
-}) {
-  const [editingTitle, setEditingTitle] = useState(false)
-  const [draft, setDraft] = useState(task.title)
-  const [busy, setBusy] = useState(false)
-  const done = task.status === 'Done'
-
-  async function toggleDone() {
-    setBusy(true)
-    await onUpdate(task.id, { status: done ? 'Not started' : 'Done' })
-    setBusy(false)
-  }
-
-  return (
-    <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.625rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', marginBottom:'0.375rem', opacity:busy?0.5:1 }}>
-      <button onClick={toggleDone} style={{ width:'18px', height:'18px', borderRadius:'50%', border:'2px solid '+(done?C.green:C.border), background:done?C.green:'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-        {done && <Check size={10} color="#000"/>}
-      </button>
-      {editingTitle ? (
-        <input value={draft} onChange={e=>setDraft(e.target.value)}
-          onBlur={async () => { if (draft.trim() !== task.title) { setBusy(true); await onUpdate(task.id, { title: draft.trim() }); setBusy(false) } setEditingTitle(false) }}
-          onKeyDown={e => e.key==='Enter' && (e.target as HTMLInputElement).blur()}
-          autoFocus
-          style={{ flex:1, background:'transparent', border:'none', borderBottom:'1px solid '+C.cyan, color:C.text, fontFamily:'inherit', fontSize:'0.875rem', outline:'none', padding:'0 2px' }}/>
-      ) : (
-        <p onClick={() => setEditingTitle(true)} style={{ flex:1, fontSize:'0.875rem', fontWeight:600, color:done?C.muted:C.text, textDecoration:done?'line-through':'none', cursor:'text', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.title}</p>
-      )}
-      <a href={task.url} target="_blank" rel="noopener noreferrer" style={{ color:C.muted, flexShrink:0 }}><ExternalLink size={12}/></a>
-      <button onClick={async () => { setBusy(true); await onDelete(task.id) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'2px', flexShrink:0 }}><Trash2 size={12}/></button>
-    </div>
-  )
-}
-
-// ---- Main page ----
 export default function CalendarPage() {
   const router = useRouter()
   const today = new Date()
-  const [cur, setCur] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
-  const [selectedDay, setSelectedDay] = useState(today.getDate())
-  const [dayData, setDayData] = useState<DayData>({ tasks:[], events:[] })
-  const [content, setContent] = useState<NotionContent[]>([])
+  const todayStr = toDateStr(today)
+  const [weekStart, setWeekStart] = useState(() => getMondayOfWeek(today))
+  const [weekTasks, setWeekTasks] = useState<Record<string, DailyTask[]>>({})
   const [loading, setLoading] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  const [noToken, setNoToken] = useState(false)
-  const [addingEvent, setAddingEvent] = useState(false)
-  const [addingTask, setAddingTask] = useState(false)
-  const [lastSync, setLastSync] = useState<Date | null>(null)
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [orgPlan, setOrgPlan] = useState<OrgMove[] | null>(null)
+  const [applying, setApplying] = useState(false)
+  const [addingFor, setAddingFor] = useState<string | null>(null)
+  const [calDate, setCalDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
 
-  const year = cur.getFullYear()
-  const month = cur.getMonth()
-  const firstDay = new Date(year, month, 1).getDay()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const daysInPrev = new Date(year, month, 0).getDate()
+  const calYear = calDate.getFullYear()
+  const calMonth = calDate.getMonth()
+  const firstDay = new Date(calYear, calMonth, 1).getDay()
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
+  const daysInPrev = new Date(calYear, calMonth, 0).getDate()
+  const calCells: { day: number; cur: boolean }[] = []
+  for (let i = firstDay - 1; i >= 0; i--) calCells.push({ day: daysInPrev - i, cur: false })
+  for (let i = 1; i <= daysInMonth; i++) calCells.push({ day: i, cur: true })
+  while (calCells.length < 42) calCells.push({ day: calCells.length - daysInMonth - firstDay + 2, cur: false })
+  const weekDates = Array.from({ length: 7 }, (_, i) => toDateStr(addDays(weekStart, i)))
 
-  const dateStr = (d: number) => `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
-  const selDate = dateStr(selectedDay)
-  const isToday = (d: number) => dateStr(d) === today.toISOString().split('T')[0]
-  const contentDots = (d: number) => content.filter(c => c.date === dateStr(d))
-
-  // Fetch content for month
-  useEffect(() => {
-    fetch(`/api/notion/content?year=${year}&month=${month+1}`)
-      .then(r=>r.json())
-      .then(d => { if (d.content) setContent(d.content) })
-      .catch(()=>{})
-  }, [year, month])
-
-  // Fetch selected day
-  const loadDay = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true)
-    else setRefreshing(true)
+  const fetchWeek = useCallback(async () => {
+    setLoading(true)
     try {
-      const r = await fetch(`/api/notion/today?date=${selDate}`)
-      const d = await r.json()
-      if (d.error?.includes('NOTION_TOKEN')) { setNoToken(true); return }
-      setDayData({ tasks: d.tasks ?? [], events: d.events ?? [] })
-      setNoToken(false)
-      setLastSync(new Date())
-    } catch { setNoToken(true) }
-    setLoading(false); setRefreshing(false)
-  }, [selDate])
+      const allDates = Array.from({ length: 14 }, (_, i) => toDateStr(addDays(weekStart, i)))
+      const results = await Promise.all(
+        allDates.map(d => fetch('/api/day?date='+d).then(r => r.json()).catch(() => ({ tasks:[], habits:[] })))
+      )
+      const map: Record<string, DailyTask[]> = {}
+      for (let i = 0; i < allDates.length; i++) {
+        const r = results[i]
+        map[allDates[i]] = [...(r.tasks ?? []), ...(r.habits ?? [])]
+      }
+      setWeekTasks(map)
+    } catch {}
+    setLoading(false)
+  }, [weekStart])
 
-  useEffect(() => { loadDay() }, [loadDay])
+  useEffect(() => { fetchWeek() }, [fetchWeek])
 
-  // Auto-refresh every 5 min
-  useEffect(() => {
-    refreshTimer.current = setTimeout(() => loadDay(true), REFRESH_MS)
-    return () => { if (refreshTimer.current) clearTimeout(refreshTimer.current) }
-  }, [loadDay, lastSync])
+  function handleOrganise() { setOrgPlan(buildOrganisePlan(weekTasks, weekStart)) }
 
-  // ---- Event CRUD ----
-  async function handleAddEvent(v: { title: string; date: string; category: string }) {
-    const r = await fetch('/api/notion/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(v) })
-    const newEv = await r.json()
-    if (!newEv.error) setDayData(d => ({ ...d, events: [...d.events, newEv] }))
-    setAddingEvent(false)
+  async function handleApply() {
+    if (!orgPlan || orgPlan.length === 0) { setOrgPlan(null); return }
+    setApplying(true)
+    try {
+      await fetch('/api/day/tasks', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ moves: orgPlan.map(m => ({ id:m.id, due_date:m.to })) }) })
+      setOrgPlan(null)
+      await fetchWeek()
+    } catch {}
+    setApplying(false)
   }
 
-  async function handleUpdateEvent(id: string, v: { title?: string; date?: string; category?: string }) {
-    await fetch('/api/notion/events', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id, ...v }) })
-    setDayData(d => ({ ...d, events: d.events.map(e => e.id===id ? { ...e, ...v } : e) }))
+  async function handleAddTask(date: string, title: string, type: string) {
+    setAddingFor(null)
+    try {
+      const r = await fetch('/api/day/tasks', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ title, due_date:date, task_type:type, status:'Not started' }) })
+      const task = await r.json()
+      if (!task.error) setWeekTasks(prev => ({ ...prev, [date]: [...(prev[date] ?? []), task] }))
+    } catch {}
   }
 
-  async function handleDeleteEvent(id: string) {
-    await fetch('/api/notion/events', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) })
-    setDayData(d => ({ ...d, events: d.events.filter(e => e.id!==id) }))
+  async function handleComplete(id: string, date: string) {
+    try {
+      await fetch('/api/day/tasks', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id, status:'Done' }) })
+      setWeekTasks(prev => ({ ...prev, [date]: (prev[date] ?? []).filter(t => t.id !== id) }))
+    } catch {}
   }
 
-  // ---- Task CRUD ----
-  async function handleAddTask(v: { title: string; dueDate: string }) {
-    const r = await fetch('/api/notion/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(v) })
-    const newTask = await r.json()
-    if (!newTask.error) setDayData(d => ({ ...d, tasks: [...d.tasks, newTask] }))
-    setAddingTask(false)
+  async function handleDelete(id: string, date: string) {
+    try {
+      await fetch('/api/day/tasks', { method:'DELETE', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id }) })
+      setWeekTasks(prev => ({ ...prev, [date]: (prev[date] ?? []).filter(t => t.id !== id) }))
+    } catch {}
   }
 
-  async function handleUpdateTask(id: string, v: { title?: string; status?: string }) {
-    await fetch('/api/notion/tasks', { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id, ...v }) })
-    setDayData(d => ({ ...d, tasks: d.tasks.map(t => t.id===id ? { ...t, ...v } : t) }))
-  }
-
-  async function handleDeleteTask(id: string) {
-    await fetch('/api/notion/tasks', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) })
-    setDayData(d => ({ ...d, tasks: d.tasks.filter(t => t.id!==id) }))
-  }
-
-  // Calendar grid
-  const cells: { day: number; cur: boolean }[] = []
-  for (let i=firstDay-1; i>=0; i--) cells.push({ day: daysInPrev-i, cur: false })
-  for (let i=1; i<=daysInMonth; i++) cells.push({ day:i, cur:true })
-  while (cells.length < 42) cells.push({ day: cells.length-daysInMonth-firstDay+2, cur:false })
-
-  const totalItems = dayData.events.length + dayData.tasks.length
+  function jumpToWeek(day: number) { setWeekStart(getMondayOfWeek(new Date(calYear, calMonth, day))) }
+  function isInCurrentWeek(day: number): boolean { return weekDates.includes(toDateStr(new Date(calYear, calMonth, day))) }
 
   return (
-    <main style={{ minHeight:'100vh', background:C.bg, display:'flex', flexDirection:'column' }}>
-      {/* Header */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'1rem 1.5rem', borderBottom:'1px solid '+C.border, flexWrap:'wrap', gap:'0.5rem' }}>
+    <main style={{ minHeight:'100vh', maxHeight:'100vh', background:C.bg, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0.875rem 1.5rem', borderBottom:'1px solid '+C.border, flexShrink:0, flexWrap:'wrap', gap:'0.5rem' }}>
         <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
           <button onClick={() => router.push('/')} style={{ display:'flex', alignItems:'center', gap:'0.375rem', background:'none', border:'none', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.85rem' }}>
-            <ArrowLeft size={14}/>Home
+            <ArrowLeft size={14} />Home
           </button>
           <span style={{ color:C.border }}>|</span>
           <span style={{ fontWeight:800, color:C.text }}>Calendar</span>
-          {refreshing && <div style={{ width:'12px', height:'12px', borderRadius:'50%', border:'2px solid '+C.cyan, borderTopColor:'transparent', animation:'spin 1s linear infinite' }}/>}
-          {lastSync && !refreshing && <span style={{ fontSize:'0.65rem', color:C.muted }}>synced {lastSync.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</span>}
+          {loading && <div style={{ width:'12px', height:'12px', borderRadius:'50%', border:'2px solid '+C.cyan, borderTopColor:'transparent', animation:'spin 1s linear infinite' }} />}
         </div>
         <div style={{ display:'flex', gap:'0.5rem' }}>
-          <button onClick={() => loadDay(true)} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:600 }}>
-            <RefreshCw size={12}/>Refresh
-          </button>
           <button onClick={() => router.push('/morning')} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'0.75rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
-            <Sun size={12}/>Morning
+            <Sun size={12} />Morning
           </button>
-          <a href={NOTION_LINKS.daily} target="_blank" rel="noopener noreferrer" style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, textDecoration:'none', fontSize:'0.8rem', fontWeight:600 }}>
-            <ExternalLink size={12}/>Notion
-          </a>
+          <button onClick={handleOrganise} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'linear-gradient(135deg,rgba(139,92,246,0.2),rgba(0,212,255,0.15))', border:'1px solid rgba(139,92,246,0.4)', borderRadius:'0.75rem', color:C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
+            <Zap size={12} />Organise Week
+          </button>
         </div>
       </div>
 
-      <div style={{ flex:1, display:'flex', overflow:'hidden', flexWrap:'wrap' }}>
-        {/* Left: Calendar grid */}
-        <div style={{ width:'340px', flexShrink:0, padding:'1.25rem', borderRight:'1px solid '+C.border, overflowY:'auto' }}>
-          {/* Month nav */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
-            <button onClick={() => setCur(new Date(year, month-1, 1))} style={{ padding:'0.4rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>{'<'}</button>
+      <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
+        <div style={{ width:'240px', flexShrink:0, padding:'1rem', borderRight:'1px solid '+C.border, overflowY:'auto' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
+            <button onClick={() => setCalDate(new Date(calYear, calMonth - 1, 1))} style={{ width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronLeft size={14} /></button>
             <div style={{ textAlign:'center' }}>
-              <p style={{ fontWeight:800, fontSize:'1rem', color:C.text }}>{MONTHS[month]} {year}</p>
-              <button onClick={() => { setCur(new Date(today.getFullYear(),today.getMonth(),1)); setSelectedDay(today.getDate()) }}
-                style={{ fontSize:'0.65rem', color:C.muted, background:'none', border:'none', cursor:'pointer', textDecoration:'underline', fontFamily:'inherit' }}>Today</button>
+              <p style={{ fontWeight:700, fontSize:'0.875rem', color:C.text, margin:0 }}>{MONTHS[calMonth]}</p>
+              <p style={{ fontSize:'0.7rem', color:C.muted, margin:0 }}>{calYear}</p>
             </div>
-            <button onClick={() => setCur(new Date(year, month+1, 1))} style={{ padding:'0.4rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>{'>'}</button>
+            <button onClick={() => setCalDate(new Date(calYear, calMonth + 1, 1))} style={{ width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronRight size={14} /></button>
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:'2px', marginBottom:'4px' }}>
-            {DAYS.map(d => <div key={d} style={{ textAlign:'center', fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.08em', color:C.muted, padding:'0.2rem 0' }}>{d}</div>)}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:'2px', marginBottom:'3px' }}>
+            {DAY_ABBR.map(d => <div key={d} style={{ textAlign:'center', fontSize:'0.55rem', fontWeight:700, color:C.muted }}>{d}</div>)}
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:'2px' }}>
-            {cells.map((cell,i) => {
-              const todayCell = cell.cur && isToday(cell.day)
-              const sel = cell.cur && selectedDay===cell.day
-              const dots = cell.cur ? contentDots(cell.day) : []
+            {calCells.map((cell, i) => {
+              const cellStr = toDateStr(new Date(calYear, calMonth, cell.day))
+              const isT = cell.cur && cellStr === todayStr
+              const inWeek = cell.cur && isInCurrentWeek(cell.day)
               return (
-                <button key={i} onClick={() => cell.cur && setSelectedDay(cell.day)}
-                  style={{ aspectRatio:'1', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-start', paddingTop:'0.3rem', borderRadius:'0.5rem', border:'1px solid '+(sel?C.cyan:todayCell?'rgba(0,212,255,0.25)':'transparent'), background:sel?'rgba(0,212,255,0.1)':todayCell?'rgba(0,212,255,0.04)':'transparent', cursor:cell.cur?'pointer':'default', fontFamily:'inherit' }}>
-                  <span style={{ fontSize:'0.75rem', fontWeight:sel||todayCell?700:400, color:!cell.cur?C.muted:sel||todayCell?C.cyan:C.text }}>{cell.day}</span>
-                  {dots.length>0 && <div style={{ width:'4px', height:'4px', borderRadius:'50%', background:C.purple, marginTop:'1px' }}/>}
+                <button key={i} onClick={() => cell.cur && jumpToWeek(cell.day)} style={{ aspectRatio:'1', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:'0.375rem', border:'1px solid '+(isT?C.cyan:inWeek?'rgba(0,212,255,0.2)':'transparent'), background:isT?'rgba(0,212,255,0.12)':inWeek?'rgba(0,212,255,0.05)':'transparent', cursor:cell.cur?'pointer':'default', fontFamily:'inherit', padding:0 }}>
+                  <span style={{ fontSize:'0.7rem', fontWeight:isT||inWeek?700:400, color:!cell.cur?C.muted:isT?C.cyan:inWeek?'rgba(0,212,255,0.8)':C.text }}>{cell.day}</span>
                 </button>
               )
             })}
           </div>
-
-          {/* Content sidebar */}
-          {content.length>0 && (
-            <div style={{ marginTop:'1.25rem' }}>
-              <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.625rem' }}>Content This Month</p>
-              {content.sort((a,b)=>(a.date??'').localeCompare(b.date??'')).map(c => (
-                <a key={c.id} href={c.url} target="_blank" rel="noopener noreferrer" style={{ display:'block', textDecoration:'none', marginBottom:'0.375rem' }}>
-                  <div style={{ padding:'0.5rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:'0.375rem', marginBottom:'0.1rem' }}>
-                      <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:c.status==='Live'?C.green:c.status==='Scheduled'?C.cyan:c.status==='In Progress'?C.amber:C.muted }}/>
-                      <span style={{ fontSize:'0.65rem', color:C.muted }}>{c.date ? fmt(c.date) : 'TBD'}</span>
-                    </div>
-                    <p style={{ fontSize:'0.75rem', fontWeight:600, color:C.text, lineHeight:1.3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.title}</p>
-                  </div>
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Right: Day panel */}
-        <div style={{ flex:1, minWidth:'300px', display:'flex', flexDirection:'column' }}>
-          {/* Day header */}
-          <div style={{ padding:'1rem 1.5rem', borderBottom:'1px solid '+C.border, display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.5rem', flexWrap:'wrap' }}>
-            <div>
-              <p style={{ fontWeight:700, fontSize:'1rem', color:C.text }}>
-                {new Date(selDate+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}
-              </p>
-              <p style={{ fontSize:'0.75rem', color:C.sec }}>
-                {totalItems} item{totalItems!==1?'s':''}
-                {dayData.events.length>0 ? ` (${dayData.events.length} event${dayData.events.length!==1?'s':''})` : ''}
-                {dayData.tasks.length>0 ? ` (${dayData.tasks.length} task${dayData.tasks.length!==1?'s':''})` : ''}
-              </p>
-            </div>
-            <div style={{ display:'flex', gap:'0.375rem' }}>
-              <button onClick={() => { setAddingEvent(true); setAddingTask(false) }}
-                style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.45rem 0.875rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
-                <Plus size={12}/>Event
-              </button>
-              <button onClick={() => { setAddingTask(true); setAddingEvent(false) }}
-                style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.45rem 0.875rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'0.75rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
-                <Plus size={12}/>Task
-              </button>
+          <button onClick={() => { setCalDate(new Date(today.getFullYear(), today.getMonth(), 1)); setWeekStart(getMondayOfWeek(today)) }}
+            style={{ marginTop:'0.75rem', width:'100%', padding:'0.4rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem' }}>Today</button>
+          <div style={{ marginTop:'1.25rem', display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+            <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:0 }}>Task Types</p>
+            {([['Flow',C.cyan],['Personal',C.purple],['Admin',C.muted],['Quick Task',C.amber]] as [string,string][]).map(([label,color]) => (
+              <div key={label} style={{ display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                <div style={{ width:'8px', height:'8px', borderRadius:'2px', background:color, flexShrink:0 }} />
+                <span style={{ fontSize:'0.7rem', color:C.sec }}>{label}</span>
+              </div>
+            ))}
+            <div style={{ marginTop:'0.5rem', padding:'0.6rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem' }}>
+              <p style={{ fontSize:'0.65rem', color:C.muted, margin:0, lineHeight:1.5 }}>Max <strong style={{ color:C.cyan }}>2 Flow</strong> per day. <strong style={{ color:C.purple }}>Personal</strong> in evening.</p>
             </div>
           </div>
+        </div>
 
-          {/* Content */}
-          <div style={{ flex:1, overflowY:'auto', padding:'1rem 1.5rem' }}>
-            {loading && (
-              <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', color:C.sec, padding:'2rem 0' }}>
-                <div style={{ width:'14px', height:'14px', borderRadius:'50%', border:'2px solid '+C.cyan, borderTopColor:'transparent', animation:'spin 1s linear infinite' }}/>
-                Loading from Notion...
-              </div>
-            )}
+        <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', borderBottom:'1px solid '+C.border, flexShrink:0 }}>
+            <button onClick={() => setWeekStart(w => getMondayOfWeek(addDays(w, -7)))} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronLeft size={16} /></button>
+            <span style={{ fontWeight:700, fontSize:'0.9rem', color:C.text, flex:1 }}>{fmtWeekRange(weekStart)}</span>
+            <button onClick={() => setWeekStart(w => getMondayOfWeek(addDays(w, 7)))} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronRight size={16} /></button>
+          </div>
 
-            {!loading && noToken && (
-              <div style={{ padding:'1.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', maxWidth:'380px' }}>
-                <p style={{ fontWeight:700, color:C.amber, marginBottom:'0.5rem' }}>Notion not connected</p>
-                <p style={{ fontSize:'0.8rem', color:C.sec, lineHeight:1.6, marginBottom:'0.75rem' }}>
-                  Add <code style={{ background:C.surface, padding:'0.1rem 0.3rem', borderRadius:'0.25rem' }}>NOTION_TOKEN</code> to Vercel env vars, then share your Tasks and Events databases with your integration.
-                </p>
-                <a href="https://notion.so/my-integrations" target="_blank" rel="noopener noreferrer"
-                  style={{ display:'inline-flex', alignItems:'center', gap:'0.25rem', fontSize:'0.8rem', color:C.cyan, textDecoration:'none' }}>
-                  Create integration<ExternalLink size={10}/>
-                </a>
-              </div>
-            )}
-
-            {!loading && !noToken && (
-              <>
-                {/* Add forms */}
-                {addingEvent && (
-                  <EventForm dateStr={selDate} onSave={handleAddEvent} onCancel={() => setAddingEvent(false)}/>
-                )}
-                {addingTask && (
-                  <TaskForm dateStr={selDate} onSave={handleAddTask} onCancel={() => setAddingTask(false)}/>
-                )}
-
-                {/* Events section */}
-                {(dayData.events.length>0 || addingEvent) && (
-                  <div style={{ marginBottom:'1.25rem' }}>
-                    <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.cyan, marginBottom:'0.5rem' }}>Events</p>
-                    {dayData.events.map(ev => (
-                      <EventRow key={ev.id} ev={ev} onUpdate={handleUpdateEvent} onDelete={handleDeleteEvent}/>
-                    ))}
+          <div style={{ flex:1, display:'flex', overflowX:'auto', overflowY:'hidden', padding:'0.75rem', gap:'0.5rem' }}>
+            {weekDates.map(date => {
+              const tasks = weekTasks[date] ?? []
+              const flowTasks = tasks.filter(t => t.task_type === 'Flow' && t.status !== 'Done')
+              const personalTasks = tasks.filter(t => t.task_type === 'Personal' && t.status !== 'Done')
+              const otherTasks = tasks.filter(t => t.task_type !== 'Flow' && t.task_type !== 'Personal' && t.status !== 'Done')
+              const dow = new Date(date+'T12:00:00').getDay()
+              const dayName = DAY_ABBR[dow]
+              const dayNum = parseInt(date.split('-')[2])
+              const isToday = date === todayStr
+              const isWeekend = dow === 0 || dow === 6
+              const hasOverflow = flowTasks.length > 2
+              return (
+                <div key={date} style={{ flex:'1 1 140px', minWidth:'140px', maxWidth:'220px', display:'flex', flexDirection:'column', overflowY:'auto', borderRadius:'0.75rem', border:'1px solid '+(isToday?'rgba(0,212,255,0.25)':C.border), padding:'0.625rem', background:isWeekend?'rgba(255,255,255,0.01)':'transparent' }}>
+                  <div style={{ textAlign:'center', marginBottom:'0.625rem', paddingBottom:'0.5rem', borderBottom:'1px solid '+C.border }}>
+                    <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 0.1rem', color:isToday?C.cyan:isWeekend?C.muted:C.sec }}>{dayName}</p>
+                    <p style={{ fontSize:'1.25rem', fontWeight:900, margin:0, color:isToday?C.cyan:isWeekend?C.sec:C.text }}>{dayNum}</p>
+                    {isToday && <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:C.cyan, margin:'0.2rem auto 0' }} />}
                   </div>
-                )}
 
-                {/* Tasks section */}
-                {(dayData.tasks.length>0 || addingTask) && (
-                  <div style={{ marginBottom:'1.25rem' }}>
-                    <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.amber, marginBottom:'0.5rem' }}>Tasks</p>
-                    {dayData.tasks.map(task => (
-                      <TaskRow key={task.id} task={task} onUpdate={handleUpdateTask} onDelete={handleDeleteTask}/>
-                    ))}
-                  </div>
-                )}
-
-                {/* Empty state */}
-                {totalItems===0 && !addingEvent && !addingTask && (
-                  <div style={{ textAlign:'center', padding:'3rem 0', color:C.muted }}>
-                    <p style={{ marginBottom:'0.75rem' }}>Nothing scheduled for this day.</p>
-                    <div style={{ display:'flex', gap:'0.5rem', justifyContent:'center' }}>
-                      <button onClick={() => setAddingEvent(true)} style={{ padding:'0.4rem 0.875rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:'0.625rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>+ Add event</button>
-                      <button onClick={() => setAddingTask(true)} style={{ padding:'0.4rem 0.875rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'0.625rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>+ Add task</button>
+                  <div style={{ marginBottom:'0.625rem' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.3rem' }}>
+                      <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.cyan, margin:0 }}>Flow</p>
+                      <span style={{ fontSize:'0.58rem', fontWeight:700, color:hasOverflow?C.red:flowTasks.length===2?C.amber:C.muted }}>{Math.min(flowTasks.length,2)}/2{hasOverflow?' !':''}</span>
                     </div>
+                    {flowTasks.slice(0,2).map(t => (
+                      <TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} />
+                    ))}
+                    {flowTasks.length === 0 && (
+                      <div style={{ height:'36px', border:'1px dashed rgba(0,212,255,0.2)', borderRadius:'0.5rem', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        <span style={{ fontSize:'0.6rem', color:C.muted }}>empty</span>
+                      </div>
+                    )}
+                    {hasOverflow && <p style={{ fontSize:'0.6rem', color:C.red, margin:'0.2rem 0 0', textAlign:'center' }}>+{flowTasks.length-2} overflow</p>}
                   </div>
-                )}
-              </>
-            )}
+
+                  {otherTasks.length > 0 && (
+                    <div style={{ marginBottom:'0.625rem' }}>
+                      <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.amber, margin:'0 0 0.3rem' }}>Tasks</p>
+                      {otherTasks.map(t => (
+                        <TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} />
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ borderTop:'1px solid rgba(139,92,246,0.2)', paddingTop:'0.5rem', marginTop:'auto' }}>
+                    <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.purple, margin:'0 0 0.3rem' }}>Evening</p>
+                    {personalTasks.map(t => (
+                      <TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} />
+                    ))}
+                    {personalTasks.length === 0 && (
+                      <div style={{ height:'32px', border:'1px dashed rgba(139,92,246,0.2)', borderRadius:'0.5rem', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        <span style={{ fontSize:'0.6rem', color:C.muted }}>personal tasks</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {addingFor === date ? (
+                    <QuickAdd date={date} onSave={(title,type) => handleAddTask(date,title,type)} onClose={() => setAddingFor(null)} />
+                  ) : (
+                    <button onClick={() => setAddingFor(date)} style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.2rem', marginTop:'0.5rem', padding:'0.3rem', width:'100%', background:'transparent', border:'1px dashed '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem' }}>
+                      <Plus size={10} />Add task
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       </div>
+
+      {orgPlan !== null && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
+          <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem', width:'90%', maxWidth:'28rem', maxHeight:'80vh', overflow:'auto', position:'relative' }}>
+            <button onClick={() => setOrgPlan(null)} style={{ position:'absolute', top:'1rem', right:'1rem', background:'none', border:'none', color:C.muted, cursor:'pointer' }}><X size={16} /></button>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.5rem' }}>
+              <Zap size={18} color={C.purple} />
+              <h2 style={{ margin:0, fontSize:'1rem', fontWeight:800, color:C.text }}>Organise Week</h2>
+            </div>
+            <p style={{ fontSize:'0.8rem', color:C.sec, marginBottom:'1rem', lineHeight:1.5 }}>Max 2 Flow tasks per day. Overflow pushed to next available day within 14 days.</p>
+            {orgPlan.length === 0 ? (
+              <div style={{ padding:'1.25rem', background:C.surface, borderRadius:'0.75rem', textAlign:'center' }}>
+                <div style={{ fontSize:'1.5rem', marginBottom:'0.5rem' }}>&#10003;</div>
+                <p style={{ fontWeight:700, color:C.green, margin:'0 0 0.25rem' }}>Already organised</p>
+                <p style={{ fontSize:'0.8rem', color:C.sec, margin:0 }}>No day has more than 2 Flow tasks.</p>
+              </div>
+            ) : (
+              <>
+                <p style={{ fontSize:'0.75rem', color:C.amber, fontWeight:600, marginBottom:'0.75rem' }}>{orgPlan.length} task{orgPlan.length!==1?'s':''} will be rescheduled:</p>
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem', marginBottom:'1.25rem' }}>
+                  {orgPlan.map(m => {
+                    const fmtD = (s: string) => new Date(s+'T12:00:00').toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short' })
+                    return (
+                      <div key={m.id} style={{ padding:'0.625rem 0.75rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.625rem' }}>
+                        <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:'0 0 0.25rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.title}</p>
+                        <p style={{ fontSize:'0.7rem', color:C.sec, margin:0 }}>{fmtD(m.from)} <span style={{ color:C.purple }}>&rarr;</span> <span style={{ color:C.cyan }}>{fmtD(m.to)}</span></p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+            <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end' }}>
+              <button onClick={() => setOrgPlan(null)} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Cancel</button>
+              {orgPlan.length > 0 && (
+                <button onClick={handleApply} disabled={applying} style={{ padding:'0.5rem 1.25rem', background:'linear-gradient(135deg,'+C.purple+',rgba(139,92,246,0.7))', border:'none', borderRadius:'0.625rem', color:'#fff', fontWeight:700, cursor:applying?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', opacity:applying?0.6:1 }}>
+                  {applying?'Applying...':'Apply'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </main>
   )

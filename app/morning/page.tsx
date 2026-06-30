@@ -421,7 +421,7 @@ export default function MorningPage() {
   })
 
   const locked = intention?.locked ?? false
-  const routineDoneCount = doneRoutine.size + habits.filter(h => doneTasks.has(h.id)).size
+  const routineDoneCount = doneRoutine.size + habits.filter(h => doneTasks.has(h.id)).length
   const tasksDoneCount = [...doneTasks].filter(id => tasks.some(t => t.id === id)).length
 
   if (loading) return (
