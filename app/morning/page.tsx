@@ -37,7 +37,6 @@ function loadState(): { items: RoutineItem[]; completed: string[]; date: string 
     if (raw) {
       const parsed = JSON.parse(raw)
       if (parsed.date === todayStr()) return parsed
-      // New day: carry items forward, reset completed
       return { items: parsed.items ?? MORNING_ROUTINE, completed: [], date: todayStr() }
     }
   } catch {}
@@ -165,12 +164,10 @@ export default function MorningPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Active = first incomplete item
   const pending = items.filter(i => !completed.includes(i.id))
   const current = pending[0] ?? null
   const doneCount = completed.length
   const totalCount = items.length
-  const allDone = doneCount >= totalCount
 
   async function markComplete(id: string) {
     const next = [...completed, id]
@@ -178,17 +175,14 @@ export default function MorningPage() {
     saveState(items, next)
 
     if (next.length >= items.length) {
-      // Mark in Supabase
       await supabase.from('routine_completions').upsert({ routine_date: today }, { onConflict: 'routine_date' })
+      // Signal home page immediately -- no Supabase round-trip needed on return
+      try { localStorage.setItem('flowstate_routine_done', today) } catch {}
       setCelebrating(true)
     }
   }
 
-  function skip(id: string) {
-    // Move to end by completing without counting toward allDone logic
-    // Simple: just push to completed so it moves past
-    markComplete(id)
-  }
+  function skip(id: string) { markComplete(id) }
 
   function handleSaveItems(newItems: RoutineItem[]) {
     setItems(newItems)
@@ -197,12 +191,12 @@ export default function MorningPage() {
 
   const quote = DONE_QUOTES[new Date().getDate() % DONE_QUOTES.length]
   const catColor = current ? (CAT_COLORS[current.category ?? ''] ?? C.muted) : C.cyan
-
   const dateLabel = new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' })
 
   if (!loaded) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:C.bg }}>
       <div style={{ width:'1.25rem', height:'1.25rem', borderRadius:'50%', border:'2px solid '+C.cyan, borderTopColor:'transparent', animation:'spin 1s linear infinite' }}/>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
 
@@ -230,12 +224,11 @@ export default function MorningPage() {
         </div>
       </div>
 
-      {/* Date + progress */}
+      {/* Date + progress dots */}
       <div style={{ padding:'1.25rem 1.5rem 0', textAlign:'center' }}>
         <p style={{ fontSize:'0.8rem', color:C.muted, margin:'0 0 1rem' }}>{dateLabel}</p>
-        {/* Progress dots */}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.35rem', flexWrap:'wrap', marginBottom:'0.5rem' }}>
-          {items.map((item, i) => {
+          {items.map((item) => {
             const done = completed.includes(item.id)
             const active = !celebrating && current?.id === item.id
             return (
@@ -249,61 +242,40 @@ export default function MorningPage() {
       <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:'1.5rem' }}>
 
         {celebrating ? (
-          /* ---- Celebration ---- */
           <div style={{ textAlign:'center', maxWidth:'28rem', width:'100%' }}>
             <div style={{ fontSize:'3rem', marginBottom:'0.75rem' }}>&#127881;</div>
             <h2 style={{ fontSize:'1.75rem', fontWeight:900, color:C.green, margin:'0 0 0.5rem', letterSpacing:'-0.02em' }}>Routine complete!</h2>
             {streak > 0 && <p style={{ fontSize:'0.9rem', color:C.amber, margin:'0 0 1.5rem' }}>&#128293; {streak} day{streak!==1?'s':''} in a row</p>}
-
             <div style={{ padding:'1.25rem 1.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', marginBottom:'2rem' }}>
               <p style={{ fontSize:'1rem', color:C.text, fontStyle:'italic', lineHeight:1.6, margin:'0 0 0.5rem' }}>"{quote.q}"</p>
               {quote.a && <p style={{ fontSize:'0.75rem', color:C.muted, margin:0 }}>-- {quote.a}</p>}
             </div>
-
             <button onClick={() => router.push('/')} style={{ display:'inline-flex', alignItems:'center', gap:'0.5rem', padding:'0.875rem 2rem', background:'linear-gradient(135deg,'+C.green+',#00cc6a)', border:'none', borderRadius:'1rem', color:'#000', fontWeight:900, cursor:'pointer', fontFamily:'inherit', fontSize:'1rem' }}>
               Start focus work &#8594;
             </button>
-
-            <div style={{ marginTop:'1rem' }}>
-              <button onClick={() => router.push('/morning')} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', textDecoration:'underline' }}>View all items</button>
-            </div>
           </div>
         ) : current ? (
-          /* ---- Current task ---- */
           <div style={{ width:'100%', maxWidth:'30rem' }}>
-            {/* Category label */}
             <div style={{ display:'flex', justifyContent:'center', marginBottom:'0.75rem' }}>
               <span style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:catColor, background:'rgba(255,255,255,0.04)', border:'1px solid '+catColor+'44', borderRadius:'9999px', padding:'0.25rem 0.75rem' }}>
                 {current.category ?? 'Routine'}
               </span>
             </div>
-
-            {/* Task card */}
-            <div style={{ padding:'2.5rem 2rem', background:C.card, border:'2px solid '+catColor+'33', borderRadius:'1.5rem', textAlign:'center', marginBottom:'1.5rem', boxShadow:'0 8px 32px rgba(0,0,0,0.3)' }}>
+            <div style={{ padding:'2.5rem 2rem', background:C.card, border:'2px solid '+catColor+'33', borderRadius:'1.5rem', textAlign:'center', marginBottom:'1.5rem', boxShadow:'0 8px 32px rgba(0,0,0,0.3)', transition:'border-color 0.4s' }}>
               <h2 style={{ fontSize:'clamp(1.3rem,3vw,1.75rem)', fontWeight:900, color:C.text, margin:'0 0 0.75rem', lineHeight:1.25, letterSpacing:'-0.02em' }}>
                 {current.title}
               </h2>
-              {current.note && (
-                <p style={{ fontSize:'0.8rem', color:C.sec, margin:'0 0 0.5rem', fontStyle:'italic' }}>{current.note}</p>
-              )}
-              {current.minutes && (
-                <p style={{ fontSize:'0.7rem', color:C.muted, margin:0 }}>~{current.minutes} min</p>
-              )}
+              {current.note && <p style={{ fontSize:'0.8rem', color:C.sec, margin:'0 0 0.5rem', fontStyle:'italic' }}>{current.note}</p>}
+              {current.minutes && <p style={{ fontSize:'0.7rem', color:C.muted, margin:0 }}>~{current.minutes} min</p>}
             </div>
-
-            {/* Complete button */}
-            <button onClick={() => markComplete(current.id)} style={{ width:'100%', padding:'1rem', background:'linear-gradient(135deg,'+catColor+','+catColor+'bb)', border:'none', borderRadius:'1rem', color:'#000', fontWeight:900, cursor:'pointer', fontFamily:'inherit', fontSize:'1rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.5rem', boxShadow:'0 4px 20px '+catColor+'33' }}>
+            <button onClick={() => markComplete(current.id)} style={{ width:'100%', padding:'1rem', background:'linear-gradient(135deg,'+catColor+','+catColor+'bb)', border:'none', borderRadius:'1rem', color:'#000', fontWeight:900, cursor:'pointer', fontFamily:'inherit', fontSize:'1rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.5rem', boxShadow:'0 4px 20px '+catColor+'33', transition:'transform 0.15s' }}>
               <Check size={20} strokeWidth={3}/>Done
             </button>
-
-            {/* Skip */}
             <div style={{ textAlign:'center', marginTop:'0.75rem' }}>
               <button onClick={() => skip(current.id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', textDecoration:'underline' }}>
                 Skip for today
               </button>
             </div>
-
-            {/* Upcoming */}
             {pending.length > 1 && (
               <div style={{ marginTop:'1.5rem', padding:'0.875rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.875rem' }}>
                 <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>Up next</p>
@@ -318,7 +290,6 @@ export default function MorningPage() {
             )}
           </div>
         ) : (
-          /* Loaded but all skipped / edge case */
           <div style={{ textAlign:'center' }}>
             <p style={{ color:C.sec }}>All tasks complete for today.</p>
             <button onClick={() => router.push('/')} style={{ marginTop:'1rem', padding:'0.75rem 1.5rem', background:C.cyan, border:'none', borderRadius:'0.75rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>Go home</button>

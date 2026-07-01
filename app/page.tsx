@@ -45,6 +45,7 @@ export default function Home() {
   const [error, setError] = useState(false)
   const [routineDone, setRoutineDone] = useState(false)
   const [topTask, setTopTask] = useState<{ title: string; id: string } | null>(null)
+  const [contentReady, setContentReady] = useState(false)
 
   const quote = QUOTES[now.getDate() % QUOTES.length]
 
@@ -65,9 +66,15 @@ export default function Home() {
     lateStart ? "Running late -- let's go!" :
     "Let's get the day started"
 
-  // Load data -- extracted so we can call on mount AND on page focus/visibility
   const loadData = useCallback(() => {
     const today = toDateStr(new Date())
+
+    // --- Instant check from localStorage (set by morning page on completion) ---
+    try {
+      const localDone = localStorage.getItem('flowstate_routine_done')
+      if (localDone === today) setRoutineDone(true)
+    } catch {}
+
     Promise.all([
       getPrioritySession(),
       getSessions(),
@@ -82,7 +89,13 @@ export default function Home() {
       .then(([p, all, routineRes, tasksRes]) => {
         setPriority(p)
         setSessions(all ?? [])
-        setRoutineDone(!!routineRes.data)
+        const done = !!routineRes.data
+        setRoutineDone(done)
+        // Keep localStorage in sync with DB source of truth
+        try {
+          if (done) localStorage.setItem('flowstate_routine_done', today)
+          else localStorage.removeItem('flowstate_routine_done')
+        } catch {}
         const tasks: Array<{ id:string; title:string; urgency:string|null; importance:string|null; task_type:string|null; is_frog:boolean }> = tasksRes.data ?? []
         const frog   = tasks.find(t => t.is_frog)
         const urgent = tasks.find(t => t.urgency === 'Urgent' && t.importance === 'Important')
@@ -90,10 +103,13 @@ export default function Home() {
         if (top) setTopTask({ id:top.id, title:top.title })
       })
       .catch(() => setError(true))
-      .finally(() => setLoading(false))
+      .finally(() => {
+        setLoading(false)
+        // Small delay so content fades in smoothly
+        setTimeout(() => setContentReady(true), 80)
+      })
   }, [])
 
-  // Run on mount; re-run when user returns to this tab (e.g. after finishing routine)
   useEffect(() => {
     loadData()
     const onVisible = () => { if (!document.hidden) loadData() }
@@ -116,115 +132,135 @@ export default function Home() {
     try { await setPrioritySession(s.id); setPriority(s) } catch {}
   }
 
-  // ---- Focus-mode card (shown when routine is done) ----
+  const accentColor = routineDone ? C.green : C.cyan
+
+  // ---- Focus card ----
   const FocusCard = () => (
     <div style={{
       width:'100%', maxWidth:'32rem',
-      background:'linear-gradient(135deg,rgba(0,255,136,0.06) 0%,rgba(0,212,255,0.04) 100%)',
-      border:'1px solid rgba(0,255,136,0.2)',
-      borderRadius:'1.5rem', padding:'2rem',
-      marginBottom:'2rem', position:'relative', overflow:'hidden'
+      background:'linear-gradient(135deg,rgba(0,255,136,0.07) 0%,rgba(0,212,255,0.04) 100%)',
+      border:'1px solid rgba(0,255,136,0.22)',
+      borderRadius:'1.5rem', padding:'2rem 2rem 1.75rem',
+      marginBottom:'2rem', position:'relative', overflow:'hidden',
+      animation:'fadeInUp 0.4s ease both',
     }}>
-      {/* Glow */}
-      <div style={{ position:'absolute', top:'-40px', right:'-40px', width:'180px', height:'180px', borderRadius:'50%', background:'radial-gradient(circle,rgba(0,255,136,0.12) 0%,transparent 70%)', pointerEvents:'none' }} />
+      {/* Inner glow */}
+      <div style={{ position:'absolute', top:'-50px', right:'-50px', width:'200px', height:'200px', borderRadius:'50%', background:'radial-gradient(circle,rgba(0,255,136,0.13) 0%,transparent 70%)', pointerEvents:'none' }} />
 
       <div style={{ position:'relative' }}>
-        {/* Header row */}
         <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.5rem' }}>
-          <span style={{ fontSize:'1.1rem' }}>&#128293;</span>
-          <span style={{ fontSize:'0.65rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.green }}>Focus time</span>
+          <span style={{ fontSize:'1rem' }}>&#128293;</span>
+          <span style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.14em', textTransform:'uppercase', color:C.green }}>Focus time</span>
         </div>
-
-        <h2 style={{ fontSize:'1.5rem', fontWeight:900, color:C.text, margin:'0 0 1.25rem', letterSpacing:'-0.02em', lineHeight:1.2 }}>
+        <h2 style={{ fontSize:'1.6rem', fontWeight:900, color:C.text, margin:'0 0 1.25rem', letterSpacing:'-0.02em', lineHeight:1.2 }}>
           Time to do<br/>deep work.
         </h2>
 
-        {/* Top task */}
-        {topTask && (
-          <div style={{ background:'rgba(0,0,0,0.25)', border:'1px solid rgba(0,255,136,0.12)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.5rem' }}>
-            <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.green, margin:'0 0 0.3rem' }}>Your #1 task today</p>
+        {topTask ? (
+          <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.5rem' }}>
+            <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.green, margin:'0 0 0.3rem' }}>Your #1 task today</p>
             <p style={{ fontSize:'1rem', fontWeight:700, color:C.text, margin:0, lineHeight:1.35 }}>{topTask.title}</p>
           </div>
-        )}
-        {!topTask && !loading && (
-          <div style={{ background:'rgba(0,0,0,0.25)', border:'1px solid rgba(0,255,136,0.12)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.5rem' }}>
-            <p style={{ fontSize:'0.85rem', color:C.sec, margin:0 }}>No task set for today &mdash; pick one from your workflow.</p>
+        ) : !loading ? (
+          <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.5rem' }}>
+            <p style={{ fontSize:'0.85rem', color:C.sec, margin:0 }}>No task set for today &mdash; pick one from your workflows.</p>
           </div>
-        )}
+        ) : null}
 
-        {/* CTA button */}
         <button onClick={handleFocusClick} style={{
           display:'flex', alignItems:'center', justifyContent:'center', gap:'0.6rem',
-          width:'100%', padding:'0.9rem 1.5rem',
+          width:'100%', padding:'0.95rem 1.5rem',
           background:'linear-gradient(135deg,'+C.green+',#00cc6a)',
           border:'none', borderRadius:'1rem', cursor:'pointer', fontFamily:'inherit',
           fontWeight:800, fontSize:'0.95rem', color:'#000',
-          boxShadow:'0 4px 20px rgba(0,255,136,0.25)',
-          transition:'transform 0.15s',
-        }}>
-          &#9654; Start focus session
+          boxShadow:'0 4px 24px rgba(0,255,136,0.28)',
+          transition:'transform 0.15s, box-shadow 0.15s',
+        }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform='translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow='0 8px 32px rgba(0,255,136,0.38)' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform='translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow='0 4px 24px rgba(0,255,136,0.28)' }}
+        >
+          &#9654;&nbsp; Start focus session
         </button>
       </div>
     </div>
   )
 
-  // ---- Morning-mode card (shown when routine not done) ----
-  const MorningCard = () => (
-    <div style={{ textAlign:'center', marginBottom:'2.5rem' }}>
-      <div style={{ position:'relative', display:'inline-block', marginBottom:'1.25rem' }}>
-        <div style={{ position:'absolute', inset:'-24px', borderRadius:'50%', background:'radial-gradient(circle,rgba(0,212,255,0.1) 0%,transparent 70%)', animation:'pulse 2.5s ease-in-out infinite', pointerEvents:'none' }} />
-        <button onClick={() => router.push('/morning')} style={{
-          display:'flex', flexDirection:'column', alignItems:'center', gap:'0.35rem',
-          padding:'1.5rem 2.5rem', borderRadius:'1.5rem',
-          background: veryLate
-            ? 'linear-gradient(135deg,'+C.purple+',#6d28d9)'
-            : lateStart
-            ? 'linear-gradient(135deg,'+C.amber+',#cc8800)'
-            : 'linear-gradient(135deg,'+C.cyan+',#0099cc)',
-          border:'none', cursor:'pointer', fontFamily:'inherit',
-          boxShadow:'0 8px 32px rgba(0,0,0,0.35)',
-        }}>
-          <span style={{ fontSize:'1rem', fontWeight:900, color:'#000', letterSpacing:'-0.01em' }}>{morningCtaLabel}</span>
-          <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(0,0,0,0.65)' }}>
-            {veryLate ? 'Do the routine, then lock in' : lateStart ? 'Morning routine -- quick version' : 'Start your morning routine'}
-          </span>
-          <span style={{ fontSize:'1.1rem', marginTop:'0.2rem' }}>&#8594;</span>
-        </button>
-      </div>
+  // ---- Morning card ----
+  const MorningCard = () => {
+    const btnGrad = veryLate
+      ? 'linear-gradient(135deg,'+C.purple+',#6d28d9)'
+      : lateStart
+      ? 'linear-gradient(135deg,'+C.amber+',#cc8800)'
+      : 'linear-gradient(135deg,'+C.cyan+',#0099cc)'
+    const btnGlow = veryLate ? 'rgba(139,92,246,0.3)' : lateStart ? 'rgba(255,184,0,0.3)' : 'rgba(0,212,255,0.25)'
 
-      {/* Quote */}
-      <div style={{ maxWidth:'24rem', margin:'0 auto' }}>
-        <p style={{ fontSize:'0.85rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
-        {quote.a && <p style={{ fontSize:'0.72rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
+    return (
+      <div style={{ textAlign:'center', marginBottom:'2.5rem', animation:'fadeInUp 0.4s ease both' }}>
+        <div style={{ position:'relative', display:'inline-block', marginBottom:'1.5rem' }}>
+          {/* Breathing halo */}
+          <div style={{ position:'absolute', inset:'-28px', borderRadius:'50%', background:'radial-gradient(circle,'+btnGlow+' 0%,transparent 70%)', animation:'breathe 3s ease-in-out infinite', pointerEvents:'none' }} />
+          <button onClick={() => router.push('/morning')} style={{
+            position:'relative',
+            display:'flex', flexDirection:'column', alignItems:'center', gap:'0.4rem',
+            padding:'1.5rem 2.75rem', borderRadius:'1.5rem',
+            background:btnGrad,
+            border:'none', cursor:'pointer', fontFamily:'inherit',
+            boxShadow:'0 8px 32px rgba(0,0,0,0.4)',
+            transition:'transform 0.15s, box-shadow 0.15s',
+          }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform='translateY(-2px)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform='translateY(0)' }}
+          >
+            <span style={{ fontSize:'1rem', fontWeight:900, color:'#000', letterSpacing:'-0.01em' }}>{morningCtaLabel}</span>
+            <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(0,0,0,0.65)' }}>
+              {veryLate ? 'Do the routine, then lock in' : lateStart ? 'Morning routine -- quick version' : 'Start your morning routine'}
+            </span>
+            <span style={{ fontSize:'1.1rem', marginTop:'0.15rem' }}>&#8594;</span>
+          </button>
+        </div>
+
+        <div style={{ maxWidth:'24rem', margin:'0 auto' }}>
+          <p style={{ fontSize:'0.85rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
+          {quote.a && <p style={{ fontSize:'0.72rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
-    <main style={{ minHeight:'100vh', display:'flex', flexDirection:'column', background:C.bg }}>
+    <main style={{ minHeight:'100vh', display:'flex', flexDirection:'column', background:C.bg, position:'relative', overflow:'hidden' }}>
+
+      {/* ---- Ambient background orbs ---- */}
+      <div aria-hidden="true" style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0, overflow:'hidden' }}>
+        {/* Orb 1 - top left, accent colour */}
+        <div style={{ position:'absolute', top:'-120px', left:'-80px', width:'500px', height:'500px', borderRadius:'50%', background:'radial-gradient(circle,'+( routineDone ? 'rgba(0,255,136,0.055)' : 'rgba(0,212,255,0.055)')+' 0%,transparent 65%)', animation:'orbFloat1 18s ease-in-out infinite' }} />
+        {/* Orb 2 - bottom right, purple */}
+        <div style={{ position:'absolute', bottom:'-100px', right:'-60px', width:'420px', height:'420px', borderRadius:'50%', background:'radial-gradient(circle,rgba(139,92,246,0.045) 0%,transparent 65%)', animation:'orbFloat2 22s ease-in-out infinite' }} />
+        {/* Orb 3 - mid page, faint warm */}
+        <div style={{ position:'absolute', top:'45%', left:'55%', width:'300px', height:'300px', borderRadius:'50%', background:'radial-gradient(circle,'+(routineDone ? 'rgba(0,255,136,0.03)' : 'rgba(0,212,255,0.028)')+' 0%,transparent 70%)', animation:'orbFloat3 28s ease-in-out infinite', transform:'translate(-50%,-50%)' }} />
+      </div>
 
       {/* ---- Header ---- */}
       <div style={{
-        position:'relative', overflow:'hidden', padding:'2.5rem 2rem 2rem',
-        borderBottom:'1px solid '+C.border,
-        background: routineDone && !loading
-          ? 'linear-gradient(160deg,rgba(0,255,136,0.05) 0%,rgba(0,212,255,0.03) 50%,transparent 100%)'
-          : 'linear-gradient(160deg,rgba(0,212,255,0.05) 0%,rgba(139,92,246,0.04) 50%,transparent 100%)'
+        position:'relative', zIndex:1, overflow:'hidden',
+        padding:'2.5rem 2rem 2rem', borderBottom:'1px solid '+C.border,
+        background: routineDone
+          ? 'linear-gradient(160deg,rgba(0,255,136,0.05) 0%,rgba(0,212,255,0.03) 60%,transparent 100%)'
+          : 'linear-gradient(160deg,rgba(0,212,255,0.05) 0%,rgba(139,92,246,0.04) 60%,transparent 100%)',
+        transition:'background 0.6s ease',
       }}>
-        <div style={{ position:'absolute', top:'-60px', left:'50%', transform:'translateX(-50%)', width:'400px', height:'200px', borderRadius:'50%', background:'radial-gradient(ellipse,'+(routineDone && !loading ? 'rgba(0,255,136,0.06)' : 'rgba(0,212,255,0.06)')+' 0%,transparent 70%)', pointerEvents:'none' }} />
-
         <div style={{ position:'relative', maxWidth:'900px', margin:'0 auto', display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:'1.5rem' }}>
           <div>
             <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.4rem' }}>
-              <Zap size={16} color={routineDone && !loading ? C.green : C.cyan} />
-              <span style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:routineDone && !loading ? C.green : C.cyan }}>FlowState</span>
+              <Zap size={16} color={accentColor} />
+              <span style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:accentColor, transition:'color 0.4s' }}>FlowState</span>
             </div>
             <h1 style={{ fontSize:'clamp(1.6rem,3.5vw,2.25rem)', fontWeight:900, color:C.text, margin:'0 0 0.35rem', letterSpacing:'-0.02em' }}>{greeting}</h1>
             <p style={{ fontSize:'0.9rem', color:C.sec, margin:'0 0 0.75rem' }}>{dateLabel}</p>
             <div style={{ display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap' }}>
               <span style={{ fontFamily:'monospace', fontSize:'1.1rem', fontWeight:700, color:C.text, letterSpacing:'0.05em' }}>{timeLabel}</span>
               {!loading && routineDone && (
-                <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.green, background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem' }}>
+                <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.green, background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem', animation:'fadeInUp 0.35s ease both' }}>
                   &#10003; Routine complete
                 </span>
               )}
@@ -239,11 +275,11 @@ export default function Home() {
           {/* Nav */}
           <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', alignItems:'flex-start' }}>
             <button onClick={() => router.push('/morning')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem', color:C.amber, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem', color:C.amber, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit', transition:'background 0.2s' }}>
               <Sunrise size={14}/>Morning
             </button>
             <button onClick={() => router.push('/calendar')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit', transition:'background 0.2s' }}>
               <CalendarDays size={14}/>Calendar
             </button>
             <button onClick={() => router.push('/workflows')}
@@ -255,7 +291,13 @@ export default function Home() {
       </div>
 
       {/* ---- Main body ---- */}
-      <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'3rem 2rem 2rem' }}>
+      <div style={{
+        position:'relative', zIndex:1,
+        flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'3rem 2rem 2rem',
+        opacity: contentReady ? 1 : 0,
+        transform: contentReady ? 'translateY(0)' : 'translateY(10px)',
+        transition:'opacity 0.4s ease, transform 0.4s ease',
+      }}>
 
         {error ? (
           <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem', maxWidth:'28rem', textAlign:'center', marginBottom:'2rem' }}>
@@ -264,19 +306,25 @@ export default function Home() {
             <button onClick={() => router.push('/workflows')} style={{ padding:'0.6rem 1.2rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>Browse Anyway</button>
           </div>
         ) : loading ? (
-          <div style={{ color:C.muted, fontSize:'0.85rem' }}>Loading...</div>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', color:C.muted, fontSize:'0.85rem' }}>
+            <div style={{ width:'1rem', height:'1rem', borderRadius:'50%', border:'2px solid '+C.muted, borderTopColor:C.cyan, animation:'spin 0.8s linear infinite' }}/>
+            Loading...
+          </div>
         ) : (
           <>
             {routineDone ? <FocusCard /> : <MorningCard />}
 
             {/* Sessions list */}
             {sessions.length > 0 && (
-              <div style={{ width:'100%', maxWidth:'32rem' }}>
+              <div style={{ width:'100%', maxWidth:'32rem', animation:'fadeInUp 0.5s 0.1s ease both' }}>
                 <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Workflows</p>
                 <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
                   {sessions.slice(0,5).map(s => (
                     <div key={s.id} onClick={() => router.push('/workflow/'+s.id)}
-                      style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', cursor:'pointer' }}>
+                      style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', cursor:'pointer', transition:'border-color 0.2s, background 0.2s' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor=C.muted; (e.currentTarget as HTMLDivElement).style.background='#1e1e2e' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor=C.border; (e.currentTarget as HTMLDivElement).style.background=C.card }}
+                    >
                       <div style={{ width:'2rem', height:'2rem', borderRadius:'0.625rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.7rem', fontWeight:700, color:C.sec, flexShrink:0 }}>
                         {(s.workflow_type?.icon ?? 'WF').slice(0,3)}
                       </div>
@@ -300,7 +348,31 @@ export default function Home() {
         )}
       </div>
 
-      <style>{`@keyframes pulse{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:1;transform:scale(1.06)}}`}</style>
+      <style>{`
+        @keyframes orbFloat1 {
+          0%,100% { transform: translate(0,0) scale(1); opacity:1 }
+          30%  { transform: translate(50px,-35px) scale(1.08); opacity:0.85 }
+          70%  { transform: translate(-25px,20px) scale(0.94); opacity:0.9 }
+        }
+        @keyframes orbFloat2 {
+          0%,100% { transform: translate(0,0) scale(1); opacity:1 }
+          40%  { transform: translate(-40px,45px) scale(0.92); opacity:0.8 }
+          75%  { transform: translate(30px,-20px) scale(1.06); opacity:0.9 }
+        }
+        @keyframes orbFloat3 {
+          0%,100% { transform: translate(-50%,-50%) scale(1); opacity:1 }
+          50%  { transform: translate(-50%,-50%) scale(1.18); opacity:0.75 }
+        }
+        @keyframes breathe {
+          0%,100% { opacity:0.5; transform:scale(1) }
+          50%      { opacity:1;   transform:scale(1.08) }
+        }
+        @keyframes fadeInUp {
+          from { opacity:0; transform:translateY(12px) }
+          to   { opacity:1; transform:translateY(0) }
+        }
+        @keyframes spin { to { transform:rotate(360deg) } }
+      `}</style>
     </main>
   )
 }
