@@ -2,18 +2,13 @@ import { NextResponse } from 'next/server'
 import { getAllTasksForSync, getAllVaultForSync, getAllContentForSync, getAllProjectsForSync } from '@/lib/notion'
 import { supabase } from '@/lib/supabase'
 
-export async function POST() {
-  try {
-    // Fetch all Notion data in parallel
-    const [notionTasks, notionVault, notionContent, notionProjects] = await Promise.all([
-      getAllTasksForSync(),
-      getAllVaultForSync(),
-      getAllContentForSync(),
-      getAllProjectsForSync(),
-    ])
+type SyncResult = { synced: number; total: number; error?: string }
 
-    // ---- Upsert tasks ----
-    const taskRows = notionTasks.map(t => ({
+async function syncTasks(): Promise<SyncResult> {
+  try {
+    const items = await getAllTasksForSync()
+    if (items.length === 0) return { synced: 0, total: 0 }
+    const rows = items.map(t => ({
       notion_id:       t.id,
       title:           t.title,
       status:          t.status,
@@ -27,35 +22,45 @@ export async function POST() {
       notion_url:      t.url,
       updated_at:      new Date().toISOString(),
     }))
-    const { data: taskData, error: taskErr } = await supabase
-      .from('tasks')
-      .upsert(taskRows, { onConflict: 'notion_id' })
-      .select('id')
-    if (taskErr) throw new Error('tasks: ' + taskErr.message)
+    const { data, error } = await supabase.from('tasks').upsert(rows, { onConflict: 'notion_id' }).select('id')
+    if (error) return { synced: 0, total: items.length, error: error.message }
+    return { synced: data?.length ?? rows.length, total: items.length }
+  } catch (e) {
+    return { synced: 0, total: 0, error: String(e) }
+  }
+}
 
-    // ---- Upsert vault items ----
-    const vaultRows = notionVault.map(v => ({
-      notion_id:    v.id,
-      title:        v.title,
-      category:     v.category ?? null,
-      author_source:v.authorSource ?? null,
-      link:         v.link ?? null,
-      key_takeaway: v.keyTakeaway ?? null,
-      notes:        v.notes ?? null,
-      platform:     v.platform ?? null,
-      tag:          v.tag ?? null,
-      status:       v.status,
-      notion_url:   v.url,
-      updated_at:   new Date().toISOString(),
+async function syncVault(): Promise<SyncResult> {
+  try {
+    const items = await getAllVaultForSync()
+    if (items.length === 0) return { synced: 0, total: 0 }
+    const rows = items.map(v => ({
+      notion_id:     v.id,
+      title:         v.title,
+      category:      v.category ?? null,
+      author_source: v.authorSource ?? null,
+      link:          v.link ?? null,
+      key_takeaway:  v.keyTakeaway ?? null,
+      notes:         v.notes ?? null,
+      platform:      v.platform ?? null,
+      tag:           v.tag ?? null,
+      status:        v.status,
+      notion_url:    v.url,
+      updated_at:    new Date().toISOString(),
     }))
-    const { data: vaultData, error: vaultErr } = await supabase
-      .from('vault_items')
-      .upsert(vaultRows, { onConflict: 'notion_id' })
-      .select('id')
-    if (vaultErr) throw new Error('vault_items: ' + vaultErr.message)
+    const { data, error } = await supabase.from('vault_items').upsert(rows, { onConflict: 'notion_id' }).select('id')
+    if (error) return { synced: 0, total: items.length, error: error.message }
+    return { synced: data?.length ?? rows.length, total: items.length }
+  } catch (e) {
+    return { synced: 0, total: 0, error: String(e) }
+  }
+}
 
-    // ---- Upsert content items ----
-    const contentRows = notionContent.map(c => ({
+async function syncContent(): Promise<SyncResult> {
+  try {
+    const items = await getAllContentForSync()
+    if (items.length === 0) return { synced: 0, total: 0 }
+    const rows = items.map(c => ({
       notion_id:      c.id,
       title:          c.title,
       pipeline_stage: c.pipelineStage ?? null,
@@ -69,14 +74,19 @@ export async function POST() {
       notion_url:     c.url,
       updated_at:     new Date().toISOString(),
     }))
-    const { data: contentData, error: contentErr } = await supabase
-      .from('content_items')
-      .upsert(contentRows, { onConflict: 'notion_id' })
-      .select('id')
-    if (contentErr) throw new Error('content_items: ' + contentErr.message)
+    const { data, error } = await supabase.from('content_items').upsert(rows, { onConflict: 'notion_id' }).select('id')
+    if (error) return { synced: 0, total: items.length, error: error.message }
+    return { synced: data?.length ?? rows.length, total: items.length }
+  } catch (e) {
+    return { synced: 0, total: 0, error: String(e) }
+  }
+}
 
-    // ---- Upsert projects ----
-    const projectRows = notionProjects.map(p => ({
+async function syncProjects(): Promise<SyncResult> {
+  try {
+    const items = await getAllProjectsForSync()
+    if (items.length === 0) return { synced: 0, total: 0 }
+    const rows = items.map(p => ({
       notion_id:   p.id,
       title:       p.title,
       status:      p.status,
@@ -88,30 +98,46 @@ export async function POST() {
       notion_url:  p.url,
       updated_at:  new Date().toISOString(),
     }))
-    const { data: projectData, error: projectErr } = await supabase
-      .from('projects')
-      .upsert(projectRows, { onConflict: 'notion_id' })
-      .select('id')
-    if (projectErr) throw new Error('projects: ' + projectErr.message)
-
-    return NextResponse.json({
-      ok: true,
-      synced: {
-        tasks:    taskData?.length ?? taskRows.length,
-        vault:    vaultData?.length ?? vaultRows.length,
-        content:  contentData?.length ?? contentRows.length,
-        projects: projectData?.length ?? projectRows.length,
-      },
-      total: {
-        tasks:    notionTasks.length,
-        vault:    notionVault.length,
-        content:  notionContent.length,
-        projects: notionProjects.length,
-      }
-    })
+    const { data, error } = await supabase.from('projects').upsert(rows, { onConflict: 'notion_id' }).select('id')
+    if (error) return { synced: 0, total: items.length, error: error.message }
+    return { synced: data?.length ?? rows.length, total: items.length }
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 })
+    return { synced: 0, total: 0, error: String(e) }
   }
+}
+
+export async function POST() {
+  // Run all syncs independently — one failure does NOT abort the others
+  const [tasks, vault, content, projects] = await Promise.all([
+    syncTasks(),
+    syncVault(),
+    syncContent(),
+    syncProjects(),
+  ])
+
+  const hasError = [tasks, vault, content, projects].some(r => r.error)
+
+  return NextResponse.json({
+    ok: !hasError || tasks.synced > 0, // success if at least tasks synced
+    synced: {
+      tasks:    tasks.synced,
+      vault:    vault.synced,
+      content:  content.synced,
+      projects: projects.synced,
+    },
+    total: {
+      tasks:    tasks.total,
+      vault:    vault.total,
+      content:  content.total,
+      projects: projects.total,
+    },
+    errors: {
+      ...(tasks.error    ? { tasks:    tasks.error    } : {}),
+      ...(vault.error    ? { vault:    vault.error    } : {}),
+      ...(content.error  ? { content:  content.error  } : {}),
+      ...(projects.error ? { projects: projects.error } : {}),
+    },
+  })
 }
 
 // GET: stats across all synced tables

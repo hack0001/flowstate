@@ -162,7 +162,7 @@ export default function ProjectsPage() {
     setSyncing(true); setSyncMsg('')
     const r = await fetch('/api/sync/notion', { method: 'POST' })
     const d = await r.json()
-    setSyncMsg(d.error ? 'Error: ' + d.error : `Synced ${d.synced?.projects ?? 0} projects`)
+    setSyncMsg(d.errors?.['projects'] ? 'Error: ' + d.errors['projects'] : `Synced ${d.synced?.projects ?? 0} projects`)
     await load()
     setSyncing(false)
     setTimeout(() => setSyncMsg(''), 4000)

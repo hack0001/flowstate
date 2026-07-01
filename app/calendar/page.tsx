@@ -188,8 +188,18 @@ export default function CalendarPage() {
     try {
       const r = await fetch('/api/sync/notion', { method: 'POST' })
       const d = await r.json()
-      if (d.error) setSyncMsg('Error: ' + d.error)
-      else setSyncMsg(`Synced ${d.synced ?? d.total ?? 0} tasks from Notion`)
+      const errKeys = Object.keys(d.errors ?? {})
+      if (errKeys.length > 0 && d.synced?.tasks === 0) {
+        setSyncMsg('Error: ' + Object.values(d.errors)[0])
+      } else {
+        const t = d.synced?.tasks ?? 0
+        const v = d.synced?.vault ?? 0
+        const c = d.synced?.content ?? 0
+        const parts = [`${t} tasks`]
+        if (v > 0) parts.push(`${v} vault`)
+        if (c > 0) parts.push(`${c} content`)
+        setSyncMsg('Synced ' + parts.join(', ') + (errKeys.includes('projects') ? ' (projects DB not shared)' : ''))
+      }
       await fetchWeek()
     } catch (e) {
       setSyncMsg('Sync failed: ' + String(e))

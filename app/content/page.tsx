@@ -106,7 +106,7 @@ export default function ContentPage() {
     setSyncing(true); setSyncMsg('')
     const r = await fetch('/api/sync/notion', { method: 'POST' })
     const d = await r.json()
-    setSyncMsg(d.error ? 'Error: ' + d.error : `Synced ${d.synced?.content ?? 0} content items`)
+    setSyncMsg(d.errors?.['content'] ? 'Error: ' + d.errors['content'] : `Synced ${d.synced?.content ?? 0} content items`)
     await load()
     setSyncing(false)
     setTimeout(() => setSyncMsg(''), 4000)
