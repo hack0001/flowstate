@@ -1,49 +1,100 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Play, Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise } from 'lucide-react'
+import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise, ArrowRight } from 'lucide-react'
 import { getPrioritySession, getSessions, setPrioritySession } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import type { WorkflowSession } from '@/types'
 
 const C = { bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a', cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a' }
-const IDENTITY_LINES = [
-  'You are building a media empire, one video at a time.',
-  'Every piece of content you publish compounds your authority.',
-  'You are the creator, the brand, and the business.',
-  'Builders ship. You are a builder.',
-  'Your audience is waiting for what only you can make.',
-  'You don\'t need permission to build something great.',
-]
+
 const QUOTES = [
   { q:'The secret of getting ahead is getting started.', a:'Mark Twain' },
-  { q:'Focus on being productive instead of busy.', a:'Tim Ferriss' },
-  { q:'One task. Full attention. Ship it.', a:'' },
+  { q:'Discipline is the bridge between goals and accomplishment.', a:'Jim Rohn' },
+  { q:'Motivation gets you started. Habit keeps you going.', a:'Jim Rohn' },
   { q:'Done beats perfect.', a:'' },
+  { q:'One task. Full attention. Ship it.', a:'' },
+  { q:'Your future self is watching you right now through memories.', a:'Hal Elrod' },
 ]
+
+function useClock() {
+  const [now, setNow] = useState(new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  return now
+}
+
+function toDateStr(d: Date) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+}
 
 export default function Home() {
   const router = useRouter()
+  const now = useClock()
+  const h = now.getHours()
   const [priority, setPriority] = useState<WorkflowSession | null>(null)
   const [sessions, setSessions] = useState<WorkflowSession[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
-  const quote = QUOTES[new Date().getDate() % QUOTES.length]
-  const identityLine = IDENTITY_LINES[new Date().getDate() % IDENTITY_LINES.length]
-  const h = new Date().getHours()
-  const greeting = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+  const [routineDone, setRoutineDone] = useState(false)
+  const [topTask, setTopTask] = useState<{ title: string; id: string } | null>(null)
+
+  const quote = QUOTES[now.getDate() % QUOTES.length]
+
+  const greeting =
+    h < 6  ? 'Up early, Tom' :
+    h < 12 ? 'Good morning, Tom' :
+    h < 17 ? 'Good afternoon, Tom' :
+    h < 21 ? 'Good evening, Tom' : 'Late night, Tom'
+
+  const dateLabel = now.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' })
+  const timeLabel = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' })
+
+  const lateStart = h >= 10 && h < 14
+  const veryLate  = h >= 14
+
+  const ctaLabel = routineDone
+    ? 'Start focus work'
+    : veryLate  ? 'Still time to win the afternoon'
+    : lateStart ? 'Running late -- let\'s go!'
+    : 'Let\'s get the day started'
+
+  const ctaSubtext = routineDone
+    ? topTask ? '"' + topTask.title + '"' : 'Your priority task awaits'
+    : veryLate  ? 'Do the routine, then lock in'
+    : lateStart ? 'Morning routine -- quick version'
+    : 'Start your morning routine'
+
+  function handleCta() {
+    if (routineDone && priority) router.push('/workflow/' + priority.id + '/focus')
+    else if (routineDone && sessions.length > 0) router.push('/workflow/' + sessions[0].id + '/focus')
+    else router.push('/morning')
+  }
 
   useEffect(() => {
-    Promise.all([getPrioritySession(), getSessions()])
-      .then(([p, all]) => { setPriority(p); setSessions(all ?? []) })
+    const today = toDateStr(now)
+    Promise.all([
+      getPrioritySession(),
+      getSessions(),
+      supabase.from('routine_completions').select('routine_date').eq('routine_date', today).maybeSingle(),
+      supabase.from('daily_tasks').select('id,title,urgency,importance,task_type,is_frog').eq('due_date', today).neq('status','Done').order('is_frog', { ascending:false }).limit(10),
+    ])
+      .then(([p, all, routineRes, tasksRes]) => {
+        setPriority(p)
+        setSessions(all ?? [])
+        setRoutineDone(!!routineRes.data)
+        const tasks: Array<{ id: string; title: string; urgency: string | null; importance: string | null; task_type: string | null; is_frog: boolean }> = tasksRes.data ?? []
+        const frog = tasks.find(t => t.is_frog)
+        const urgent = tasks.find(t => t.urgency === 'Urgent' && t.importance === 'Important')
+        const top = frog ?? urgent ?? tasks[0]
+        if (top) setTopTask({ id: top.id, title: top.title })
+      })
       .catch(() => setError(true))
       .finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  function handleStart() {
-    if (priority) router.push('/workflow/' + priority.id + '/focus')
-    else if (sessions.length > 0) router.push('/workflow/' + sessions[0].id)
-    else router.push('/workflows')
-  }
 
   async function setP(s: WorkflowSession) {
     try { await setPrioritySession(s.id); setPriority(s) } catch {}
@@ -51,108 +102,124 @@ export default function Home() {
 
   return (
     <main style={{ minHeight:'100vh', display:'flex', flexDirection:'column', background:C.bg }}>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'1.5rem 2rem', borderBottom:'1px solid '+C.border }}>
-        <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
-          <Zap size={20} color={C.cyan} />
-          <span style={{ fontWeight:700, fontSize:'1.125rem', color:C.text }}>FlowState</span>
-        </div>
-        <div style={{ display:'flex', gap:'0.5rem' }}>
-          <button onClick={() => router.push('/morning')}
-            style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.2rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontSize:'0.875rem', fontWeight:600, fontFamily:'inherit' }}
-            onMouseEnter={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.amber; el.style.color=C.amber }}
-            onMouseLeave={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.border; el.style.color=C.sec }}>
-            <Sunrise size={15}/>Morning
-          </button>
-          <button onClick={() => router.push('/calendar')}
-            style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.2rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontSize:'0.875rem', fontWeight:600, fontFamily:'inherit' }}
-            onMouseEnter={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.cyan; el.style.color=C.cyan }}
-            onMouseLeave={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.border; el.style.color=C.sec }}>
-            <CalendarDays size={15}/>Calendar
-          </button>
-          <button onClick={() => router.push('/workflows')}
-            style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.2rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', cursor:'pointer', fontSize:'0.875rem', fontWeight:700, fontFamily:'inherit' }}>
-            <Plus size={15}/>New Workflow
-          </button>
+
+      {/* ---- Morning header ---- */}
+      <div style={{ position:'relative', overflow:'hidden', padding:'2.5rem 2rem 2rem', borderBottom:'1px solid '+C.border, background:'linear-gradient(160deg,rgba(0,212,255,0.05) 0%,rgba(139,92,246,0.04) 50%,transparent 100%)' }}>
+        {/* Soft glow behind */}
+        <div style={{ position:'absolute', top:'-60px', left:'50%', transform:'translateX(-50%)', width:'400px', height:'200px', borderRadius:'50%', background:'radial-gradient(ellipse,rgba(0,212,255,0.06) 0%,transparent 70%)', pointerEvents:'none' }} />
+
+        <div style={{ position:'relative', maxWidth:'900px', margin:'0 auto', display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:'1.5rem' }}>
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.4rem' }}>
+              <Zap size={16} color={C.cyan} />
+              <span style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:C.cyan }}>FlowState</span>
+            </div>
+            <h1 style={{ fontSize:'clamp(1.6rem,3.5vw,2.25rem)', fontWeight:900, color:C.text, margin:'0 0 0.35rem', letterSpacing:'-0.02em' }}>{greeting}</h1>
+            <p style={{ fontSize:'0.9rem', color:C.sec, margin:'0 0 0.75rem' }}>{dateLabel}</p>
+            <div style={{ display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap' }}>
+              <span style={{ fontFamily:'monospace', fontSize:'1.1rem', fontWeight:700, color:C.text, letterSpacing:'0.05em' }}>{timeLabel}</span>
+              {!loading && routineDone && (
+                <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.green, background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem' }}>
+                  &#10003; Routine complete
+                </span>
+              )}
+              {!loading && !routineDone && h >= 6 && (
+                <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.amber, background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem' }}>
+                  Morning routine pending
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Nav buttons */}
+          <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', alignItems:'flex-start' }}>
+            <button onClick={() => router.push('/morning')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem', color:C.amber, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              <Sunrise size={14}/>Morning
+            </button>
+            <button onClick={() => router.push('/calendar')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              <CalendarDays size={14}/>Calendar
+            </button>
+            <button onClick={() => router.push('/workflows')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', cursor:'pointer', fontSize:'0.8rem', fontWeight:700, fontFamily:'inherit' }}>
+              <Plus size={14}/>New Workflow
+            </button>
+          </div>
         </div>
       </div>
 
-      <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'0 2rem 4rem' }}>
-        <div style={{ textAlign:'center', marginBottom:'3rem' }}>
-          <p style={{ fontSize:'1.1rem', color:C.sec, marginBottom:'0.5rem' }}>{greeting}</p>
-          <h1 style={{ fontSize:'clamp(2.5rem,5vw,3.5rem)', fontWeight:900, letterSpacing:'-0.03em', color:C.text, margin:'0 0 0.75rem' }}>
-            {'Ready to '}<span style={{ color:C.cyan }}>create?</span>
-          </h1>
-          <p style={{ fontSize:'1rem', color:C.sec }}>
-            {loading ? '...' : error ? 'Connect Supabase in Vercel env vars' : priority ? ('Priority: "'+priority.title+'"') : sessions.length > 0 ? 'Select a session below' : 'Start your first workflow'}
-          </p>
-        </div>
+      {/* ---- Main CTA ---- */}
+      <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'3rem 2rem 2rem' }}>
 
-        {!error && (
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', marginBottom:'3rem' }}>
-            <div style={{ position:'relative' }}>
-              <div style={{ position:'absolute', inset:'-30px', borderRadius:'50%', background:'radial-gradient(circle,rgba(0,212,255,0.12) 0%,transparent 70%)', animation:'pulse 2s ease-in-out infinite', pointerEvents:'none' }} />
-              <button onClick={handleStart}
-                style={{ width:'10rem', height:'10rem', borderRadius:'50%', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 30px rgba(0,212,255,0.35),0 8px 32px rgba(0,0,0,0.4)', position:'relative' }}
-                onMouseEnter={e=>{ const el=e.currentTarget as HTMLButtonElement; el.style.transform='scale(1.06)'; el.style.boxShadow='0 0 50px rgba(0,212,255,0.55),0 8px 32px rgba(0,0,0,0.4)' }}
-                onMouseLeave={e=>{ const el=e.currentTarget as HTMLButtonElement; el.style.transform='scale(1)'; el.style.boxShadow='0 0 30px rgba(0,212,255,0.35),0 8px 32px rgba(0,0,0,0.4)' }}>
-                <Play size={44} fill="#000" color="#000" />
-              </button>
-            </div>
-            <p style={{ fontSize:'0.75rem', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:C.sec, marginTop:'1rem' }}>
-              {priority ? 'Continue Focus' : sessions.length > 0 ? 'Pick a Session' : 'Start Here'}
-            </p>
-          </div>
-        )}
-
-        {error && (
+        {error ? (
           <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem', maxWidth:'28rem', textAlign:'center', marginBottom:'2rem' }}>
             <p style={{ fontWeight:700, color:C.amber, marginBottom:'0.5rem' }}>Supabase Not Connected</p>
             <p style={{ fontSize:'0.875rem', color:C.sec, marginBottom:'1rem' }}>Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel.</p>
             <button onClick={() => router.push('/workflows')} style={{ padding:'0.6rem 1.2rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>Browse Anyway</button>
           </div>
-        )}
+        ) : (
+          <>
+            {/* Big CTA button */}
+            <div style={{ textAlign:'center', marginBottom:'2.5rem' }}>
+              <div style={{ position:'relative', display:'inline-block', marginBottom:'1.25rem' }}>
+                <div style={{ position:'absolute', inset:'-24px', borderRadius:'50%', background:'radial-gradient(circle,'+(routineDone?'rgba(0,255,136,0.1)':'rgba(0,212,255,0.1)')+' 0%,transparent 70%)', animation:'pulse 2.5s ease-in-out infinite', pointerEvents:'none' }} />
+                <button onClick={handleCta} style={{
+                  display:'flex', flexDirection:'column', alignItems:'center', gap:'0.35rem',
+                  padding:'1.5rem 2.5rem', borderRadius:'1.5rem',
+                  background: routineDone
+                    ? 'linear-gradient(135deg,'+C.green+',#00cc6a)'
+                    : lateStart ? 'linear-gradient(135deg,'+C.amber+',#cc8800)'
+                    : 'linear-gradient(135deg,'+C.cyan+',#0099cc)',
+                  border:'none', cursor:'pointer', fontFamily:'inherit',
+                  boxShadow:'0 8px 32px rgba(0,0,0,0.35)',
+                  transition:'transform 0.15s',
+                }}>
+                  <span style={{ fontSize:'1rem', fontWeight:900, color:'#000', letterSpacing:'-0.01em' }}>{ctaLabel}</span>
+                  {ctaSubtext && <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(0,0,0,0.6)', maxWidth:'240px', textAlign:'center', lineHeight:1.3 }}>{ctaSubtext}</span>}
+                  <ArrowRight size={18} color="rgba(0,0,0,0.7)" style={{ marginTop:'0.25rem' }} />
+                </button>
+              </div>
 
-        {!error && !loading && sessions.length > 0 && (
-          <div style={{ width:'100%', maxWidth:'32rem' }}>
-            <p style={{ fontSize:'0.7rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active Sessions</p>
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
-              {sessions.map(s => (
-                <div key={s.id} onClick={() => { router.push('/workflow/'+s.id) }}
-                  style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', cursor:'pointer', transition:'all 0.2s' }}
-                  onMouseEnter={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.cyan; el.style.transform='translateY(-1px)' }}
-                  onMouseLeave={e=>{ const el=e.currentTarget as HTMLElement; el.style.borderColor=C.border; el.style.transform='none' }}>
-                  <div style={{ width:'2.5rem', height:'2.5rem', borderRadius:'0.75rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.75rem', fontWeight:700, color:C.sec, flexShrink:0 }}>
-                    {(s.workflow_type?.icon ?? 'WF').slice(0,3)}
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <p style={{ fontWeight:600, fontSize:'0.875rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.title}</p>
-                    <p style={{ fontSize:'0.75rem', color:C.sec }}>{s.workflow_type?.name ?? 'Workflow'}</p>
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexShrink:0 }}>
-                    {s.is_priority
-                      ? <span style={{ display:'inline-flex', alignItems:'center', gap:'0.25rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', color:C.amber, padding:'0.2rem 0.6rem', borderRadius:'9999px', fontSize:'0.7rem', fontWeight:700 }}><Star size={10} fill="currentColor" />Priority</span>
-                      : <button style={{ fontSize:'0.7rem', padding:'0.2rem 0.5rem', borderRadius:'0.5rem', background:C.surface, border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit' }} onClick={e => { e.stopPropagation(); setP(s) }}>Set Priority</button>
-                    }
-                    <ChevronRight size={15} color={C.muted} />
-                  </div>
-                </div>
-              ))}
+              {/* Quote */}
+              <div style={{ maxWidth:'24rem', margin:'0 auto' }}>
+                <p style={{ fontSize:'0.85rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
+                {quote.a && <p style={{ fontSize:'0.72rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
+              </div>
             </div>
-          </div>
+
+            {/* Sessions list */}
+            {!loading && sessions.length > 0 && (
+              <div style={{ width:'100%', maxWidth:'32rem' }}>
+                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Workflows</p>
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+                  {sessions.slice(0,5).map(s => (
+                    <div key={s.id} onClick={() => router.push('/workflow/'+s.id)}
+                      style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', cursor:'pointer' }}>
+                      <div style={{ width:'2rem', height:'2rem', borderRadius:'0.625rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.7rem', fontWeight:700, color:C.sec, flexShrink:0 }}>
+                        {(s.workflow_type?.icon ?? 'WF').slice(0,3)}
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ fontWeight:600, fontSize:'0.85rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{s.title}</p>
+                        <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>{s.workflow_type?.name ?? 'Workflow'}</p>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', flexShrink:0 }}>
+                        {s.is_priority
+                          ? <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', color:C.amber, padding:'0.15rem 0.5rem', borderRadius:'9999px', fontSize:'0.65rem', fontWeight:700 }}><Star size={9} fill="currentColor" />Priority</span>
+                          : <button style={{ fontSize:'0.65rem', padding:'0.15rem 0.4rem', borderRadius:'0.375rem', background:C.surface, border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit' }} onClick={e => { e.stopPropagation(); setP(s) }}>Set Priority</button>
+                        }
+                        <ChevronRight size={14} color={C.muted} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
-
-        {/* Identity affirmation */}
-        <div style={{ marginTop:'2rem', padding:'0.875rem 1.5rem', background:'linear-gradient(135deg,rgba(0,212,255,0.06),rgba(139,92,246,0.06))', border:'1px solid rgba(0,212,255,0.15)', borderRadius:'1rem', maxWidth:'28rem', textAlign:'center' }}>
-          <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:C.cyan, marginBottom:'0.375rem' }}>Who you are</p>
-          <p style={{ fontSize:'0.9rem', fontWeight:600, color:C.text, lineHeight:1.5 }}>{identityLine}</p>
-        </div>
-
-        <div style={{ marginTop:'1.5rem', textAlign:'center', maxWidth:'24rem' }}>
-          <p style={{ fontSize:'0.875rem', color:C.sec, fontStyle:'italic', lineHeight:1.6 }}>"{quote.q}"</p>
-          {quote.a && <p style={{ fontSize:'0.75rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
-        </div>
       </div>
-      <style>{`@keyframes pulse{0%,100%{opacity:.6;transform:scale(1)}50%{opacity:1;transform:scale(1.05)}}`}</style>
+
+      <style>{`@keyframes pulse{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:1;transform:scale(1.06)}}`}</style>
     </main>
   )
 }
