@@ -69,9 +69,11 @@ export default function Home() {
 
   const loadData = useCallback(() => {
     // Instant check from localStorage (set by morning page on completion)
+    // Captured in closure so .then() can use it even if Supabase returns null
+    let localDone = false
     try {
-      const localDone = localStorage.getItem('flowstate_routine_done')
-      if (localDone === toDateStr(new Date())) setRoutineDone(true)
+      localDone = localStorage.getItem('flowstate_routine_done') === toDateStr(new Date())
+      if (localDone) setRoutineDone(true)
     } catch {}
 
     Promise.all([
@@ -88,11 +90,11 @@ export default function Home() {
       .then(([p, all, routineRes, tasksRes]) => {
         setPriorityState(p)
         setSessions(all ?? [])
-        const done = !!routineRes.data
+        // Trust localStorage OR Supabase -- a missing/errored table must not override
+        const done = !!routineRes.data || localDone
         setRoutineDone(done)
         try {
           if (done) localStorage.setItem('flowstate_routine_done', toDateStr(new Date()))
-          else localStorage.removeItem('flowstate_routine_done')
         } catch {}
         const tasks: Array<{ id:string; title:string; urgency:string|null; importance:string|null; task_type:string|null; is_frog:boolean }> = tasksRes.data ?? []
         const frog   = tasks.find(t => t.is_frog)
