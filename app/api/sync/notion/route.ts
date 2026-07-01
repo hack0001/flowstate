@@ -26,14 +26,14 @@ export async function POST() {
       updated_at:      new Date().toISOString(),
     }))
 
-    const { error, count } = await supabase
+    const { error, data } = await supabase
       .from('tasks')
       .upsert(rows, { onConflict: 'notion_id' })
-      .select('id', { count: 'exact', head: true })
+      .select('id')
 
     if (error) throw error
 
-    return NextResponse.json({ ok: true, synced: count ?? rows.length, total: notionTasks.length })
+    return NextResponse.json({ ok: true, synced: data?.length ?? rows.length, total: notionTasks.length })
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
   }
