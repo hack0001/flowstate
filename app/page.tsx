@@ -21,6 +21,16 @@ const QUOTES = [
   { q:'Your future self is watching you right now through memories.', a:'Hal Elrod' },
 ]
 
+// Pre-flight check items -- must all be ticked before focus starts
+const FOCUS_ITEMS = [
+  { id:'desk',   emoji:'&#128187;', label:'Desk cleared',          note:'Remove everything except what you need right now' },
+  { id:'phone',  emoji:'&#128245;', label:'Phone in another room', note:'Not on silent &mdash; physically gone' },
+  { id:'timer',  emoji:'&#9201;',  label:'Timer set',              note:'Know exactly how long this session runs' },
+  { id:'notif',  emoji:'&#128276;', label:'Notifications off',     note:'Do Not Disturb enabled &mdash; no pings' },
+  { id:'water',  emoji:'&#128167;', label:'Drink within reach',    note:'No reason to leave your desk mid-session' },
+  { id:'task',   emoji:'&#127919;', label:'Task crystal clear',    note:'You know exactly what you are building' },
+]
+
 function toDateStr(d: Date) {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
 }
@@ -34,17 +44,100 @@ function LiveClock() {
     const t = setInterval(() => setTime(fmt()), 1000)
     return () => clearInterval(t)
   }, [])
+  return <span style={{ fontFamily:'monospace', fontSize:'1.1rem', fontWeight:700, color:C.text, letterSpacing:'0.05em' }}>{time}</span>
+}
+
+// ---- Focus environment pre-flight check ----
+function FocusCheck({ onProceed, onClose }: { onProceed: () => void; onClose: () => void }) {
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const allDone = checked.size === FOCUS_ITEMS.length
+
+  function toggle(id: string) {
+    setChecked(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
   return (
-    <span style={{ fontFamily:'monospace', fontSize:'1.1rem', fontWeight:700, color:C.text, letterSpacing:'0.05em' }}>
-      {time}
-    </span>
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60, padding:'1rem' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'1.5rem', padding:'2rem', width:'100%', maxWidth:'26rem', position:'relative', animation:'fadeInUp 0.3s ease both' }}>
+        {/* Header */}
+        <div style={{ textAlign:'center', marginBottom:'1.75rem' }}>
+          <div style={{ fontSize:'2rem', marginBottom:'0.5rem' }}>&#127919;</div>
+          <h2 style={{ fontSize:'1.25rem', fontWeight:900, color:C.text, margin:'0 0 0.35rem', letterSpacing:'-0.02em' }}>Pre-Flight Check</h2>
+          <p style={{ fontSize:'0.82rem', color:C.sec, margin:0 }}>Get the environment right before you lock in</p>
+        </div>
+
+        {/* Progress bar */}
+        <div style={{ height:'3px', background:'#2a2a3a', borderRadius:'2px', marginBottom:'1.5rem', overflow:'hidden' }}>
+          <div style={{ height:'100%', background:'linear-gradient(90deg,'+C.green+',#00cc6a)', width:(checked.size/FOCUS_ITEMS.length*100)+'%', transition:'width 0.3s ease', borderRadius:'2px' }} />
+        </div>
+
+        {/* Checklist */}
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', marginBottom:'1.75rem' }}>
+          {FOCUS_ITEMS.map(item => {
+            const done = checked.has(item.id)
+            return (
+              <button key={item.id} onClick={() => toggle(item.id)} style={{
+                display:'flex', alignItems:'center', gap:'0.875rem',
+                padding:'0.75rem 1rem',
+                background: done ? 'rgba(0,255,136,0.06)' : 'rgba(255,255,255,0.02)',
+                border: '1px solid '+(done ? 'rgba(0,255,136,0.25)' : '#2a2a3a'),
+                borderRadius:'0.875rem', cursor:'pointer', fontFamily:'inherit',
+                textAlign:'left', transition:'all 0.15s ease',
+              }}>
+                {/* Checkbox */}
+                <div style={{
+                  width:'20px', height:'20px', borderRadius:'50%', flexShrink:0,
+                  border: '2px solid '+(done ? C.green : '#4a4a6a'),
+                  background: done ? C.green : 'transparent',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  transition:'all 0.15s ease',
+                }}>
+                  {done && <span style={{ fontSize:'0.65rem', color:'#000', fontWeight:900 }}>&#10003;</span>}
+                </div>
+                {/* Label */}
+                <div style={{ flex:1 }}>
+                  <p style={{ fontSize:'0.85rem', fontWeight:700, color:done?C.green:C.text, margin:0, transition:'color 0.15s' }}
+                    dangerouslySetInnerHTML={{ __html: item.label }} />
+                  <p style={{ fontSize:'0.7rem', color:C.muted, margin:0, lineHeight:1.4, marginTop:'0.1rem' }}
+                    dangerouslySetInnerHTML={{ __html: item.note }} />
+                </div>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* CTA */}
+        <button onClick={allDone ? onProceed : undefined} style={{
+          width:'100%', padding:'0.95rem',
+          background: allDone ? 'linear-gradient(135deg,'+C.green+',#00cc6a)' : '#1a1a26',
+          border: '1px solid '+(allDone ? 'transparent' : '#2a2a3a'),
+          borderRadius:'1rem', cursor: allDone ? 'pointer' : 'default',
+          fontFamily:'inherit', fontWeight:900, fontSize:'0.95rem',
+          color: allDone ? '#000' : C.muted,
+          transition:'all 0.25s ease',
+          boxShadow: allDone ? '0 4px 24px rgba(0,255,136,0.3)' : 'none',
+        }}>
+          {allDone ? 'Begin deep work →' : checked.size + ' / ' + FOCUS_ITEMS.length + ' checked'}
+        </button>
+
+        <div style={{ textAlign:'center', marginTop:'0.875rem' }}>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', textDecoration:'underline' }}>
+            Skip check &mdash; I&apos;m already set up
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
 export default function Home() {
   const router = useRouter()
 
-  // Compute time-of-day values once per render -- only re-renders on actual state changes, not the clock
   const h = new Date().getHours()
   const dateLabel = new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' })
   const greeting =
@@ -63,13 +156,12 @@ export default function Home() {
   const [routineDone, setRoutineDone] = useState(false)
   const [topTask, setTopTask] = useState<{ title: string; id: string } | null>(null)
   const [contentReady, setContentReady] = useState(false)
+  const [showFocusCheck, setShowFocusCheck] = useState(false)
 
   const today = toDateStr(new Date())
   const quote = QUOTES[new Date().getDate() % QUOTES.length]
 
   const loadData = useCallback(() => {
-    // Instant check from localStorage (set by morning page on completion)
-    // Captured in closure so .then() can use it even if Supabase returns null
     let localDone = false
     try {
       localDone = localStorage.getItem('flowstate_routine_done') === toDateStr(new Date())
@@ -80,9 +172,11 @@ export default function Home() {
       getPrioritySession(),
       getSessions(),
       supabase.from('routine_completions').select('routine_date').eq('routine_date', toDateStr(new Date())).maybeSingle(),
-      supabase.from('daily_tasks')
+      // Query the tasks table for today's top task (frog first)
+      supabase.from('tasks')
         .select('id,title,urgency,importance,task_type,is_frog')
         .eq('due_date', toDateStr(new Date()))
+        .eq('archived', false)
         .neq('status','Done')
         .order('is_frog', { ascending:false })
         .limit(10),
@@ -90,15 +184,12 @@ export default function Home() {
       .then(([p, all, routineRes, tasksRes]) => {
         setPriorityState(p)
         setSessions(all ?? [])
-        // Trust localStorage OR Supabase -- a missing/errored table must not override
         const done = !!routineRes.data || localDone
         setRoutineDone(done)
-        try {
-          if (done) localStorage.setItem('flowstate_routine_done', toDateStr(new Date()))
-        } catch {}
+        try { if (done) localStorage.setItem('flowstate_routine_done', toDateStr(new Date())) } catch {}
         const tasks: Array<{ id:string; title:string; urgency:string|null; importance:string|null; task_type:string|null; is_frog:boolean }> = tasksRes.data ?? []
         const frog   = tasks.find(t => t.is_frog)
-        const urgent = tasks.find(t => t.urgency === 'Urgent' && t.importance === 'Important')
+        const urgent = tasks.find(t => t.urgency === 'Urgent' && t.importance === 'Moved the Needle')
         const top    = frog ?? urgent ?? tasks[0]
         if (top) setTopTask({ id:top.id, title:top.title })
       })
@@ -121,6 +212,12 @@ export default function Home() {
   }, [loadData])
 
   function handleFocusClick() {
+    // Show the pre-flight check before starting focus
+    setShowFocusCheck(true)
+  }
+
+  function proceedToFocus() {
+    setShowFocusCheck(false)
     if (priority) router.push('/workflow/' + priority.id + '/focus')
     else if (sessions.length > 0) router.push('/workflow/' + sessions[0].id + '/focus')
     else router.push('/workflows')
@@ -133,21 +230,19 @@ export default function Home() {
   const accentColor = routineDone ? C.green : C.cyan
   const morningCtaLabel =
     veryLate  ? 'Still time to win the afternoon' :
-    lateStart ? "Running late -- let's go!" :
+    lateStart ? "Running late — let's go!" :
     "Let's get the day started"
   const morningCtaGrad = veryLate
     ? 'linear-gradient(135deg,'+C.purple+',#6d28d9)'
     : lateStart
     ? 'linear-gradient(135deg,'+C.amber+',#cc8800)'
     : 'linear-gradient(135deg,'+C.cyan+',#0099cc)'
-  const morningCtaGlow = veryLate
-    ? 'rgba(139,92,246,0.3)'
-    : lateStart ? 'rgba(255,184,0,0.3)' : 'rgba(0,212,255,0.25)'
+  const morningCtaGlow = veryLate ? 'rgba(139,92,246,0.3)' : lateStart ? 'rgba(255,184,0,0.3)' : 'rgba(0,212,255,0.25)'
 
   return (
     <main style={{ minHeight:'100vh', display:'flex', flexDirection:'column', background:C.bg, position:'relative', overflow:'hidden' }}>
 
-      {/* Ambient background orbs -- pointer-events:none so they never interfere */}
+      {/* Ambient background orbs */}
       <div aria-hidden="true" style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0 }}>
         <div style={{ position:'absolute', top:'-120px', left:'-80px', width:'500px', height:'500px', borderRadius:'50%', background:'radial-gradient(circle,'+(routineDone?'rgba(0,255,136,0.055)':'rgba(0,212,255,0.055)')+' 0%,transparent 65%)', animation:'orbFloat1 18s ease-in-out infinite' }} />
         <div style={{ position:'absolute', bottom:'-100px', right:'-60px', width:'420px', height:'420px', borderRadius:'50%', background:'radial-gradient(circle,rgba(139,92,246,0.045) 0%,transparent 65%)', animation:'orbFloat2 22s ease-in-out infinite' }} />
@@ -172,7 +267,6 @@ export default function Home() {
             <h1 style={{ fontSize:'clamp(1.6rem,3.5vw,2.25rem)', fontWeight:900, color:C.text, margin:'0 0 0.35rem', letterSpacing:'-0.02em' }}>{greeting}</h1>
             <p style={{ fontSize:'0.9rem', color:C.sec, margin:'0 0 0.75rem' }}>{dateLabel}</p>
             <div style={{ display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap' }}>
-              {/* Clock is its own isolated component -- no parent re-render */}
               <LiveClock />
               {!loading && routineDone && (
                 <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.green, background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem', animation:'fadeInUp 0.35s ease both' }}>
@@ -251,7 +345,7 @@ export default function Home() {
                   </div>
                 ) : (
                   <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.5rem' }}>
-                    <p style={{ fontSize:'0.85rem', color:C.sec, margin:0 }}>No task set &mdash; pick one from your workflows.</p>
+                    <p style={{ fontSize:'0.85rem', color:C.sec, margin:0 }}>No task set &mdash; sync Notion or add tasks in Calendar.</p>
                   </div>
                 )}
                 <button onClick={handleFocusClick} style={{
@@ -310,7 +404,7 @@ export default function Home() {
                 }}>
                   <span style={{ fontSize:'1rem', fontWeight:900, color:'#000', letterSpacing:'-0.01em' }}>{morningCtaLabel}</span>
                   <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(0,0,0,0.65)' }}>
-                    {veryLate ? 'Do the routine, then lock in' : lateStart ? 'Morning routine -- quick version' : 'Start your morning routine'}
+                    {veryLate ? 'Do the routine, then lock in' : lateStart ? 'Morning routine — quick version' : 'Start your morning routine'}
                   </span>
                   <span style={{ fontSize:'1.1rem', marginTop:'0.15rem' }}>&#8594;</span>
                 </button>
@@ -351,30 +445,21 @@ export default function Home() {
         )}
       </div>
 
+      {/* Focus pre-flight check overlay */}
+      {showFocusCheck && (
+        <FocusCheck
+          onProceed={proceedToFocus}
+          onClose={() => setShowFocusCheck(false)}
+        />
+      )}
+
       <style>{`
-        @keyframes orbFloat1 {
-          0%,100% { transform:translate(0,0) scale(1) }
-          30%  { transform:translate(50px,-35px) scale(1.08) }
-          70%  { transform:translate(-25px,20px) scale(0.94) }
-        }
-        @keyframes orbFloat2 {
-          0%,100% { transform:translate(0,0) scale(1) }
-          40%  { transform:translate(-40px,45px) scale(0.92) }
-          75%  { transform:translate(30px,-20px) scale(1.06) }
-        }
-        @keyframes orbFloat3 {
-          0%,100% { transform:translate(-50%,-50%) scale(1) }
-          50%  { transform:translate(-50%,-50%) scale(1.18) }
-        }
-        @keyframes breathe {
-          0%,100% { opacity:0.5; transform:scale(1) }
-          50%      { opacity:1;   transform:scale(1.08) }
-        }
-        @keyframes fadeInUp {
-          from { opacity:0; transform:translateY(12px) }
-          to   { opacity:1; transform:translateY(0) }
-        }
-        @keyframes spin { to { transform:rotate(360deg) } }
+        @keyframes orbFloat1 { 0%,100%{transform:translate(0,0) scale(1)} 30%{transform:translate(50px,-35px) scale(1.08)} 70%{transform:translate(-25px,20px) scale(0.94)} }
+        @keyframes orbFloat2 { 0%,100%{transform:translate(0,0) scale(1)} 40%{transform:translate(-40px,45px) scale(0.92)} 75%{transform:translate(30px,-20px) scale(1.06)} }
+        @keyframes orbFloat3 { 0%,100%{transform:translate(-50%,-50%) scale(1)} 50%{transform:translate(-50%,-50%) scale(1.18)} }
+        @keyframes breathe { 0%,100%{opacity:0.5;transform:scale(1)} 50%{opacity:1;transform:scale(1.08)} }
+        @keyframes fadeInUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes spin { to{transform:rotate(360deg)} }
       `}</style>
     </main>
   )

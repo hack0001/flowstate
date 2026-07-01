@@ -1,23 +1,30 @@
-// Day planning: Supabase queries replacing Notion for daily tasks, intentions, streaks
+// Day planning: Supabase queries for tasks, intentions, streaks
 import { supabase } from './supabase'
 
 // ---- Types ----
 
-export type DailyTask = {
+// Task: rows in the central `tasks` table (synced from Notion or created in-app)
+export type Task = {
   id: string
-  title: string
-  due_date: string | null
-  status: string
-  urgency: string | null
-  importance: string | null
-  time_commitment: string | null
-  task_type: string | null
-  is_frog: boolean
-  why_note: string | null
   notion_id: string | null
+  title: string
+  status: string              // 'Not started' | 'In progress' | 'Done'
+  due_date: string | null
+  task_type: string | null    // 'Flow' | 'Recurring' | 'Quick Task' | 'Admin' | 'Personal'
+  urgency: string | null      // 'Urgent' | 'Habit' | 'Non Urgent'
+  importance: string | null   // 'Moved the Needle' | 'Non Important' | 'Important'
+  time_commitment: string | null
+  is_frog: boolean
+  priority: string | null
+  why_note: string | null
+  notion_url: string | null
+  archived: boolean
   created_at: string
   updated_at: string
 }
+
+// Legacy alias so existing code that imports DailyTask still works
+export type DailyTask = Task
 
 export type DailyIntention = {
   id: string
@@ -27,18 +34,19 @@ export type DailyIntention = {
 }
 
 export type StreakInfo = {
-  current: number    // consecutive days ending yesterday or today
+  current: number
   longest: number
   completedToday: boolean
 }
 
-// ---- Daily Tasks ----
+// ---- Tasks table CRUD ----
 
-export async function getTasksForDate(date: string): Promise<DailyTask[]> {
+export async function getTasksForDate(date: string): Promise<Task[]> {
   const { data, error } = await supabase
-    .from('daily_tasks')
+    .from('tasks')
     .select('*')
     .eq('due_date', date)
+    .eq('archived', false)
     .neq('status', 'Done')
     .order('is_frog', { ascending: false })
     .order('created_at')
@@ -46,29 +54,48 @@ export async function getTasksForDate(date: string): Promise<DailyTask[]> {
   return data ?? []
 }
 
-export async function getHabitsForDate(date: string): Promise<DailyTask[]> {
+export async function getHabitsForDate(date: string): Promise<Task[]> {
   const { data, error } = await supabase
-    .from('daily_tasks')
+    .from('tasks')
     .select('*')
     .eq('due_date', date)
+    .eq('archived', false)
     .eq('urgency', 'Habit')
     .order('created_at')
   if (error) throw error
   return data ?? []
 }
 
+export async function getTodayTopTask(date: string): Promise<Task | null> {
+  // Frog first, then Urgent+Important, then first task of day
+  const { data } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('due_date', date)
+    .eq('archived', false)
+    .neq('status', 'Done')
+    .order('is_frog', { ascending: false })
+    .order('created_at')
+    .limit(10)
+  if (!data || data.length === 0) return null
+  const frog   = data.find((t: Task) => t.is_frog)
+  const urgent = data.find((t: Task) => t.urgency === 'Urgent' && t.importance === 'Moved the Needle')
+  return frog ?? urgent ?? data[0]
+}
+
 export async function createTask(task: {
   title: string
-  due_date?: string
-  urgency?: string
-  importance?: string
-  time_commitment?: string
-  task_type?: string
+  due_date?: string | null
+  urgency?: string | null
+  importance?: string | null
+  time_commitment?: string | null
+  task_type?: string | null
   is_frog?: boolean
-  why_note?: string
-}): Promise<DailyTask> {
+  why_note?: string | null
+  priority?: string | null
+}): Promise<Task> {
   const { data, error } = await supabase
-    .from('daily_tasks')
+    .from('tasks')
     .insert(task)
     .select()
     .single()
@@ -76,21 +103,26 @@ export async function createTask(task: {
   return data
 }
 
-export async function updateTask(id: string, patch: Partial<Omit<DailyTask, 'id' | 'created_at' | 'updated_at'>>): Promise<void> {
-  const { error } = await supabase.from('daily_tasks').update(patch).eq('id', id)
+export async function updateTask(
+  id: string,
+  patch: Partial<Omit<Task, 'id' | 'notion_id' | 'created_at' | 'updated_at'>>
+): Promise<void> {
+  const { error } = await supabase.from('tasks').update(patch).eq('id', id)
   if (error) throw error
 }
 
 export async function deleteTask(id: string): Promise<void> {
-  const { error } = await supabase.from('daily_tasks').delete().eq('id', id)
+  // Soft delete: set archived = true
+  const { error } = await supabase.from('tasks').update({ archived: true }).eq('id', id)
   if (error) throw error
 }
 
-// Reschedule multiple tasks at once (used by Organise Day)
 export async function rescheduleTasks(moves: { id: string; due_date: string }[]): Promise<void> {
-  await Promise.all(moves.map(({ id, due_date }) =>
-    supabase.from('daily_tasks').update({ due_date }).eq('id', id)
-  ))
+  await Promise.all(
+    moves.map(({ id, due_date }) =>
+      supabase.from('tasks').update({ due_date }).eq('id', id)
+    )
+  )
 }
 
 // ---- Daily Intentions ----
@@ -124,7 +156,6 @@ export async function toggleLock(date: string, locked: boolean): Promise<void> {
 // ---- Routine Streak ----
 
 export async function getStreakInfo(today: string): Promise<StreakInfo> {
-  // Fetch last 90 days of completions to calculate streak
   const from = new Date(today)
   from.setDate(from.getDate() - 90)
   const fromStr = from.toISOString().split('T')[0]
@@ -139,36 +170,21 @@ export async function getStreakInfo(today: string): Promise<StreakInfo> {
   const dates = new Set((data ?? []).map((r: { routine_date: string }) => r.routine_date))
   const completedToday = dates.has(today)
 
-  // Calculate current streak (working backwards from today)
   let current = 0
   const d = new Date(today + 'T00:00:00')
   while (true) {
     const key = d.toISOString().split('T')[0]
-    if (dates.has(key)) {
-      current++
-      d.setDate(d.getDate() - 1)
-    } else {
-      break
-    }
+    if (dates.has(key)) { current++; d.setDate(d.getDate() - 1) } else break
   }
 
-  // Calculate longest streak in the fetched window
   const allDates = [...dates].sort()
-  let longest = 0
-  let run = 0
-  let prev: string | null = null
+  let longest = 0; let run = 0; let prev: string | null = null
   for (const dateStr of allDates) {
     if (prev) {
-      const prevD: Date = new Date(prev + 'T00:00:00')
+      const prevD = new Date(prev + 'T00:00:00')
       prevD.setDate(prevD.getDate() + 1)
-      if (prevD.toISOString().split('T')[0] === dateStr) {
-        run++
-      } else {
-        run = 1
-      }
-    } else {
-      run = 1
-    }
+      run = prevD.toISOString().split('T')[0] === dateStr ? run + 1 : 1
+    } else { run = 1 }
     if (run > longest) longest = run
     prev = dateStr
   }
@@ -184,9 +200,6 @@ export async function markRoutineComplete(date: string): Promise<void> {
 }
 
 export async function unmarkRoutineComplete(date: string): Promise<void> {
-  const { error } = await supabase
-    .from('routine_completions')
-    .delete()
-    .eq('routine_date', date)
+  const { error } = await supabase.from('routine_completions').delete().eq('routine_date', date)
   if (error) throw error
 }

@@ -198,6 +198,38 @@ export async function deleteTask(pageId: string): Promise<void> {
   await archivePage(pageId)
 }
 
+
+// All tasks for a full sync (active + recently completed) -- used by /api/sync/notion
+export async function getAllTasksForSync(): Promise<NotionTask[]> {
+  const sixtyAgo = new Date()
+  sixtyAgo.setDate(sixtyAgo.getDate() - 60)
+  const fromDate = sixtyAgo.toISOString().split('T')[0]
+
+  const [active, recentDone] = await Promise.all([
+    // All non-Done tasks regardless of date
+    queryDB(NOTION_DB.tasks, {
+      and: [
+        { property: 'task/vault', select: { equals: 'task' } },
+        { property: 'Status', status: { does_not_equal: 'Done' } },
+      ]
+    }),
+    // Done tasks with a due date in the last 60 days
+    queryDB(NOTION_DB.tasks, {
+      and: [
+        { property: 'task/vault', select: { equals: 'task' } },
+        { property: 'Status', status: { equals: 'Done' } },
+        { property: 'Due Date', date: { on_or_after: fromDate } },
+      ]
+    }),
+  ])
+
+  // Deduplicate by id
+  const seen = new Set<string>()
+  return [...active, ...recentDone]
+    .filter(p => { if (seen.has(p.id)) return false; seen.add(p.id); return true })
+    .map(parseTask)
+}
+
 // ---- Events ----
 // Events live in the same master DB, distinguished by task/vault = 'event'
 

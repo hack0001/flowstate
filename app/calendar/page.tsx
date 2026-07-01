@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 const C = {
@@ -13,12 +13,11 @@ const C = {
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
-// _source distinguishes Notion tasks (routed to /api/notion/tasks) from Supabase tasks
-type DailyTask = {
+type Task = {
   id: string; title: string; due_date: string | null; status: string
   urgency: string | null; importance: string | null; time_commitment: string | null
   task_type: string | null; is_frog: boolean; why_note: string | null
-  _source?: 'notion' | 'supabase'
+  notion_id: string | null; notion_url: string | null; priority: string | null
 }
 
 type OrgMove = { id: string; from: string; to: string; title: string }
@@ -27,20 +26,14 @@ type WFSession = { id: string; title: string; workflow_type: { name: string; ico
 function getMondayOfWeek(d: Date): Date {
   const day = d.getDay()
   const diff = day === 0 ? -6 : 1 - day
-  const mon = new Date(d)
-  mon.setDate(d.getDate() + diff)
-  mon.setHours(0, 0, 0, 0)
-  return mon
+  const mon = new Date(d); mon.setDate(d.getDate() + diff); mon.setHours(0,0,0,0); return mon
 }
-
 function addDays(d: Date, n: number): Date {
   const r = new Date(d); r.setDate(r.getDate() + n); return r
 }
-
 function toDateStr(d: Date): string {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
 }
-
 function fmtWeekRange(start: Date): string {
   const end = addDays(start, 6)
   const sm = MONTHS[start.getMonth()].slice(0,3)
@@ -49,16 +42,13 @@ function fmtWeekRange(start: Date): string {
   return sm + ' ' + start.getDate() + ' - ' + em + ' ' + end.getDate() + ', ' + end.getFullYear()
 }
 
-function buildOrganisePlan(allTasks: Record<string, DailyTask[]>, weekStart: Date): OrgMove[] {
+function buildOrganisePlan(allTasks: Record<string, Task[]>, weekStart: Date): OrgMove[] {
   const moves: OrgMove[] = []
   const dates = Array.from({ length: 14 }, (_, i) => toDateStr(addDays(weekStart, i)))
-  const flowByDay: Record<string, DailyTask[]> = {}
-  for (const date of dates) {
-    flowByDay[date] = (allTasks[date] ?? []).filter(t => t.task_type === 'Flow' && t.status !== 'Done')
-  }
+  const flowByDay: Record<string, Task[]> = {}
+  for (const date of dates) flowByDay[date] = (allTasks[date] ?? []).filter(t => t.task_type === 'Flow' && t.status !== 'Done')
   for (let i = 0; i < dates.length; i++) {
-    const date = dates[i]
-    const tasks = flowByDay[date]
+    const tasks = flowByDay[dates[i]]
     if (tasks.length <= 2) continue
     const overflow = tasks.splice(2)
     for (const task of overflow) {
@@ -66,14 +56,13 @@ function buildOrganisePlan(allTasks: Record<string, DailyTask[]>, weekStart: Dat
       for (let j = i + 1; j < dates.length; j++) {
         if (flowByDay[dates[j]].length < 2) {
           const dest = dates[j]
-          if ((task.due_date ?? date) !== dest) moves.push({ id: task.id, from: task.due_date ?? date, to: dest, title: task.title })
-          flowByDay[dest].push({ ...task, due_date: dest })
-          moved = true; break
+          if ((task.due_date ?? dates[i]) !== dest) moves.push({ id: task.id, from: task.due_date ?? dates[i], to: dest, title: task.title })
+          flowByDay[dest].push({ ...task, due_date: dest }); moved = true; break
         }
       }
       if (!moved) {
         const fallback = dates[dates.length - 1]
-        if ((task.due_date ?? date) !== fallback) moves.push({ id: task.id, from: task.due_date ?? date, to: fallback, title: task.title })
+        if ((task.due_date ?? dates[i]) !== fallback) moves.push({ id: task.id, from: task.due_date ?? dates[i], to: fallback, title: task.title })
         flowByDay[fallback].push({ ...task, due_date: fallback })
       }
     }
@@ -81,14 +70,11 @@ function buildOrganisePlan(allTasks: Record<string, DailyTask[]>, weekStart: Dat
   return moves
 }
 
-function TaskCard({ task, onComplete, onDelete }: {
-  task: DailyTask; onComplete: (id: string) => void; onDelete: (id: string) => void
-}) {
+function TaskCard({ task, onComplete, onDelete }: { task: Task; onComplete: (id: string) => void; onDelete: (id: string) => void }) {
   const [busy, setBusy] = useState(false)
   const typeColor = task.task_type === 'Flow' ? C.cyan : task.task_type === 'Personal' ? C.purple : task.task_type === 'Admin' ? C.muted : C.amber
-  const isNotion = task._source === 'notion'
   return (
-    <div style={{ display:'flex', alignItems:'flex-start', gap:'0.375rem', padding:'0.45rem 0.5rem', background:C.surface, border:'1px solid '+(isNotion ? 'rgba(139,92,246,0.25)' : C.border), borderRadius:'0.5rem', marginBottom:'0.3rem', opacity:busy?0.5:1 }}>
+    <div style={{ display:'flex', alignItems:'flex-start', gap:'0.375rem', padding:'0.45rem 0.5rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', marginBottom:'0.3rem', opacity:busy?0.5:1 }}>
       <button onClick={() => { setBusy(true); onComplete(task.id) }}
         style={{ width:'14px', height:'14px', borderRadius:'50%', border:'2px solid '+C.border, background:'transparent', cursor:'pointer', flexShrink:0, marginTop:'2px', padding:0 }} />
       <div style={{ flex:1, minWidth:0 }}>
@@ -99,20 +85,15 @@ function TaskCard({ task, onComplete, onDelete }: {
         <div style={{ display:'flex', gap:'0.2rem', marginTop:'0.15rem', flexWrap:'wrap' }}>
           {task.task_type && <span style={{ fontSize:'0.55rem', color:typeColor, border:'1px solid '+typeColor, borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, opacity:0.85 }}>{task.task_type}</span>}
           {task.urgency === 'Urgent' && <span style={{ fontSize:'0.55rem', color:C.red, border:'1px solid '+C.red, borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, opacity:0.85 }}>Urgent</span>}
-          {isNotion && <span style={{ fontSize:'0.5rem', color:C.purple, border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, opacity:0.7 }}>N</span>}
+          {task.notion_url && <a href={task.notion_url} target="_blank" rel="noreferrer" style={{ fontSize:'0.5rem', color:C.muted, border:'1px solid #2a2a3a', borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, textDecoration:'none' }}>N</a>}
         </div>
       </div>
-      <button onClick={() => { setBusy(true); onDelete(task.id) }}
-        style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'1px', flexShrink:0 }}>
-        <Trash2 size={10} />
-      </button>
+      <button onClick={() => { setBusy(true); onDelete(task.id) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'1px', flexShrink:0 }}><Trash2 size={10} /></button>
     </div>
   )
 }
 
-function QuickAdd({ date, onSave, onClose }: {
-  date: string; onSave: (title: string, type: string) => void; onClose: () => void
-}) {
+function QuickAdd({ date, onSave, onClose }: { date: string; onSave: (title: string, type: string) => void; onClose: () => void }) {
   const [title, setTitle] = useState('')
   const [type, setType] = useState('Flow')
   const submit = () => { if (title.trim()) onSave(title.trim(), type) }
@@ -140,8 +121,10 @@ export default function CalendarPage() {
   const today = new Date()
   const todayStr = toDateStr(today)
   const [weekStart, setWeekStart] = useState(() => getMondayOfWeek(today))
-  const [weekTasks, setWeekTasks] = useState<Record<string, DailyTask[]>>({})
+  const [weekTasks, setWeekTasks] = useState<Record<string, Task[]>>({})
   const [loading, setLoading] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState('')
   const [orgPlan, setOrgPlan] = useState<OrgMove[] | null>(null)
   const [applying, setApplying] = useState(false)
   const [addingFor, setAddingFor] = useState<string | null>(null)
@@ -167,45 +150,21 @@ export default function CalendarPage() {
       const startDate = allDates[0]
       const endDate = allDates[allDates.length - 1]
 
-      // Fetch Supabase (14 calls) + Notion week (1 call) in parallel
-      const [supabaseResults, notionRes] = await Promise.all([
-        Promise.all(
-          allDates.map(d => fetch('/api/day?date='+d).then(r => r.json()).catch(() => ({ tasks:[], habits:[] })))
-        ),
-        fetch('/api/notion/week?start='+startDate+'&end='+endDate)
-          .then(r => r.json())
-          .catch(() => ({ tasks: [] })),
-      ])
+      const { data } = await supabase
+        .from('tasks')
+        .select('*')
+        .gte('due_date', startDate)
+        .lte('due_date', endDate)
+        .eq('archived', false)
+        .neq('status', 'Done')
+        .order('is_frog', { ascending: false })
+        .order('created_at')
 
-      const map: Record<string, DailyTask[]> = {}
-      for (let i = 0; i < allDates.length; i++) {
-        const r = supabaseResults[i]
-        map[allDates[i]] = [
-          ...(r.tasks ?? []).map((t: DailyTask) => ({ ...t, _source: 'supabase' as const })),
-          ...(r.habits ?? []).map((t: DailyTask) => ({ ...t, _source: 'supabase' as const })),
-        ]
+      const map: Record<string, Task[]> = {}
+      for (const date of allDates) map[date] = []
+      for (const t of (data ?? [])) {
+        if (t.due_date && map[t.due_date]) map[t.due_date].push(t as Task)
       }
-
-      // Map Notion tasks -> DailyTask and merge by date
-      for (const nt of (notionRes.tasks ?? [])) {
-        if (!nt.dueDate) continue
-        const date: string = nt.dueDate
-        if (!map[date]) map[date] = []
-        map[date].push({
-          id: nt.id,
-          title: nt.title,
-          due_date: nt.dueDate,
-          status: nt.status,
-          urgency: nt.urgency,
-          importance: nt.importance,
-          time_commitment: nt.timeCommitment,
-          task_type: nt.taskType,
-          is_frog: nt.isFrog,
-          why_note: null,
-          _source: 'notion',
-        })
-      }
-
       setWeekTasks(map)
     } catch {}
     setLoading(false)
@@ -223,86 +182,60 @@ export default function CalendarPage() {
       .then(({ data }) => setWfSessions((data as unknown as WFSession[]) ?? []))
   }, [])
 
+  async function handleSyncNotion() {
+    setSyncing(true)
+    setSyncMsg('')
+    try {
+      const r = await fetch('/api/sync/notion', { method: 'POST' })
+      const d = await r.json()
+      if (d.error) setSyncMsg('Error: ' + d.error)
+      else setSyncMsg(`Synced ${d.synced ?? d.total ?? 0} tasks from Notion`)
+      await fetchWeek()
+    } catch (e) {
+      setSyncMsg('Sync failed: ' + String(e))
+    }
+    setSyncing(false)
+    setTimeout(() => setSyncMsg(''), 4000)
+  }
+
   function handleOrganise() { setOrgPlan(buildOrganisePlan(weekTasks, weekStart)) }
 
   async function handleApply() {
     if (!orgPlan || orgPlan.length === 0) { setOrgPlan(null); return }
     setApplying(true)
     try {
-      // Only reschedule Supabase tasks via the Supabase PATCH endpoint
-      const supabaseMoves = orgPlan.filter(m => {
-        const date = m.from
-        const task = (weekTasks[date] ?? []).find(t => t.id === m.id)
-        return task?._source !== 'notion'
-      })
-      const notionMoves = orgPlan.filter(m => {
-        const date = m.from
-        const task = (weekTasks[date] ?? []).find(t => t.id === m.id)
-        return task?._source === 'notion'
-      })
-
-      await Promise.all([
-        supabaseMoves.length > 0
-          ? fetch('/api/day/tasks', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ moves: supabaseMoves.map(m => ({ id:m.id, due_date:m.to })) }) })
-          : Promise.resolve(),
-        ...notionMoves.map(m =>
-          fetch('/api/notion/tasks', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id:m.id, dueDate:m.to }) })
-        ),
-      ])
+      const moves = orgPlan.map(m => ({ id: m.id, due_date: m.to }))
+      await Promise.all(
+        moves.map(m => supabase.from('tasks').update({ due_date: m.due_date }).eq('id', m.id))
+      )
       setOrgPlan(null)
       await fetchWeek()
     } catch {}
     setApplying(false)
   }
 
-  // New tasks go to Notion (with title, date, and type)
   async function handleAddTask(date: string, title: string, type: string) {
     setAddingFor(null)
     try {
-      const r = await fetch('/api/notion/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json' },
-        body: JSON.stringify({ title, dueDate: date, taskType: type }),
-      })
-      const nt = await r.json()
-      if (!nt.error) {
-        const task: DailyTask = {
-          id: nt.id,
-          title: nt.title ?? title,
-          due_date: nt.dueDate ?? date,
-          status: nt.status ?? 'Not started',
-          urgency: null, importance: null, time_commitment: null,
-          task_type: type,
-          is_frog: false, why_note: null,
-          _source: 'notion',
-        }
-        setWeekTasks(prev => ({ ...prev, [date]: [...(prev[date] ?? []), task] }))
-      }
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert({ title, due_date: date, task_type: type, status: 'Not started' })
+        .select()
+        .single()
+      if (!error && data) setWeekTasks(prev => ({ ...prev, [date]: [...(prev[date] ?? []), data as Task] }))
     } catch {}
   }
 
-  // Route complete to the correct API based on source
   async function handleComplete(id: string, date: string) {
     try {
-      const task = (weekTasks[date] ?? []).find(t => t.id === id)
-      if (task?._source === 'notion') {
-        await fetch('/api/notion/tasks', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id, status:'Done' }) })
-      } else {
-        await fetch('/api/day/tasks', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id, status:'Done' }) })
-      }
+      await supabase.from('tasks').update({ status: 'Done' }).eq('id', id)
       setWeekTasks(prev => ({ ...prev, [date]: (prev[date] ?? []).filter(t => t.id !== id) }))
     } catch {}
   }
 
-  // Route delete to the correct API based on source
   async function handleDelete(id: string, date: string) {
     try {
-      const task = (weekTasks[date] ?? []).find(t => t.id === id)
-      if (task?._source === 'notion') {
-        await fetch('/api/notion/tasks', { method:'DELETE', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id }) })
-      } else {
-        await fetch('/api/day/tasks', { method:'DELETE', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id }) })
-      }
+      await supabase.from('tasks').update({ archived: true }).eq('id', id)
       setWeekTasks(prev => ({ ...prev, [date]: (prev[date] ?? []).filter(t => t.id !== id) }))
     } catch {}
   }
@@ -320,10 +253,15 @@ export default function CalendarPage() {
           <span style={{ color:C.border }}>|</span>
           <span style={{ fontWeight:800, color:C.text }}>Calendar</span>
           {loading && <div style={{ width:'12px', height:'12px', borderRadius:'50%', border:'2px solid '+C.cyan, borderTopColor:'transparent', animation:'spin 1s linear infinite' }} />}
+          {syncMsg && <span style={{ fontSize:'0.7rem', color:C.green, fontWeight:600 }}>{syncMsg}</span>}
         </div>
-        <div style={{ display:'flex', gap:'0.5rem' }}>
+        <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
           <button onClick={() => router.push('/morning')} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'0.75rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
             <Sun size={12} />Morning
+          </button>
+          <button onClick={handleSyncNotion} disabled={syncing} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.75rem', color:C.purple, cursor:syncing?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, opacity:syncing?0.6:1 }}>
+            <RefreshCw size={12} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} />
+            {syncing ? 'Syncing...' : 'Sync Notion'}
           </button>
           <button onClick={handleOrganise} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'linear-gradient(135deg,rgba(139,92,246,0.2),rgba(0,212,255,0.15))', border:'1px solid rgba(139,92,246,0.4)', borderRadius:'0.75rem', color:C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
             <Zap size={12} />Organise Week
@@ -332,6 +270,7 @@ export default function CalendarPage() {
       </div>
 
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
+        {/* Sidebar */}
         <div style={{ width:'240px', flexShrink:0, padding:'1rem', borderRight:'1px solid '+C.border, overflowY:'auto' }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
             <button onClick={() => setCalDate(new Date(calYear, calMonth - 1, 1))} style={{ width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronLeft size={14} /></button>
@@ -358,6 +297,7 @@ export default function CalendarPage() {
           </div>
           <button onClick={() => { setCalDate(new Date(today.getFullYear(), today.getMonth(), 1)); setWeekStart(getMondayOfWeek(today)) }}
             style={{ marginTop:'0.75rem', width:'100%', padding:'0.4rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem' }}>Today</button>
+
           <div style={{ marginTop:'1.25rem', display:'flex', flexDirection:'column', gap:'0.4rem' }}>
             <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:0 }}>Task Types</p>
             {([['Flow',C.cyan],['Personal',C.purple],['Admin',C.muted],['Quick Task',C.amber]] as [string,string][]).map(([label,color]) => (
@@ -368,7 +308,7 @@ export default function CalendarPage() {
             ))}
             <div style={{ marginTop:'0.5rem', padding:'0.6rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem' }}>
               <p style={{ fontSize:'0.65rem', color:C.muted, margin:0, lineHeight:1.5 }}>Max <strong style={{ color:C.cyan }}>2 Flow</strong> per day. <strong style={{ color:C.purple }}>Personal</strong> in evening.</p>
-              <p style={{ fontSize:'0.6rem', color:'rgba(139,92,246,0.6)', margin:'0.35rem 0 0', lineHeight:1.4 }}><strong style={{ color:C.purple }}>N</strong> = Notion task</p>
+              <p style={{ fontSize:'0.6rem', color:C.muted, margin:'0.35rem 0 0', lineHeight:1.4 }}>&#128293; = frog (top priority)</p>
             </div>
           </div>
 
@@ -376,22 +316,15 @@ export default function CalendarPage() {
           {wfSessions.length > 0 && (
             <div style={{ marginTop:'1.25rem' }}>
               <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>Workflows</p>
-              {schedulingId ? (
-                <p style={{ fontSize:'0.65rem', color:C.cyan, margin:'0 0 0.5rem', lineHeight:1.4 }}>&#8593; Click a day column to schedule</p>
-              ) : (
-                <p style={{ fontSize:'0.62rem', color:C.muted, margin:'0 0 0.5rem', lineHeight:1.4 }}>Select a workflow then click a day</p>
-              )}
+              {schedulingId
+                ? <p style={{ fontSize:'0.65rem', color:C.cyan, margin:'0 0 0.5rem', lineHeight:1.4 }}>&#8593; Click a day column to schedule</p>
+                : <p style={{ fontSize:'0.62rem', color:C.muted, margin:'0 0 0.5rem', lineHeight:1.4 }}>Select a workflow then click a day</p>
+              }
               <div style={{ display:'flex', flexDirection:'column', gap:'0.25rem' }}>
                 {wfSessions.map(s => {
                   const active = schedulingId === s.id
                   return (
-                    <button key={s.id} onClick={() => setSchedulingId(active ? null : s.id)} style={{
-                      display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.45rem 0.5rem',
-                      background: active ? 'rgba(0,212,255,0.1)' : C.surface,
-                      border: '1px solid '+(active ? C.cyan : C.border),
-                      borderRadius:'0.5rem', cursor:'pointer', fontFamily:'inherit',
-                      textAlign:'left', transition:'border-color 0.15s',
-                    }}>
+                    <button key={s.id} onClick={() => setSchedulingId(active ? null : s.id)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.45rem 0.5rem', background: active ? 'rgba(0,212,255,0.1)' : C.surface, border: '1px solid '+(active ? C.cyan : C.border), borderRadius:'0.5rem', cursor:'pointer', fontFamily:'inherit', textAlign:'left' }}>
                       <span style={{ fontSize:'0.85rem', flexShrink:0 }}>{s.workflow_type?.icon ?? '&#9889;'}</span>
                       <span style={{ fontSize:'0.72rem', fontWeight:600, color:active?C.cyan:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{s.title}</span>
                     </button>
@@ -408,6 +341,7 @@ export default function CalendarPage() {
           )}
         </div>
 
+        {/* Week grid */}
         <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
           <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', borderBottom:'1px solid '+C.border, flexShrink:0 }}>
             <button onClick={() => setWeekStart(w => getMondayOfWeek(addDays(w, -7)))} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronLeft size={16} /></button>
@@ -418,9 +352,9 @@ export default function CalendarPage() {
           <div style={{ flex:1, display:'flex', overflowX:'auto', overflowY:'hidden', padding:'0.75rem', gap:'0.5rem' }}>
             {weekDates.map(date => {
               const tasks = weekTasks[date] ?? []
-              const flowTasks = tasks.filter(t => t.task_type === 'Flow' && t.status !== 'Done')
-              const personalTasks = tasks.filter(t => t.task_type === 'Personal' && t.status !== 'Done')
-              const otherTasks = tasks.filter(t => t.task_type !== 'Flow' && t.task_type !== 'Personal' && t.status !== 'Done')
+              const flowTasks = tasks.filter(t => t.task_type === 'Flow')
+              const personalTasks = tasks.filter(t => t.task_type === 'Personal')
+              const otherTasks = tasks.filter(t => t.task_type !== 'Flow' && t.task_type !== 'Personal')
               const dow = new Date(date+'T12:00:00').getDay()
               const dayName = DAY_ABBR[dow]
               const dayNum = parseInt(date.split('-')[2])
@@ -430,12 +364,7 @@ export default function CalendarPage() {
               return (
                 <div key={date} style={{ flex:'1 1 140px', minWidth:'140px', maxWidth:'220px', display:'flex', flexDirection:'column', overflowY:'auto', borderRadius:'0.75rem', border:'1px solid '+(isToday?'rgba(0,212,255,0.25)':C.border), padding:'0.625rem', background:isWeekend?'rgba(255,255,255,0.01)':'transparent' }}>
                   <div
-                    onClick={() => {
-                      if (schedulingId) {
-                        const s = wfSessions.find(w => w.id === schedulingId)
-                        if (s) { handleAddTask(date, s.title, 'Flow'); setSchedulingId(null) }
-                      }
-                    }}
+                    onClick={() => { if (schedulingId) { const s = wfSessions.find(w => w.id === schedulingId); if (s) { handleAddTask(date, s.title, 'Flow'); setSchedulingId(null) } } }}
                     style={{ textAlign:'center', marginBottom:'0.625rem', paddingBottom:'0.5rem', borderBottom:'1px solid '+(schedulingId?C.cyan:C.border), cursor:schedulingId?'crosshair':'default', transition:'border-color 0.2s' }}>
                     <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 0.1rem', color:isToday?C.cyan:isWeekend?C.muted:C.sec }}>{dayName}</p>
                     <p style={{ fontSize:'1.25rem', fontWeight:900, margin:0, color:isToday?C.cyan:isWeekend?C.sec:C.text }}>{dayNum}</p>
@@ -462,17 +391,13 @@ export default function CalendarPage() {
                   {otherTasks.length > 0 && (
                     <div style={{ marginBottom:'0.625rem' }}>
                       <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.amber, margin:'0 0 0.3rem' }}>Tasks</p>
-                      {otherTasks.map(t => (
-                        <TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} />
-                      ))}
+                      {otherTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} />))}
                     </div>
                   )}
 
                   <div style={{ borderTop:'1px solid rgba(139,92,246,0.2)', paddingTop:'0.5rem', marginTop:'auto' }}>
                     <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.purple, margin:'0 0 0.3rem' }}>Evening</p>
-                    {personalTasks.map(t => (
-                      <TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} />
-                    ))}
+                    {personalTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} />))}
                     {personalTasks.length === 0 && (
                       <div style={{ height:'32px', border:'1px dashed rgba(139,92,246,0.2)', borderRadius:'0.5rem', display:'flex', alignItems:'center', justifyContent:'center' }}>
                         <span style={{ fontSize:'0.6rem', color:C.muted }}>personal tasks</span>
@@ -494,6 +419,7 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      {/* Organise modal */}
       {orgPlan !== null && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
           <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem', width:'90%', maxWidth:'28rem', maxHeight:'80vh', overflow:'auto', position:'relative' }}>
