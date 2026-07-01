@@ -5,7 +5,7 @@
 const NOTION_API = 'https://api.notion.com/v1'
 
 export const NOTION_DB = {
-  // "master" database on Dashboard — single DB for tasks + content
+  // "master" database on Dashboard -- single DB for tasks + content
   // task/vault="task" = tasks, task/vault="vault" + YT Pipeline Stage = content
   tasks:   '35bed686-b47d-8035-84d6-eddd6fcb1bb1',
   events:  '35bed686-b47d-8035-84d6-eddd6fcb1bb1', // same master DB (no separate events DB)
@@ -144,6 +144,19 @@ export async function getTasksForDate(date: string): Promise<NotionTask[]> {
   return pages.map(parseTask)
 }
 
+// All non-Done tasks in a date range -- one Notion call for the whole week
+export async function getTasksForWeek(startDate: string, endDate: string): Promise<NotionTask[]> {
+  const pages = await queryDB(NOTION_DB.tasks, {
+    and: [
+      { property: 'task/vault', select: { equals: 'task' } },
+      { property: 'Due Date', date: { on_or_after: startDate } },
+      { property: 'Due Date', date: { on_or_before: endDate } },
+      { property: 'Status', status: { does_not_equal: 'Done' } },
+    ]
+  })
+  return pages.map(parseTask)
+}
+
 // Active tasks for today (not done, task/vault=task)
 export async function getActiveTasks(): Promise<NotionTask[]> {
   const pages = await queryDB(NOTION_DB.tasks, {
@@ -155,17 +168,19 @@ export async function getActiveTasks(): Promise<NotionTask[]> {
   return pages.map(parseTask)
 }
 
-export async function createTask(title: string, dueDate: string): Promise<NotionTask> {
-  const page = await createPage(NOTION_DB.tasks, {
+export async function createTask(title: string, dueDate: string, taskType?: string): Promise<NotionTask> {
+  const props: Record<string, unknown> = {
     'Name': titleProp(title),
     'Due Date': { date: { start: dueDate } },
     'Status': { status: { name: 'Not started' } },
     'task/vault': { select: { name: 'task' } },
-  })
+  }
+  if (taskType) props['Type'] = { select: { name: taskType } }
+  const page = await createPage(NOTION_DB.tasks, props)
   return {
     id: page.id, url: page.url, type: 'task' as const,
     title, status: 'Not started', dueDate,
-    priority: null, taskType: null, urgency: null,
+    priority: null, taskType: taskType ?? null, urgency: null,
     importance: null, timeCommitment: null, isFrog: false,
   }
 }
@@ -185,7 +200,6 @@ export async function deleteTask(pageId: string): Promise<void> {
 
 // ---- Events ----
 // Events live in the same master DB, distinguished by task/vault = 'event'
-// Notion auto-creates the 'event' select option on first write.
 
 function parseEvent(p: NotionPage): NotionEvent {
   return {

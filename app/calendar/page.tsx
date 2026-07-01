@@ -13,10 +13,12 @@ const C = {
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
+// _source distinguishes Notion tasks (routed to /api/notion/tasks) from Supabase tasks
 type DailyTask = {
   id: string; title: string; due_date: string | null; status: string
   urgency: string | null; importance: string | null; time_commitment: string | null
   task_type: string | null; is_frog: boolean; why_note: string | null
+  _source?: 'notion' | 'supabase'
 }
 
 type OrgMove = { id: string; from: string; to: string; title: string }
@@ -84,8 +86,9 @@ function TaskCard({ task, onComplete, onDelete }: {
 }) {
   const [busy, setBusy] = useState(false)
   const typeColor = task.task_type === 'Flow' ? C.cyan : task.task_type === 'Personal' ? C.purple : task.task_type === 'Admin' ? C.muted : C.amber
+  const isNotion = task._source === 'notion'
   return (
-    <div style={{ display:'flex', alignItems:'flex-start', gap:'0.375rem', padding:'0.45rem 0.5rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', marginBottom:'0.3rem', opacity:busy?0.5:1 }}>
+    <div style={{ display:'flex', alignItems:'flex-start', gap:'0.375rem', padding:'0.45rem 0.5rem', background:C.surface, border:'1px solid '+(isNotion ? 'rgba(139,92,246,0.25)' : C.border), borderRadius:'0.5rem', marginBottom:'0.3rem', opacity:busy?0.5:1 }}>
       <button onClick={() => { setBusy(true); onComplete(task.id) }}
         style={{ width:'14px', height:'14px', borderRadius:'50%', border:'2px solid '+C.border, background:'transparent', cursor:'pointer', flexShrink:0, marginTop:'2px', padding:0 }} />
       <div style={{ flex:1, minWidth:0 }}>
@@ -96,6 +99,7 @@ function TaskCard({ task, onComplete, onDelete }: {
         <div style={{ display:'flex', gap:'0.2rem', marginTop:'0.15rem', flexWrap:'wrap' }}>
           {task.task_type && <span style={{ fontSize:'0.55rem', color:typeColor, border:'1px solid '+typeColor, borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, opacity:0.85 }}>{task.task_type}</span>}
           {task.urgency === 'Urgent' && <span style={{ fontSize:'0.55rem', color:C.red, border:'1px solid '+C.red, borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, opacity:0.85 }}>Urgent</span>}
+          {isNotion && <span style={{ fontSize:'0.5rem', color:C.purple, border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, opacity:0.7 }}>N</span>}
         </div>
       </div>
       <button onClick={() => { setBusy(true); onDelete(task.id) }}
@@ -160,14 +164,48 @@ export default function CalendarPage() {
     setLoading(true)
     try {
       const allDates = Array.from({ length: 14 }, (_, i) => toDateStr(addDays(weekStart, i)))
-      const results = await Promise.all(
-        allDates.map(d => fetch('/api/day?date='+d).then(r => r.json()).catch(() => ({ tasks:[], habits:[] })))
-      )
+      const startDate = allDates[0]
+      const endDate = allDates[allDates.length - 1]
+
+      // Fetch Supabase (14 calls) + Notion week (1 call) in parallel
+      const [supabaseResults, notionRes] = await Promise.all([
+        Promise.all(
+          allDates.map(d => fetch('/api/day?date='+d).then(r => r.json()).catch(() => ({ tasks:[], habits:[] })))
+        ),
+        fetch('/api/notion/week?start='+startDate+'&end='+endDate)
+          .then(r => r.json())
+          .catch(() => ({ tasks: [] })),
+      ])
+
       const map: Record<string, DailyTask[]> = {}
       for (let i = 0; i < allDates.length; i++) {
-        const r = results[i]
-        map[allDates[i]] = [...(r.tasks ?? []), ...(r.habits ?? [])]
+        const r = supabaseResults[i]
+        map[allDates[i]] = [
+          ...(r.tasks ?? []).map((t: DailyTask) => ({ ...t, _source: 'supabase' as const })),
+          ...(r.habits ?? []).map((t: DailyTask) => ({ ...t, _source: 'supabase' as const })),
+        ]
       }
+
+      // Map Notion tasks -> DailyTask and merge by date
+      for (const nt of (notionRes.tasks ?? [])) {
+        if (!nt.dueDate) continue
+        const date: string = nt.dueDate
+        if (!map[date]) map[date] = []
+        map[date].push({
+          id: nt.id,
+          title: nt.title,
+          due_date: nt.dueDate,
+          status: nt.status,
+          urgency: nt.urgency,
+          importance: nt.importance,
+          time_commitment: nt.timeCommitment,
+          task_type: nt.taskType,
+          is_frog: nt.isFrog,
+          why_note: null,
+          _source: 'notion',
+        })
+      }
+
       setWeekTasks(map)
     } catch {}
     setLoading(false)
@@ -191,32 +229,80 @@ export default function CalendarPage() {
     if (!orgPlan || orgPlan.length === 0) { setOrgPlan(null); return }
     setApplying(true)
     try {
-      await fetch('/api/day/tasks', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ moves: orgPlan.map(m => ({ id:m.id, due_date:m.to })) }) })
+      // Only reschedule Supabase tasks via the Supabase PATCH endpoint
+      const supabaseMoves = orgPlan.filter(m => {
+        const date = m.from
+        const task = (weekTasks[date] ?? []).find(t => t.id === m.id)
+        return task?._source !== 'notion'
+      })
+      const notionMoves = orgPlan.filter(m => {
+        const date = m.from
+        const task = (weekTasks[date] ?? []).find(t => t.id === m.id)
+        return task?._source === 'notion'
+      })
+
+      await Promise.all([
+        supabaseMoves.length > 0
+          ? fetch('/api/day/tasks', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ moves: supabaseMoves.map(m => ({ id:m.id, due_date:m.to })) }) })
+          : Promise.resolve(),
+        ...notionMoves.map(m =>
+          fetch('/api/notion/tasks', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id:m.id, dueDate:m.to }) })
+        ),
+      ])
       setOrgPlan(null)
       await fetchWeek()
     } catch {}
     setApplying(false)
   }
 
+  // New tasks go to Notion (with title, date, and type)
   async function handleAddTask(date: string, title: string, type: string) {
     setAddingFor(null)
     try {
-      const r = await fetch('/api/day/tasks', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ title, due_date:date, task_type:type, status:'Not started' }) })
-      const task = await r.json()
-      if (!task.error) setWeekTasks(prev => ({ ...prev, [date]: [...(prev[date] ?? []), task] }))
+      const r = await fetch('/api/notion/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ title, dueDate: date, taskType: type }),
+      })
+      const nt = await r.json()
+      if (!nt.error) {
+        const task: DailyTask = {
+          id: nt.id,
+          title: nt.title ?? title,
+          due_date: nt.dueDate ?? date,
+          status: nt.status ?? 'Not started',
+          urgency: null, importance: null, time_commitment: null,
+          task_type: type,
+          is_frog: false, why_note: null,
+          _source: 'notion',
+        }
+        setWeekTasks(prev => ({ ...prev, [date]: [...(prev[date] ?? []), task] }))
+      }
     } catch {}
   }
 
+  // Route complete to the correct API based on source
   async function handleComplete(id: string, date: string) {
     try {
-      await fetch('/api/day/tasks', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id, status:'Done' }) })
+      const task = (weekTasks[date] ?? []).find(t => t.id === id)
+      if (task?._source === 'notion') {
+        await fetch('/api/notion/tasks', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id, status:'Done' }) })
+      } else {
+        await fetch('/api/day/tasks', { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id, status:'Done' }) })
+      }
       setWeekTasks(prev => ({ ...prev, [date]: (prev[date] ?? []).filter(t => t.id !== id) }))
     } catch {}
   }
 
+  // Route delete to the correct API based on source
   async function handleDelete(id: string, date: string) {
     try {
-      await fetch('/api/day/tasks', { method:'DELETE', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id }) })
+      const task = (weekTasks[date] ?? []).find(t => t.id === id)
+      if (task?._source === 'notion') {
+        await fetch('/api/notion/tasks', { method:'DELETE', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id }) })
+      } else {
+        await fetch('/api/day/tasks', { method:'DELETE', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id }) })
+      }
       setWeekTasks(prev => ({ ...prev, [date]: (prev[date] ?? []).filter(t => t.id !== id) }))
     } catch {}
   }
@@ -282,6 +368,7 @@ export default function CalendarPage() {
             ))}
             <div style={{ marginTop:'0.5rem', padding:'0.6rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem' }}>
               <p style={{ fontSize:'0.65rem', color:C.muted, margin:0, lineHeight:1.5 }}>Max <strong style={{ color:C.cyan }}>2 Flow</strong> per day. <strong style={{ color:C.purple }}>Personal</strong> in evening.</p>
+              <p style={{ fontSize:'0.6rem', color:'rgba(139,92,246,0.6)', margin:'0.35rem 0 0', lineHeight:1.4 }}><strong style={{ color:C.purple }}>N</strong> = Notion task</p>
             </div>
           </div>
 

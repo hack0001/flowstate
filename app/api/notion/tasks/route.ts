@@ -3,8 +3,8 @@ import { createTask, updateTask, deleteTask } from '@/lib/notion'
 
 export async function POST(request: Request) {
   try {
-    const { title, dueDate } = await request.json()
-    const task = await createTask(title, dueDate)
+    const { title, dueDate, taskType } = await request.json()
+    const task = await createTask(title, dueDate, taskType)
     return NextResponse.json(task)
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })

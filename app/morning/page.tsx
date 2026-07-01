@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Edit3, Check, Flame, Sunrise, Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react'
 import { MORNING_ROUTINE } from '@/lib/morningRoutine'
@@ -24,30 +24,80 @@ const DONE_QUOTES = [
   { q:'Discipline is the bridge between goals and accomplishment.', a:'Jim Rohn' },
 ]
 
-// Pre-defined scattered particles -- avoids Math.random() on each render
-// f = float keyframe name, dur = float duration (s), a = animation delay (s)
-const PARTICLES = [
-  { x:7,  y:12, s:4, c:'#00d4ff', a:0,   f:'floatA', dur:18 },
-  { x:18, y:38, s:3, c:'#8b5cf6', a:1.5, f:'floatB', dur:22 },
-  { x:5,  y:62, s:5, c:'#ffb800', a:3,   f:'floatC', dur:26 },
-  { x:25, y:85, s:3, c:'#00d4ff', a:0.5, f:'floatD', dur:20 },
-  { x:38, y:8,  s:4, c:'#8b5cf6', a:2,   f:'floatE', dur:24 },
-  { x:55, y:15, s:3, c:'#ffb800', a:4,   f:'floatF', dur:19 },
-  { x:68, y:5,  s:4, c:'#00d4ff', a:1,   f:'floatA', dur:23 },
-  { x:82, y:22, s:5, c:'#00ff88', a:2.5, f:'floatB', dur:17 },
-  { x:91, y:48, s:3, c:'#8b5cf6', a:0.8, f:'floatC', dur:21 },
-  { x:94, y:74, s:4, c:'#ffb800', a:3.5, f:'floatD', dur:25 },
-  { x:75, y:90, s:3, c:'#00d4ff', a:1.2, f:'floatE', dur:18 },
-  { x:46, y:94, s:5, c:'#8b5cf6', a:2.8, f:'floatF', dur:22 },
-  { x:30, y:74, s:3, c:'#ffb800', a:0.3, f:'floatA', dur:20 },
-  { x:63, y:78, s:4, c:'#00ff88', a:4.5, f:'floatB', dur:27 },
-  { x:10, y:50, s:3, c:'#00d4ff', a:1.8, f:'floatC', dur:16 },
-  { x:88, y:10, s:4, c:'#ffb800', a:0.7, f:'floatD', dur:24 },
-  { x:20, y:20, s:4, c:'#00ff88', a:3.2, f:'floatE', dur:19 },
-  { x:57, y:55, s:2, c:'#8b5cf6', a:5,   f:'floatF', dur:28 },
-  { x:42, y:44, s:3, c:'#00d4ff', a:2.2, f:'floatA', dur:21 },
-  { x:73, y:38, s:3, c:'#ffb800', a:1.6, f:'floatB', dur:23 },
+// Particle config: rx/ry = relative position (0-1), s = radius, phase/speed for orbit
+const PARTICLE_CFG = [
+  { rx:0.07, ry:0.12, s:4, hex:'#00d4ff', phase:0,   speed:0.8 },
+  { rx:0.18, ry:0.38, s:3, hex:'#8b5cf6', phase:1.5, speed:0.6 },
+  { rx:0.05, ry:0.62, s:5, hex:'#ffb800', phase:3,   speed:0.5 },
+  { rx:0.25, ry:0.85, s:3, hex:'#00d4ff', phase:0.5, speed:0.7 },
+  { rx:0.38, ry:0.08, s:4, hex:'#8b5cf6', phase:2,   speed:0.9 },
+  { rx:0.55, ry:0.15, s:3, hex:'#ffb800', phase:4,   speed:0.6 },
+  { rx:0.68, ry:0.05, s:4, hex:'#00d4ff', phase:1,   speed:0.7 },
+  { rx:0.82, ry:0.22, s:5, hex:'#00ff88', phase:2.5, speed:0.5 },
+  { rx:0.91, ry:0.48, s:3, hex:'#8b5cf6', phase:0.8, speed:0.8 },
+  { rx:0.94, ry:0.74, s:4, hex:'#ffb800', phase:3.5, speed:0.6 },
+  { rx:0.75, ry:0.90, s:3, hex:'#00d4ff', phase:1.2, speed:0.7 },
+  { rx:0.46, ry:0.94, s:5, hex:'#8b5cf6', phase:2.8, speed:0.5 },
+  { rx:0.30, ry:0.74, s:3, hex:'#ffb800', phase:0.3, speed:0.9 },
+  { rx:0.63, ry:0.78, s:4, hex:'#00ff88', phase:4.5, speed:0.6 },
+  { rx:0.10, ry:0.50, s:3, hex:'#00d4ff', phase:1.8, speed:0.7 },
+  { rx:0.88, ry:0.10, s:4, hex:'#ffb800', phase:0.7, speed:0.8 },
+  { rx:0.20, ry:0.20, s:4, hex:'#00ff88', phase:3.2, speed:0.5 },
+  { rx:0.57, ry:0.55, s:2, hex:'#8b5cf6', phase:5,   speed:0.6 },
+  { rx:0.42, ry:0.44, s:3, hex:'#00d4ff', phase:2.2, speed:0.7 },
+  { rx:0.73, ry:0.38, s:3, hex:'#ffb800', phase:1.6, speed:0.9 },
 ]
+
+// Convert hex to "r,g,b" string once
+const PARTICLE_RGB = PARTICLE_CFG.map(p => {
+  const r = parseInt(p.hex.slice(1,3),16)
+  const g = parseInt(p.hex.slice(3,5),16)
+  const b = parseInt(p.hex.slice(5,7),16)
+  return `${r},${g},${b}`
+})
+
+// Canvas particle system -- uses requestAnimationFrame for smooth organic motion
+function ParticleCanvas() {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas) return
+    const rawCtx = canvas.getContext('2d')
+    if (!rawCtx) return
+    const ctx = rawCtx
+    let w = window.innerWidth
+    let h = window.innerHeight
+    canvas.width = w; canvas.height = h
+    const onResize = () => {
+      w = window.innerWidth; h = window.innerHeight
+      canvas.width = w; canvas.height = h
+    }
+    window.addEventListener('resize', onResize)
+    let t = 0
+    let animId: number
+    function draw() {
+      ctx.clearRect(0, 0, w, h)
+      t += 0.006
+      for (let i = 0; i < PARTICLE_CFG.length; i++) {
+        const p = PARTICLE_CFG[i]
+        const cx = p.rx * w + Math.sin(t * p.speed + p.phase) * 42
+        const cy = p.ry * h + Math.cos(t * p.speed * 0.73 + p.phase + 1.2) * 32
+        const alpha = 0.28 + Math.sin(t * 0.38 + p.phase) * 0.22 + 0.12
+        ctx.beginPath()
+        ctx.arc(cx, cy, p.s, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(${PARTICLE_RGB[i]},${alpha})`
+        ctx.fill()
+      }
+      animId = requestAnimationFrame(draw)
+    }
+    draw()
+    return () => {
+      cancelAnimationFrame(animId)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [])
+  return <canvas ref={ref} aria-hidden="true" style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0, width:'100%', height:'100%' }} />
+}
 
 const STORAGE_KEY = 'flowstate_routine_v2'
 
@@ -210,17 +260,8 @@ export default function MorningPage() {
   return (
     <main style={{ minHeight:'100vh', background:'#0a0a0f', display:'flex', flexDirection:'column', position:'relative', overflow:'hidden' }}>
 
-      {/* ---- Floating particles ---- */}
-      <div aria-hidden="true" style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0 }}>
-        {PARTICLES.map((p,i) => (
-          <div key={i} style={{
-            position:'absolute', left:p.x+'%', top:p.y+'%',
-            width:p.s+'px', height:p.s+'px', borderRadius:'50%',
-            background:p.c, opacity:0.6,
-            animation:p.f+' '+p.dur+'s '+p.a+'s ease-in-out infinite, particlePulse 5s '+p.a+'s ease-in-out infinite',
-          }}/>
-        ))}
-      </div>
+      {/* Canvas particle system */}
+      <ParticleCanvas />
 
       {/* ---- Floating nav ---- */}
       <div style={{ position:'relative', zIndex:2, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'1.25rem 1.75rem' }}>
@@ -337,7 +378,7 @@ export default function MorningPage() {
                 {pending.length > 1 && (
                   <div style={{ display:'flex', alignItems:'center', gap:'1rem', justifyContent:'center', marginBottom:'1.75rem' }}>
                     <span style={{ fontSize:'0.62rem', fontWeight:600, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em' }}>Up next:</span>
-                    {pending.slice(1,3).map((item,i) => (
+                    {pending.slice(1,3).map((item) => (
                       <span key={item.id} style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', color:C.sec }}>
                         <div style={{ width:'5px', height:'5px', borderRadius:'50%', background:CAT_COLORS[item.category??'']??C.muted }}/>
                         {item.title.length > 22 ? item.title.slice(0,22)+'...' : item.title}
@@ -379,13 +420,6 @@ export default function MorningPage() {
       {editing && <EditPanel items={items} onClose={() => setEditing(false)} onSave={handleSaveItems}/>}
 
       <style>{`
-        @keyframes floatA { 0%,100%{transform:translate(0,0)} 30%{transform:translate(14px,-20px)} 65%{transform:translate(-10px,-12px)} 85%{transform:translate(18px,6px)} }
-        @keyframes floatB { 0%,100%{transform:translate(0,0)} 25%{transform:translate(-16px,14px)} 55%{transform:translate(10px,20px)} 80%{transform:translate(-12px,-8px)} }
-        @keyframes floatC { 0%,100%{transform:translate(0,0)} 40%{transform:translate(22px,-10px)} 70%{transform:translate(-6px,18px)} }
-        @keyframes floatD { 0%,100%{transform:translate(0,0)} 35%{transform:translate(-20px,-14px)} 65%{transform:translate(12px,22px)} }
-        @keyframes floatE { 0%,100%{transform:translate(0,0)} 45%{transform:translate(18px,16px)} 75%{transform:translate(-14px,-6px)} }
-        @keyframes floatF { 0%,100%{transform:translate(0,0)} 30%{transform:translate(-22px,10px)} 70%{transform:translate(14px,-18px)} }
-        @keyframes particlePulse { 0%,100% { opacity:0.3 } 50% { opacity:0.8 } }
         @keyframes fadeInUp { from { opacity:0; transform:translateY(14px) } to { opacity:1; transform:translateY(0) } }
         @keyframes spin { to { transform:rotate(360deg) } }
       `}</style>
