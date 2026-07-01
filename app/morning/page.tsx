@@ -25,27 +25,28 @@ const DONE_QUOTES = [
 ]
 
 // Pre-defined scattered particles -- avoids Math.random() on each render
+// f = float keyframe name, dur = float duration (s), a = animation delay (s)
 const PARTICLES = [
-  { x:7,  y:12, s:4, c:'#00d4ff', a:0   },
-  { x:18, y:38, s:3, c:'#8b5cf6', a:1.5 },
-  { x:5,  y:62, s:5, c:'#ffb800', a:3   },
-  { x:25, y:85, s:3, c:'#00d4ff', a:0.5 },
-  { x:38, y:8,  s:4, c:'#8b5cf6', a:2   },
-  { x:55, y:15, s:3, c:'#ffb800', a:4   },
-  { x:68, y:5,  s:4, c:'#00d4ff', a:1   },
-  { x:82, y:22, s:5, c:'#00ff88', a:2.5 },
-  { x:91, y:48, s:3, c:'#8b5cf6', a:0.8 },
-  { x:94, y:74, s:4, c:'#ffb800', a:3.5 },
-  { x:75, y:90, s:3, c:'#00d4ff', a:1.2 },
-  { x:46, y:94, s:5, c:'#8b5cf6', a:2.8 },
-  { x:30, y:74, s:3, c:'#ffb800', a:0.3 },
-  { x:63, y:78, s:4, c:'#00ff88', a:4.5 },
-  { x:10, y:50, s:3, c:'#00d4ff', a:1.8 },
-  { x:88, y:10, s:4, c:'#ffb800', a:0.7 },
-  { x:20, y:20, s:4, c:'#00ff88', a:3.2 },
-  { x:57, y:55, s:2, c:'#8b5cf6', a:5   },
-  { x:42, y:44, s:3, c:'#00d4ff', a:2.2 },
-  { x:73, y:38, s:3, c:'#ffb800', a:1.6 },
+  { x:7,  y:12, s:4, c:'#00d4ff', a:0,   f:'floatA', dur:18 },
+  { x:18, y:38, s:3, c:'#8b5cf6', a:1.5, f:'floatB', dur:22 },
+  { x:5,  y:62, s:5, c:'#ffb800', a:3,   f:'floatC', dur:26 },
+  { x:25, y:85, s:3, c:'#00d4ff', a:0.5, f:'floatD', dur:20 },
+  { x:38, y:8,  s:4, c:'#8b5cf6', a:2,   f:'floatE', dur:24 },
+  { x:55, y:15, s:3, c:'#ffb800', a:4,   f:'floatF', dur:19 },
+  { x:68, y:5,  s:4, c:'#00d4ff', a:1,   f:'floatA', dur:23 },
+  { x:82, y:22, s:5, c:'#00ff88', a:2.5, f:'floatB', dur:17 },
+  { x:91, y:48, s:3, c:'#8b5cf6', a:0.8, f:'floatC', dur:21 },
+  { x:94, y:74, s:4, c:'#ffb800', a:3.5, f:'floatD', dur:25 },
+  { x:75, y:90, s:3, c:'#00d4ff', a:1.2, f:'floatE', dur:18 },
+  { x:46, y:94, s:5, c:'#8b5cf6', a:2.8, f:'floatF', dur:22 },
+  { x:30, y:74, s:3, c:'#ffb800', a:0.3, f:'floatA', dur:20 },
+  { x:63, y:78, s:4, c:'#00ff88', a:4.5, f:'floatB', dur:27 },
+  { x:10, y:50, s:3, c:'#00d4ff', a:1.8, f:'floatC', dur:16 },
+  { x:88, y:10, s:4, c:'#ffb800', a:0.7, f:'floatD', dur:24 },
+  { x:20, y:20, s:4, c:'#00ff88', a:3.2, f:'floatE', dur:19 },
+  { x:57, y:55, s:2, c:'#8b5cf6', a:5,   f:'floatF', dur:28 },
+  { x:42, y:44, s:3, c:'#00d4ff', a:2.2, f:'floatA', dur:21 },
+  { x:73, y:38, s:3, c:'#ffb800', a:1.6, f:'floatB', dur:23 },
 ]
 
 const STORAGE_KEY = 'flowstate_routine_v2'
@@ -216,7 +217,7 @@ export default function MorningPage() {
             position:'absolute', left:p.x+'%', top:p.y+'%',
             width:p.s+'px', height:p.s+'px', borderRadius:'50%',
             background:p.c, opacity:0.6,
-            animation:'particlePulse 4s '+p.a+'s ease-in-out infinite',
+            animation:p.f+' '+p.dur+'s '+p.a+'s ease-in-out infinite, particlePulse 5s '+p.a+'s ease-in-out infinite',
           }}/>
         ))}
       </div>
@@ -378,7 +379,13 @@ export default function MorningPage() {
       {editing && <EditPanel items={items} onClose={() => setEditing(false)} onSave={handleSaveItems}/>}
 
       <style>{`
-        @keyframes particlePulse { 0%,100% { opacity:0.35 } 50% { opacity:0.85 } }
+        @keyframes floatA { 0%,100%{transform:translate(0,0)} 30%{transform:translate(14px,-20px)} 65%{transform:translate(-10px,-12px)} 85%{transform:translate(18px,6px)} }
+        @keyframes floatB { 0%,100%{transform:translate(0,0)} 25%{transform:translate(-16px,14px)} 55%{transform:translate(10px,20px)} 80%{transform:translate(-12px,-8px)} }
+        @keyframes floatC { 0%,100%{transform:translate(0,0)} 40%{transform:translate(22px,-10px)} 70%{transform:translate(-6px,18px)} }
+        @keyframes floatD { 0%,100%{transform:translate(0,0)} 35%{transform:translate(-20px,-14px)} 65%{transform:translate(12px,22px)} }
+        @keyframes floatE { 0%,100%{transform:translate(0,0)} 45%{transform:translate(18px,16px)} 75%{transform:translate(-14px,-6px)} }
+        @keyframes floatF { 0%,100%{transform:translate(0,0)} 30%{transform:translate(-22px,10px)} 70%{transform:translate(14px,-18px)} }
+        @keyframes particlePulse { 0%,100% { opacity:0.3 } 50% { opacity:0.8 } }
         @keyframes fadeInUp { from { opacity:0; transform:translateY(14px) } to { opacity:1; transform:translateY(0) } }
         @keyframes spin { to { transform:rotate(360deg) } }
       `}</style>

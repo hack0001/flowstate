@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -19,6 +20,7 @@ type DailyTask = {
 }
 
 type OrgMove = { id: string; from: string; to: string; title: string }
+type WFSession = { id: string; title: string; workflow_type: { name: string; icon: string } | null }
 
 function getMondayOfWeek(d: Date): Date {
   const day = d.getDay()
@@ -139,6 +141,8 @@ export default function CalendarPage() {
   const [orgPlan, setOrgPlan] = useState<OrgMove[] | null>(null)
   const [applying, setApplying] = useState(false)
   const [addingFor, setAddingFor] = useState<string | null>(null)
+  const [wfSessions, setWfSessions] = useState<WFSession[]>([])
+  const [schedulingId, setSchedulingId] = useState<string | null>(null)
   const [calDate, setCalDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
 
   const calYear = calDate.getFullYear()
@@ -170,6 +174,16 @@ export default function CalendarPage() {
   }, [weekStart])
 
   useEffect(() => { fetchWeek() }, [fetchWeek])
+
+  useEffect(() => {
+    supabase
+      .from('workflow_sessions')
+      .select('id,title,workflow_type:workflow_types(name,icon)')
+      .eq('status', 'active')
+      .order('updated_at', { ascending: false })
+      .limit(15)
+      .then(({ data }) => setWfSessions((data as unknown as WFSession[]) ?? []))
+  }, [])
 
   function handleOrganise() { setOrgPlan(buildOrganisePlan(weekTasks, weekStart)) }
 
@@ -270,6 +284,41 @@ export default function CalendarPage() {
               <p style={{ fontSize:'0.65rem', color:C.muted, margin:0, lineHeight:1.5 }}>Max <strong style={{ color:C.cyan }}>2 Flow</strong> per day. <strong style={{ color:C.purple }}>Personal</strong> in evening.</p>
             </div>
           </div>
+
+          {/* Workflows panel */}
+          {wfSessions.length > 0 && (
+            <div style={{ marginTop:'1.25rem' }}>
+              <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>Workflows</p>
+              {schedulingId ? (
+                <p style={{ fontSize:'0.65rem', color:C.cyan, margin:'0 0 0.5rem', lineHeight:1.4 }}>&#8593; Click a day column to schedule</p>
+              ) : (
+                <p style={{ fontSize:'0.62rem', color:C.muted, margin:'0 0 0.5rem', lineHeight:1.4 }}>Select a workflow then click a day</p>
+              )}
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.25rem' }}>
+                {wfSessions.map(s => {
+                  const active = schedulingId === s.id
+                  return (
+                    <button key={s.id} onClick={() => setSchedulingId(active ? null : s.id)} style={{
+                      display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.45rem 0.5rem',
+                      background: active ? 'rgba(0,212,255,0.1)' : C.surface,
+                      border: '1px solid '+(active ? C.cyan : C.border),
+                      borderRadius:'0.5rem', cursor:'pointer', fontFamily:'inherit',
+                      textAlign:'left', transition:'border-color 0.15s',
+                    }}>
+                      <span style={{ fontSize:'0.85rem', flexShrink:0 }}>{s.workflow_type?.icon ?? '&#9889;'}</span>
+                      <span style={{ fontSize:'0.72rem', fontWeight:600, color:active?C.cyan:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{s.title}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          {wfSessions.length === 0 && (
+            <div style={{ marginTop:'1.25rem' }}>
+              <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>Workflows</p>
+              <p style={{ fontSize:'0.68rem', color:C.muted, lineHeight:1.5 }}>No active workflows yet.</p>
+            </div>
+          )}
         </div>
 
         <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
@@ -293,10 +342,18 @@ export default function CalendarPage() {
               const hasOverflow = flowTasks.length > 2
               return (
                 <div key={date} style={{ flex:'1 1 140px', minWidth:'140px', maxWidth:'220px', display:'flex', flexDirection:'column', overflowY:'auto', borderRadius:'0.75rem', border:'1px solid '+(isToday?'rgba(0,212,255,0.25)':C.border), padding:'0.625rem', background:isWeekend?'rgba(255,255,255,0.01)':'transparent' }}>
-                  <div style={{ textAlign:'center', marginBottom:'0.625rem', paddingBottom:'0.5rem', borderBottom:'1px solid '+C.border }}>
+                  <div
+                    onClick={() => {
+                      if (schedulingId) {
+                        const s = wfSessions.find(w => w.id === schedulingId)
+                        if (s) { handleAddTask(date, s.title, 'Flow'); setSchedulingId(null) }
+                      }
+                    }}
+                    style={{ textAlign:'center', marginBottom:'0.625rem', paddingBottom:'0.5rem', borderBottom:'1px solid '+(schedulingId?C.cyan:C.border), cursor:schedulingId?'crosshair':'default', transition:'border-color 0.2s' }}>
                     <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 0.1rem', color:isToday?C.cyan:isWeekend?C.muted:C.sec }}>{dayName}</p>
                     <p style={{ fontSize:'1.25rem', fontWeight:900, margin:0, color:isToday?C.cyan:isWeekend?C.sec:C.text }}>{dayNum}</p>
                     {isToday && <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:C.cyan, margin:'0.2rem auto 0' }} />}
+                    {schedulingId && <div style={{ fontSize:'0.55rem', color:C.cyan, marginTop:'0.15rem', fontWeight:700 }}>+ add here</div>}
                   </div>
 
                   <div style={{ marginBottom:'0.625rem' }}>
