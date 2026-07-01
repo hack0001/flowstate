@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon } from 'lucide-react'
+import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen } from 'lucide-react'
 import { getPrioritySession, getSessions, setPrioritySession } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
 import type { WorkflowSession } from '@/types'
@@ -297,6 +297,18 @@ export default function Home() {
             <button onClick={() => router.push('/evening')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.18)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
               <Moon size={14}/>Evening
+            </button>
+            <button onClick={() => router.push('/vault')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.18)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              <BookOpen size={14}/>Vault
+            </button>
+            <button onClick={() => router.push('/content')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(255,107,53,0.07)', border:'1px solid rgba(255,107,53,0.2)', borderRadius:'0.75rem', color:'#ff6b35', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              <Film size={14}/>Content
+            </button>
+            <button onClick={() => router.push('/projects')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem', color:'#00d4ff', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              <FolderOpen size={14}/>Projects
             </button>
             <button onClick={() => router.push('/workflows')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', cursor:'pointer', fontSize:'0.8rem', fontWeight:700, fontFamily:'inherit' }}>

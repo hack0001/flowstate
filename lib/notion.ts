@@ -301,3 +301,117 @@ export async function getContentForMonth(year: number, month: number): Promise<N
     format: p.properties['Format']?.select?.name ?? null,
   }))
 }
+
+// ---- Vault items (task/vault = 'vault') ----
+
+export type NotionVaultItem = {
+  id: string; url: string
+  title: string
+  category: string | null
+  authorSource: string | null
+  link: string | null
+  keyTakeaway: string | null
+  notes: string | null
+  platform: string | null
+  tag: string | null
+  status: string
+}
+
+function parseVaultItem(p: NotionPage): NotionVaultItem {
+  return {
+    id: p.id, url: p.url,
+    title: titleText(p.properties['Name']),
+    category: p.properties['Category']?.select?.name ?? null,
+    authorSource: p.properties['Author / Source']?.rich_text?.[0]?.plain_text ?? null,
+    link: p.properties['Link']?.url ?? null,
+    keyTakeaway: p.properties['Key Takeaway']?.rich_text?.[0]?.plain_text ?? null,
+    notes: p.properties['Notes']?.rich_text?.[0]?.plain_text ?? null,
+    platform: p.properties['Platform']?.select?.name ?? null,
+    tag: p.properties['Tag']?.select?.name ?? null,
+    status: p.properties['Status']?.status?.name ?? 'Not started',
+  }
+}
+
+export async function getAllVaultForSync(): Promise<NotionVaultItem[]> {
+  const pages = await queryDB(NOTION_DB.tasks, {
+    property: 'task/vault', select: { equals: 'vault' }
+  })
+  return pages.map(parseVaultItem)
+}
+
+// ---- YouTube content pipeline ----
+
+export type NotionContentItem = {
+  id: string; url: string
+  title: string
+  pipelineStage: string | null
+  format: string | null
+  ytLength: string | null
+  tag: string | null
+  dueDate: string | null
+  status: string
+  link: string | null
+  notes: string | null
+}
+
+function parseContentItem(p: NotionPage): NotionContentItem {
+  // YT Long / Short is multi_select — stored as array on the page
+  // The NotionProp type doesn't cover multi_select directly; access raw
+  type RawProp = { multi_select?: { name: string }[] } & NotionProp
+  const ytRaw = p.properties['YT Long / Short'] as RawProp | undefined
+  const ytLength = ytRaw?.multi_select?.map(x => x.name).join(', ') ?? null
+
+  return {
+    id: p.id, url: p.url,
+    title: titleText(p.properties['Name']),
+    pipelineStage: p.properties['YT Pipeline Stage']?.select?.name ?? null,
+    format: p.properties['Format']?.select?.name ?? null,
+    ytLength,
+    tag: p.properties['Tag']?.select?.name ?? null,
+    dueDate: p.properties['Due Date']?.date?.start ?? null,
+    status: p.properties['Status']?.status?.name ?? 'Not started',
+    link: p.properties['Link']?.url ?? null,
+    notes: p.properties['Notes']?.rich_text?.[0]?.plain_text ?? null,
+  }
+}
+
+export async function getAllContentForSync(): Promise<NotionContentItem[]> {
+  // Content items are those with a YT Pipeline Stage set (no task/vault filter needed)
+  const pages = await queryDB(NOTION_DB.tasks, {
+    property: 'YT Pipeline Stage', select: { is_not_empty: true }
+  })
+  return pages.map(parseContentItem)
+}
+
+// ---- Projects (separate DB) ----
+
+const PROJECTS_DB = '352ed686-b47d-8035-8c12-000bc64736c4'
+
+export type NotionProject = {
+  id: string; url: string
+  title: string
+  status: string
+  priority: string | null
+  deadline: string | null
+  goal: string | null
+  nextAction: string | null
+  notes: string | null
+}
+
+function parseProject(p: NotionPage): NotionProject {
+  return {
+    id: p.id, url: p.url,
+    title: titleText(p.properties['Name']),
+    status: p.properties['Status']?.status?.name ?? 'Not started',
+    priority: p.properties['Priority']?.select?.name ?? p.properties['Priority 1']?.status?.name ?? null,
+    deadline: p.properties['Deadline']?.date?.start ?? null,
+    goal: p.properties['Goal - Why does this project exist']?.rich_text?.[0]?.plain_text ?? null,
+    nextAction: p.properties['Single Next Action']?.rich_text?.[0]?.plain_text ?? null,
+    notes: p.properties['Notes']?.rich_text?.[0]?.plain_text ?? null,
+  }
+}
+
+export async function getAllProjectsForSync(): Promise<NotionProject[]> {
+  const pages = await queryDB(PROJECTS_DB)
+  return pages.map(parseProject)
+}
