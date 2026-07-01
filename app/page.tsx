@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise } from 'lucide-react'
+import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon } from 'lucide-react'
 import { getPrioritySession, getSessions, setPrioritySession } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
 import type { WorkflowSession } from '@/types'
@@ -289,6 +289,14 @@ export default function Home() {
             <button onClick={() => router.push('/calendar')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
               <CalendarDays size={14}/>Calendar
+            </button>
+            <button onClick={() => router.push('/tracking')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.25)', borderRadius:'0.75rem', color:C.purple, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              <BarChart2 size={14}/>Tracking
+            </button>
+            <button onClick={() => router.push('/evening')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.18)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              <Moon size={14}/>Evening
             </button>
             <button onClick={() => router.push('/workflows')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', cursor:'pointer', fontSize:'0.8rem', fontWeight:700, fontFamily:'inherit' }}>

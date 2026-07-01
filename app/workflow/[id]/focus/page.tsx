@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, Copy, ExternalLink, ChevronDown, ChevronUp, Play, Pause, SkipForward, RefreshCw, Wind, Waves, VolumeX, Zap } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Copy, ExternalLink, ChevronDown, ChevronUp, Play, Pause, SkipForward, RefreshCw, Wind, Waves, VolumeX, Zap, Music2 } from 'lucide-react'
+import FoodProgress from './FoodProgress'
 import { getSession, getStagesForWorkflow, getCompletions, completeTask } from '@/lib/supabase'
 import type { WorkflowSession, Stage, Task } from '@/types'
 import { sounds } from '@/lib/sounds'
@@ -75,6 +76,9 @@ export default function FocusPage() {
   const sprintRef = useRef<NodeJS.Timeout | null>(null)
   const taskStartRef = useRef<number>(Date.now())
   const { celebrate } = useCelebration()
+  const [ytTrack, setYtTrack] = useState<0|1|2>(0) // 0=off, 1=lofi, 2=rain
+  const [focusMins, setFocusMins] = useState(0)
+  const focusStartRef = useRef<number>(Date.now())
 
   const allTasks: Task[] = stages.flatMap(s => s.tasks ?? [])
   const task = allTasks[taskIdx] ?? null
@@ -129,6 +133,16 @@ export default function FocusPage() {
     return () => { if (sprintRef.current) clearInterval(sprintRef.current) }
   }, [sprintActive])
 
+  // Track focus minutes — increments every 60s, saves to localStorage in FoodProgress
+  useEffect(() => {
+    focusStartRef.current = Date.now()
+    const id = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - focusStartRef.current) / 60000)
+      setFocusMins(elapsed)
+    }, 30000) // check every 30s
+    return () => clearInterval(id)
+  }, [])
+
   function startSprint() {
     setSprintSecs(300)
     setSprintDone(false)
@@ -143,6 +157,10 @@ export default function FocusPage() {
   const sprintMins = Math.floor(sprintSecs / 60)
   const sprintSecsDisp = String(sprintSecs % 60).padStart(2, '0')
   const sprintProg = 1 - sprintSecs / 300
+
+  function toggleYT(track: 1|2) {
+    setYtTrack(prev => prev === track ? 0 : track)
+  }
 
   function toggleAmbient(mode: AmbientMode) {
     if (ambient === mode) { sounds.stopAmbient(); setAmbient('off') }
@@ -230,6 +248,12 @@ export default function FocusPage() {
               {mode === 'whitenoise' ? 'Noise' : mode === 'waves' ? 'Waves' : 'Off'}
             </button>
           ))}
+          {([1,2] as const).map(track => (
+            <button key={track} onClick={() => toggleYT(track)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', padding: '0.25rem 0.5rem', borderRadius: '0.4rem', fontSize: '0.65rem', fontWeight: 600, border: '1px solid ' + (ytTrack === track ? '#8b5cf6' : C.border), background: ytTrack === track ? 'rgba(139,92,246,0.1)' : 'transparent', color: ytTrack === track ? '#8b5cf6' : C.muted, cursor: 'pointer', fontFamily: 'inherit' }}>
+              <Music2 size={10} />{track === 1 ? 'Lo-Fi' : 'Rain'}
+            </button>
+          ))}
           <button onClick={() => setShowPomodoro(v => !v)}
             style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.625rem', borderRadius: '0.4rem', fontSize: '0.7rem', fontWeight: 700, border: '1px solid ' + (showPomodoro ? C.amber : C.border), background: showPomodoro ? 'rgba(255,184,0,0.1)' : 'transparent', color: showPomodoro ? C.amber : C.muted, cursor: 'pointer', fontFamily: 'inherit' }}>
             <Zap size={10} />{showPomodoro ? pom.formattedTime : 'Timer'}
@@ -253,6 +277,26 @@ export default function FocusPage() {
           <button onClick={() => pom.reset()} style={{ padding: '0.3rem 0.5rem', background: 'transparent', border: '1px solid ' + C.border, borderRadius: '0.5rem', color: C.sec, cursor: 'pointer', display: 'flex', alignItems: 'center' }}><RefreshCw size={11} /></button>
           <button onClick={() => pom.skip()} style={{ padding: '0.3rem 0.5rem', background: 'transparent', border: '1px solid ' + C.border, borderRadius: '0.5rem', color: C.sec, cursor: 'pointer', display: 'flex', alignItems: 'center' }}><SkipForward size={11} /></button>
         </div>
+      )}
+
+      {/* -- Hidden YouTube audio iframes -- */}
+      {ytTrack === 1 && (
+        <iframe
+          key="yt1"
+          src="https://www.youtube.com/embed/bn9F19Hi1Lk?autoplay=1&start=38279&loop=1&playlist=bn9F19Hi1Lk&controls=0"
+          allow="autoplay"
+          title="Lo-Fi focus music"
+          style={{ display:'none' }}
+        />
+      )}
+      {ytTrack === 2 && (
+        <iframe
+          key="yt2"
+          src="https://www.youtube.com/embed/8F1-1j_ZDgc?autoplay=1&loop=1&playlist=8F1-1j_ZDgc&controls=0"
+          allow="autoplay"
+          title="Rain ambient sound"
+          style={{ display:'none' }}
+        />
       )}
 
       {/* -- Jim Rohn affirmation -- */}
@@ -451,6 +495,9 @@ export default function FocusPage() {
 
             {/* Session name */}
             <p style={{ textAlign: 'center', fontSize: '0.65rem', color: C.muted, marginTop: '-0.25rem' }}>{session?.title}</p>
+
+            {/* Food progression */}
+            <FoodProgress sessionMins={focusMins} />
           </div>
         ) : null}
       </div>
