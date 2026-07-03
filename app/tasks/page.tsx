@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Search, X, CheckSquare } from 'lucide-react'
+import { ChevronLeft, Search, X, CheckSquare, Download } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -15,6 +15,7 @@ const TYPE_META: Record<string, { color: string }> = {
   'Personal':   { color: '#8b5cf6' },
   'Admin':      { color: '#4a4a6a' },
   'Quick Task': { color: '#ffb800' },
+  'Recurring':  { color: '#00ff88' },
 }
 
 const STATUS_META: Record<string, { color: string; bg: string }> = {
@@ -23,7 +24,7 @@ const STATUS_META: Record<string, { color: string; bg: string }> = {
   'Done':        { color:'#00ff88', bg:'rgba(0,255,136,0.1)' },
 }
 
-const TYPES    = ['All', 'Flow', 'Personal', 'Admin', 'Quick Task']
+const TYPES    = ['All', 'Flow', 'Personal', 'Admin', 'Quick Task', 'Recurring']
 const STATUSES = ['All', 'Not started', 'In progress', 'Done']
 const SORTS = [
   { key: 'created_at_desc', label: 'Newest first' },
@@ -80,10 +81,7 @@ function sortTasks(tasks: Task[], sort: string): Task[] {
       return a.due_date.localeCompare(b.due_date)
     }
     if (sort === 'task_type') return (a.task_type ?? 'z').localeCompare(b.task_type ?? 'z')
-    if (sort === 'urgency') {
-      const u = (t: Task) => t.urgency === 'Urgent' ? 0 : 1
-      return u(a) - u(b)
-    }
+    if (sort === 'urgency') return (a.urgency === 'Urgent' ? 0 : 1) - (b.urgency === 'Urgent' ? 0 : 1)
     return 0
   })
 }
@@ -92,10 +90,12 @@ export default function TasksPage() {
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState('')
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('All')
   const [statusFilter, setStatusFilter] = useState('All')
-  const [sort, setSort] = useState('created_at_desc')
+  const [sort, setSort] = useState('deadline_asc')
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -110,6 +110,28 @@ export default function TasksPage() {
 
   useEffect(() => { load() }, [load])
 
+  async function handleImport() {
+    setImporting(true); setImportMsg('')
+    try {
+      const r = await fetch('/api/import', { method: 'POST' })
+      const d = await r.json()
+      const taskCount = d.tasks?.imported ?? 0
+      const vaultCount = d.vault?.imported ?? 0
+      const taskErr = d.tasks?.error
+      const vaultErr = d.vault?.error
+      if (taskErr || vaultErr) {
+        setImportMsg(taskErr ?? vaultErr ?? 'Import error')
+      } else {
+        setImportMsg('Imported ' + taskCount + ' tasks + ' + vaultCount + ' vault items')
+        await load()
+      }
+    } catch (e) {
+      setImportMsg('Failed: ' + String(e))
+    }
+    setImporting(false)
+    setTimeout(() => setImportMsg(''), 6000)
+  }
+
   const today = new Date().toISOString().split('T')[0]
 
   const filtered = sortTasks(
@@ -121,8 +143,7 @@ export default function TasksPage() {
         return (
           t.title.toLowerCase().includes(q) ||
           (t.task_type ?? '').toLowerCase().includes(q) ||
-          (t.urgency ?? '').toLowerCase().includes(q) ||
-          (t.importance ?? '').toLowerCase().includes(q)
+          (t.urgency ?? '').toLowerCase().includes(q)
         )
       }
       return true
@@ -132,7 +153,6 @@ export default function TasksPage() {
 
   const typeCounts: Record<string, number> = {}
   tasks.forEach(t => { if (t.task_type) typeCounts[t.task_type] = (typeCounts[t.task_type] ?? 0) + 1 })
-
   const statusCounts: Record<string, number> = {}
   tasks.forEach(t => { statusCounts[t.status] = (statusCounts[t.status] ?? 0) + 1 })
 
@@ -143,7 +163,6 @@ export default function TasksPage() {
 
   return (
     <main style={{ minHeight:'100vh', background:C.bg, color:C.text }}>
-      {/* Header */}
       <div style={{ padding:'1.75rem 2rem 1.25rem', borderBottom:'1px solid '+C.border, background:'linear-gradient(160deg,rgba(0,212,255,0.05) 0%,transparent 100%)' }}>
         <div style={{ maxWidth:'1100px', margin:'0 auto' }}>
           <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
@@ -158,7 +177,16 @@ export default function TasksPage() {
                 {activeCount} active &mdash; {tasks.length} total
               </p>
             </div>
-            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
+              {importMsg && (
+                <span style={{ fontSize:'0.72rem', color: importMsg.startsWith('Fail') || importMsg.startsWith('Import error') ? C.red : C.green, fontWeight:600 }}>
+                  {importMsg}
+                </span>
+              )}
+              <button onClick={handleImport} disabled={importing} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 0.875rem', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:'0.75rem', color:C.green, cursor:importing?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700, opacity:importing?0.6:1 }}>
+                <Download size={13} style={{ animation:importing?'spin 1s linear infinite':'none' }}/>
+                {importing ? 'Importing...' : 'Import from CSV'}
+              </button>
               <label style={{ fontSize:'0.7rem', color:C.muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em' }}>Sort</label>
               <select value={sort} onChange={e => setSort(e.target.value)}
                 style={{ padding:'0.5rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', cursor:'pointer' }}>
@@ -167,7 +195,7 @@ export default function TasksPage() {
             </div>
           </div>
 
-          {/* Stats row */}
+          {/* Stats chips */}
           <div style={{ display:'flex', gap:'0.75rem', marginTop:'1rem', flexWrap:'wrap' }}>
             {urgentCount > 0 && (
               <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.3rem 0.75rem', background:'rgba(255,68,102,0.08)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'9999px' }}>
@@ -238,13 +266,22 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Grid */}
       <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'1.5rem 2rem' }}>
         {loading ? (
           <div style={{ color:C.muted, fontSize:'0.85rem' }}>Loading...</div>
+        ) : tasks.length === 0 ? (
+          <div style={{ textAlign:'center', padding:'4rem 1rem', color:C.muted }}>
+            <CheckSquare size={40} style={{ marginBottom:'1rem', opacity:0.3 }}/>
+            <p style={{ fontSize:'1rem', color:C.sec, marginBottom:'0.5rem', fontWeight:700 }}>No tasks in Supabase yet</p>
+            <p style={{ fontSize:'0.82rem', marginBottom:'2rem', lineHeight:1.6 }}>Your 212 Notion tasks are in the CSV export.<br/>Hit the button below to load them into Supabase.</p>
+            <button onClick={handleImport} disabled={importing} style={{ display:'inline-flex', alignItems:'center', gap:'0.5rem', padding:'0.875rem 2rem', background:'linear-gradient(135deg,'+C.green+',#00cc6a)', border:'none', borderRadius:'0.875rem', color:'#000', fontWeight:800, fontSize:'0.95rem', cursor:importing?'not-allowed':'pointer', fontFamily:'inherit', opacity:importing?0.6:1, boxShadow:'0 4px 20px rgba(0,255,136,0.25)' }}>
+              <Download size={18}/>
+              {importing ? 'Importing...' : 'Import 212 tasks now'}
+            </button>
+            {importMsg && <p style={{ marginTop:'1rem', fontSize:'0.8rem', color: importMsg.startsWith('Fail') ? C.red : C.green, fontWeight:600 }}>{importMsg}</p>}
+          </div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign:'center', padding:'3rem', color:C.muted }}>
-            <CheckSquare size={32} style={{ marginBottom:'1rem', opacity:0.3 }}/>
             <p>No tasks match your filters.</p>
           </div>
         ) : (
@@ -263,24 +300,20 @@ export default function TasksPage() {
                       transition:'border-color 0.2s ease',
                       boxShadow: isExp ? '0 0 18px '+(typeM?.color??C.cyan)+'12' : 'none',
                     }}>
-                    {/* Type + frog + status */}
                     <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.5rem', flexWrap:'wrap' }}>
                       <TypeBadge type={task.task_type}/>
                       {task.is_frog && <span style={{ fontSize:'0.85rem' }}>&#128293;</span>}
                       <span style={{ marginLeft:'auto' }}><StatusBadge status={task.status}/></span>
                     </div>
 
-                    {/* Title */}
                     <h3 style={{ fontSize:'0.9rem', fontWeight:800, color:C.text, margin:'0 0 0.4rem', lineHeight:1.35 }}>{task.title}</h3>
 
-                    {/* Deadline */}
                     {task.due_date && (
                       <p style={{ fontSize:'0.7rem', color:isOverdue?C.red:C.muted, margin:'0 0 0.4rem', fontWeight:isOverdue?700:400 }}>
-                        {isOverdue ? '⚠ Overdue: ' : '📅 '}{task.due_date}
+                        &#128197; {isOverdue ? 'Overdue: ' : ''}{task.due_date}
                       </p>
                     )}
 
-                    {/* Attribute chips */}
                     <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap' }}>
                       {task.urgency && (
                         <span style={{ fontSize:'0.58rem', color:task.urgency==='Urgent'?C.red:C.muted, border:'1px solid '+(task.urgency==='Urgent'?C.red:C.border), borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>
@@ -288,8 +321,8 @@ export default function TasksPage() {
                         </span>
                       )}
                       {task.importance && (
-                        <span style={{ fontSize:'0.58rem', color:task.importance==='Moved the Needle'?C.green:C.muted, border:'1px solid '+(task.importance==='Moved the Needle'?C.green:C.border), borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>
-                          {task.importance === 'Moved the Needle' ? 'High Impact' : 'Low Impact'}
+                        <span style={{ fontSize:'0.58rem', color:task.importance==='Moved the Needle'||task.importance==='Important'?C.green:C.muted, border:'1px solid '+(task.importance==='Moved the Needle'||task.importance==='Important'?C.green:C.border), borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>
+                          {task.importance === 'Moved the Needle' || task.importance === 'Important' ? 'High Impact' : 'Low Impact'}
                         </span>
                       )}
                       {task.time_commitment && (
@@ -299,7 +332,6 @@ export default function TasksPage() {
                       )}
                     </div>
 
-                    {/* Expanded detail */}
                     {isExp && (
                       <div style={{ marginTop:'0.75rem', paddingTop:'0.75rem', borderTop:'1px solid '+C.border }}>
                         {task.priority && (
@@ -324,6 +356,7 @@ export default function TasksPage() {
         input:focus { border-color: #8b5cf6 !important; }
         button:hover { opacity:0.85; }
         select { appearance:none; }
+        @keyframes spin { to { transform:rotate(360deg) } }
       `}</style>
     </main>
   )
