@@ -114,7 +114,7 @@ export async function POST() {
     let totalErr: string | undefined
     for (let i = 0; i < tasks.length; i += BATCH) {
       const { error } = await supabase
-        .from('tasks')
+        .from('master_tasks')
         .upsert(tasks.slice(i, i + BATCH), { onConflict: 'notion_id' })
       if (error && !totalErr) totalErr = error.message
     }

@@ -54,7 +54,7 @@ function PhaseTomorrow({ onNext }: { onNext: () => void }) {
     setLoadingSugg(true)
     const tomorrow = tomorrowStr()
     const { data } = await supabase
-      .from('tasks')
+      .from('master_tasks')
       .select('id,title,due_date,is_frog,urgency,importance,status')
       .eq('archived', false)
       .neq('status', 'Done')

@@ -43,7 +43,7 @@ export type StreakInfo = {
 
 export async function getTasksForDate(date: string): Promise<Task[]> {
   const { data, error } = await supabase
-    .from('tasks')
+    .from('master_tasks')
     .select('*')
     .eq('due_date', date)
     .eq('archived', false)
@@ -56,7 +56,7 @@ export async function getTasksForDate(date: string): Promise<Task[]> {
 
 export async function getHabitsForDate(date: string): Promise<Task[]> {
   const { data, error } = await supabase
-    .from('tasks')
+    .from('master_tasks')
     .select('*')
     .eq('due_date', date)
     .eq('archived', false)
@@ -69,7 +69,7 @@ export async function getHabitsForDate(date: string): Promise<Task[]> {
 export async function getTodayTopTask(date: string): Promise<Task | null> {
   // Frog first, then Urgent+Important, then first task of day
   const { data } = await supabase
-    .from('tasks')
+    .from('master_tasks')
     .select('*')
     .eq('due_date', date)
     .eq('archived', false)
@@ -95,7 +95,7 @@ export async function createTask(task: {
   priority?: string | null
 }): Promise<Task> {
   const { data, error } = await supabase
-    .from('tasks')
+    .from('master_tasks')
     .insert(task)
     .select()
     .single()
@@ -107,20 +107,20 @@ export async function updateTask(
   id: string,
   patch: Partial<Omit<Task, 'id' | 'notion_id' | 'created_at' | 'updated_at'>>
 ): Promise<void> {
-  const { error } = await supabase.from('tasks').update(patch).eq('id', id)
+  const { error } = await supabase.from('master_tasks').update(patch).eq('id', id)
   if (error) throw error
 }
 
 export async function deleteTask(id: string): Promise<void> {
   // Soft delete: set archived = true
-  const { error } = await supabase.from('tasks').update({ archived: true }).eq('id', id)
+  const { error } = await supabase.from('master_tasks').update({ archived: true }).eq('id', id)
   if (error) throw error
 }
 
 export async function rescheduleTasks(moves: { id: string; due_date: string }[]): Promise<void> {
   await Promise.all(
     moves.map(({ id, due_date }) =>
-      supabase.from('tasks').update({ due_date }).eq('id', id)
+      supabase.from('master_tasks').update({ due_date }).eq('id', id)
     )
   )
 }

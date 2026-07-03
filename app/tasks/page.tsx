@@ -100,7 +100,7 @@ export default function TasksPage() {
 
   const load = useCallback(async () => {
     const { data } = await supabase
-      .from('tasks')
+      .from('master_tasks')
       .select('*')
       .eq('archived', false)
       .order('created_at', { ascending: false })

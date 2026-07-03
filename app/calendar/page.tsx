@@ -158,7 +158,7 @@ export default function CalendarPage() {
       const startDate = allDates[0]
       const endDate = allDates[allDates.length - 1]
       const { data } = await supabase
-        .from('tasks')
+        .from('master_tasks')
         .select('*')
         .gte('due_date', startDate)
         .lte('due_date', endDate)
@@ -194,7 +194,7 @@ export default function CalendarPage() {
     if (!orgPlan || orgPlan.length === 0) { setOrgPlan(null); return }
     setApplying(true)
     try {
-      await Promise.all(orgPlan.map(m => supabase.from('tasks').update({ due_date: m.to }).eq('id', m.id)))
+      await Promise.all(orgPlan.map(m => supabase.from('master_tasks').update({ due_date: m.to }).eq('id', m.id)))
       setOrgPlan(null)
       await fetchWeek()
     } catch {}
@@ -205,7 +205,7 @@ export default function CalendarPage() {
     setAddingFor(null)
     try {
       const { data, error } = await supabase
-        .from('tasks')
+        .from('master_tasks')
         .insert({ title, due_date: date, task_type: type, status: 'Not started' })
         .select()
         .single()
@@ -215,14 +215,14 @@ export default function CalendarPage() {
 
   async function handleComplete(id: string, date: string) {
     try {
-      await supabase.from('tasks').update({ status: 'Done' }).eq('id', id)
+      await supabase.from('master_tasks').update({ status: 'Done' }).eq('id', id)
       setWeekTasks(prev => ({ ...prev, [date]: (prev[date] ?? []).filter(t => t.id !== id) }))
     } catch {}
   }
 
   async function handleDelete(id: string, date: string) {
     try {
-      await supabase.from('tasks').update({ archived: true }).eq('id', id)
+      await supabase.from('master_tasks').update({ archived: true }).eq('id', id)
       setWeekTasks(prev => ({ ...prev, [date]: (prev[date] ?? []).filter(t => t.id !== id) }))
     } catch {}
   }
@@ -245,7 +245,7 @@ export default function CalendarPage() {
     try {
       const { id, fromDate } = JSON.parse(e.dataTransfer.getData('application/json')) as { id: string; fromDate: string | null }
       if (!fromDate || fromDate === toDate) return
-      await supabase.from('tasks').update({ due_date: toDate }).eq('id', id)
+      await supabase.from('master_tasks').update({ due_date: toDate }).eq('id', id)
       setWeekTasks(prev => {
         const task = (prev[fromDate] ?? []).find(t => t.id === id)
         if (!task) return prev

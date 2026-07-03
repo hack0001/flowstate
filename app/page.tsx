@@ -173,7 +173,7 @@ export default function Home() {
       getSessions(),
       supabase.from('routine_completions').select('routine_date').eq('routine_date', toDateStr(new Date())).maybeSingle(),
       // Query the tasks table for today's top task (frog first)
-      supabase.from('tasks')
+      supabase.from('master_tasks')
         .select('id,title,urgency,importance,task_type,is_frog')
         .eq('due_date', toDateStr(new Date()))
         .eq('archived', false)

@@ -22,7 +22,7 @@ async function syncTasks(): Promise<SyncResult> {
       notion_url:      t.url,
       updated_at:      new Date().toISOString(),
     }))
-    const { data, error } = await supabase.from('tasks').upsert(rows, { onConflict: 'notion_id' }).select('id')
+    const { data, error } = await supabase.from('master_tasks').upsert(rows, { onConflict: 'notion_id' }).select('id')
     if (error) return { synced: 0, total: items.length, error: error.message }
     return { synced: data?.length ?? rows.length, total: items.length }
   } catch (e) {
@@ -144,7 +144,7 @@ export async function POST() {
 export async function GET() {
   try {
     const [tasks, vault, content, projects] = await Promise.all([
-      supabase.from('tasks').select('id', { count: 'exact', head: true }).eq('archived', false),
+      supabase.from('master_tasks').select('id', { count: 'exact', head: true }).eq('archived', false),
       supabase.from('vault_items').select('id', { count: 'exact', head: true }).eq('archived', false),
       supabase.from('content_items').select('id', { count: 'exact', head: true }).eq('archived', false),
       supabase.from('projects').select('id', { count: 'exact', head: true }).eq('archived', false),
