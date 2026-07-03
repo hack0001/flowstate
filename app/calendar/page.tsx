@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X, RefreshCw } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 const C = {
@@ -70,11 +70,21 @@ function buildOrganisePlan(allTasks: Record<string, Task[]>, weekStart: Date): O
   return moves
 }
 
-function TaskCard({ task, onComplete, onDelete }: { task: Task; onComplete: (id: string) => void; onDelete: (id: string) => void }) {
+function TaskCard({
+  task, onComplete, onDelete, onDragStart,
+}: {
+  task: Task
+  onComplete: (id: string) => void
+  onDelete: (id: string) => void
+  onDragStart: (e: React.DragEvent, task: Task) => void
+}) {
   const [busy, setBusy] = useState(false)
   const typeColor = task.task_type === 'Flow' ? C.cyan : task.task_type === 'Personal' ? C.purple : task.task_type === 'Admin' ? C.muted : C.amber
   return (
-    <div style={{ display:'flex', alignItems:'flex-start', gap:'0.375rem', padding:'0.45rem 0.5rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', marginBottom:'0.3rem', opacity:busy?0.5:1 }}>
+    <div
+      draggable
+      onDragStart={e => onDragStart(e, task)}
+      style={{ display:'flex', alignItems:'flex-start', gap:'0.375rem', padding:'0.45rem 0.5rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', marginBottom:'0.3rem', opacity:busy?0.5:1, cursor:'grab' }}>
       <button onClick={() => { setBusy(true); onComplete(task.id) }}
         style={{ width:'14px', height:'14px', borderRadius:'50%', border:'2px solid '+C.border, background:'transparent', cursor:'pointer', flexShrink:0, marginTop:'2px', padding:0 }} />
       <div style={{ flex:1, minWidth:0 }}>
@@ -85,7 +95,6 @@ function TaskCard({ task, onComplete, onDelete }: { task: Task; onComplete: (id:
         <div style={{ display:'flex', gap:'0.2rem', marginTop:'0.15rem', flexWrap:'wrap' }}>
           {task.task_type && <span style={{ fontSize:'0.55rem', color:typeColor, border:'1px solid '+typeColor, borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, opacity:0.85 }}>{task.task_type}</span>}
           {task.urgency === 'Urgent' && <span style={{ fontSize:'0.55rem', color:C.red, border:'1px solid '+C.red, borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, opacity:0.85 }}>Urgent</span>}
-          {task.notion_url && <a href={task.notion_url} target="_blank" rel="noreferrer" style={{ fontSize:'0.5rem', color:C.muted, border:'1px solid #2a2a3a', borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, textDecoration:'none' }}>N</a>}
         </div>
       </div>
       <button onClick={() => { setBusy(true); onDelete(task.id) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'1px', flexShrink:0 }}><Trash2 size={10} /></button>
@@ -123,14 +132,13 @@ export default function CalendarPage() {
   const [weekStart, setWeekStart] = useState(() => getMondayOfWeek(today))
   const [weekTasks, setWeekTasks] = useState<Record<string, Task[]>>({})
   const [loading, setLoading] = useState(false)
-  const [syncing, setSyncing] = useState(false)
-  const [syncMsg, setSyncMsg] = useState('')
   const [orgPlan, setOrgPlan] = useState<OrgMove[] | null>(null)
   const [applying, setApplying] = useState(false)
   const [addingFor, setAddingFor] = useState<string | null>(null)
   const [wfSessions, setWfSessions] = useState<WFSession[]>([])
   const [schedulingId, setSchedulingId] = useState<string | null>(null)
   const [calDate, setCalDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
+  const [dragOverDate, setDragOverDate] = useState<string | null>(null)
 
   const calYear = calDate.getFullYear()
   const calMonth = calDate.getMonth()
@@ -149,7 +157,6 @@ export default function CalendarPage() {
       const allDates = Array.from({ length: 14 }, (_, i) => toDateStr(addDays(weekStart, i)))
       const startDate = allDates[0]
       const endDate = allDates[allDates.length - 1]
-
       const { data } = await supabase
         .from('tasks')
         .select('*')
@@ -159,7 +166,6 @@ export default function CalendarPage() {
         .neq('status', 'Done')
         .order('is_frog', { ascending: false })
         .order('created_at')
-
       const map: Record<string, Task[]> = {}
       for (const date of allDates) map[date] = []
       for (const t of (data ?? [])) {
@@ -182,42 +188,13 @@ export default function CalendarPage() {
       .then(({ data }) => setWfSessions((data as unknown as WFSession[]) ?? []))
   }, [])
 
-  async function handleSyncNotion() {
-    setSyncing(true)
-    setSyncMsg('')
-    try {
-      const r = await fetch('/api/sync/notion', { method: 'POST' })
-      const d = await r.json()
-      const errKeys = Object.keys(d.errors ?? {})
-      if (errKeys.length > 0 && d.synced?.tasks === 0) {
-        setSyncMsg('Error: ' + Object.values(d.errors)[0])
-      } else {
-        const t = d.synced?.tasks ?? 0
-        const v = d.synced?.vault ?? 0
-        const c = d.synced?.content ?? 0
-        const parts = [`${t} tasks`]
-        if (v > 0) parts.push(`${v} vault`)
-        if (c > 0) parts.push(`${c} content`)
-        setSyncMsg('Synced ' + parts.join(', ') + (errKeys.includes('projects') ? ' (projects DB not shared)' : ''))
-      }
-      await fetchWeek()
-    } catch (e) {
-      setSyncMsg('Sync failed: ' + String(e))
-    }
-    setSyncing(false)
-    setTimeout(() => setSyncMsg(''), 4000)
-  }
-
   function handleOrganise() { setOrgPlan(buildOrganisePlan(weekTasks, weekStart)) }
 
   async function handleApply() {
     if (!orgPlan || orgPlan.length === 0) { setOrgPlan(null); return }
     setApplying(true)
     try {
-      const moves = orgPlan.map(m => ({ id: m.id, due_date: m.to }))
-      await Promise.all(
-        moves.map(m => supabase.from('tasks').update({ due_date: m.due_date }).eq('id', m.id))
-      )
+      await Promise.all(orgPlan.map(m => supabase.from('tasks').update({ due_date: m.to }).eq('id', m.id)))
       setOrgPlan(null)
       await fetchWeek()
     } catch {}
@@ -250,6 +227,37 @@ export default function CalendarPage() {
     } catch {}
   }
 
+  // Drag-and-drop handlers
+  function handleDragStart(e: React.DragEvent, task: Task) {
+    e.dataTransfer.setData('application/json', JSON.stringify({ id: task.id, fromDate: task.due_date }))
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  function handleDragOver(e: React.DragEvent, toDate: string) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverDate(toDate)
+  }
+
+  async function handleDrop(e: React.DragEvent, toDate: string) {
+    e.preventDefault()
+    setDragOverDate(null)
+    try {
+      const { id, fromDate } = JSON.parse(e.dataTransfer.getData('application/json')) as { id: string; fromDate: string | null }
+      if (!fromDate || fromDate === toDate) return
+      await supabase.from('tasks').update({ due_date: toDate }).eq('id', id)
+      setWeekTasks(prev => {
+        const task = (prev[fromDate] ?? []).find(t => t.id === id)
+        if (!task) return prev
+        return {
+          ...prev,
+          [fromDate]: (prev[fromDate] ?? []).filter(t => t.id !== id),
+          [toDate]: [...(prev[toDate] ?? []), { ...task, due_date: toDate }],
+        }
+      })
+    } catch {}
+  }
+
   function jumpToWeek(day: number) { setWeekStart(getMondayOfWeek(new Date(calYear, calMonth, day))) }
   function isInCurrentWeek(day: number): boolean { return weekDates.includes(toDateStr(new Date(calYear, calMonth, day))) }
 
@@ -263,7 +271,6 @@ export default function CalendarPage() {
           <span style={{ color:C.border }}>|</span>
           <span style={{ fontWeight:800, color:C.text }}>Calendar</span>
           {loading && <div style={{ width:'12px', height:'12px', borderRadius:'50%', border:'2px solid '+C.cyan, borderTopColor:'transparent', animation:'spin 1s linear infinite' }} />}
-          {syncMsg && <span style={{ fontSize:'0.7rem', color:C.green, fontWeight:600 }}>{syncMsg}</span>}
         </div>
         <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
           <button onClick={() => router.push('/morning')} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'0.75rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
@@ -271,10 +278,6 @@ export default function CalendarPage() {
           </button>
           <button onClick={() => router.push('/tracking')} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.25)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
             &#128293; Tracking
-          </button>
-          <button onClick={handleSyncNotion} disabled={syncing} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.75rem', color:C.purple, cursor:syncing?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, opacity:syncing?0.6:1 }}>
-            <RefreshCw size={12} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} />
-            {syncing ? 'Syncing...' : 'Sync Notion'}
           </button>
           <button onClick={handleOrganise} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'linear-gradient(135deg,rgba(139,92,246,0.2),rgba(0,212,255,0.15))', border:'1px solid rgba(139,92,246,0.4)', borderRadius:'0.75rem', color:C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
             <Zap size={12} />Organise Week
@@ -320,12 +323,10 @@ export default function CalendarPage() {
               </div>
             ))}
             <div style={{ marginTop:'0.5rem', padding:'0.6rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem' }}>
-              <p style={{ fontSize:'0.65rem', color:C.muted, margin:0, lineHeight:1.5 }}>Max <strong style={{ color:C.cyan }}>2 Flow</strong> per day. <strong style={{ color:C.purple }}>Personal</strong> in evening.</p>
-              <p style={{ fontSize:'0.6rem', color:C.muted, margin:'0.35rem 0 0', lineHeight:1.4 }}>&#128293; = frog (top priority)</p>
+              <p style={{ fontSize:'0.65rem', color:C.muted, margin:0, lineHeight:1.5 }}>Max <strong style={{ color:C.cyan }}>2 Flow</strong> per day. Drag tasks between columns to reschedule.</p>
             </div>
           </div>
 
-          {/* Workflows panel */}
           {wfSessions.length > 0 && (
             <div style={{ marginTop:'1.25rem' }}>
               <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>Workflows</p>
@@ -374,8 +375,13 @@ export default function CalendarPage() {
               const isToday = date === todayStr
               const isWeekend = dow === 0 || dow === 6
               const hasOverflow = flowTasks.length > 2
+              const isDragOver = dragOverDate === date
               return (
-                <div key={date} style={{ flex:'1 1 140px', minWidth:'140px', maxWidth:'220px', display:'flex', flexDirection:'column', overflowY:'auto', borderRadius:'0.75rem', border:'1px solid '+(isToday?'rgba(0,212,255,0.25)':C.border), padding:'0.625rem', background:isWeekend?'rgba(255,255,255,0.01)':'transparent' }}>
+                <div key={date}
+                  onDragOver={e => handleDragOver(e, date)}
+                  onDragLeave={() => setDragOverDate(null)}
+                  onDrop={e => handleDrop(e, date)}
+                  style={{ flex:'1 1 140px', minWidth:'140px', maxWidth:'220px', display:'flex', flexDirection:'column', overflowY:'auto', borderRadius:'0.75rem', border:'1px solid '+(isDragOver?C.cyan:isToday?'rgba(0,212,255,0.25)':C.border), padding:'0.625rem', background:isDragOver?'rgba(0,212,255,0.04)':isWeekend?'rgba(255,255,255,0.01)':'transparent', transition:'border-color 0.15s, background 0.15s' }}>
                   <div
                     onClick={() => { if (schedulingId) { const s = wfSessions.find(w => w.id === schedulingId); if (s) { handleAddTask(date, s.title, 'Flow'); setSchedulingId(null) } } }}
                     style={{ textAlign:'center', marginBottom:'0.625rem', paddingBottom:'0.5rem', borderBottom:'1px solid '+(schedulingId?C.cyan:C.border), cursor:schedulingId?'crosshair':'default', transition:'border-color 0.2s' }}>
@@ -391,7 +397,7 @@ export default function CalendarPage() {
                       <span style={{ fontSize:'0.58rem', fontWeight:700, color:hasOverflow?C.red:flowTasks.length===2?C.amber:C.muted }}>{Math.min(flowTasks.length,2)}/2{hasOverflow?' !':''}</span>
                     </div>
                     {flowTasks.slice(0,2).map(t => (
-                      <TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} />
+                      <TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} />
                     ))}
                     {flowTasks.length === 0 && (
                       <div style={{ height:'36px', border:'1px dashed rgba(0,212,255,0.2)', borderRadius:'0.5rem', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -404,13 +410,13 @@ export default function CalendarPage() {
                   {otherTasks.length > 0 && (
                     <div style={{ marginBottom:'0.625rem' }}>
                       <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.amber, margin:'0 0 0.3rem' }}>Tasks</p>
-                      {otherTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} />))}
+                      {otherTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} />))}
                     </div>
                   )}
 
                   <div style={{ borderTop:'1px solid rgba(139,92,246,0.2)', paddingTop:'0.5rem', marginTop:'auto' }}>
                     <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.purple, margin:'0 0 0.3rem' }}>Evening</p>
-                    {personalTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} />))}
+                    {personalTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} />))}
                     {personalTasks.length === 0 && (
                       <div style={{ height:'32px', border:'1px dashed rgba(139,92,246,0.2)', borderRadius:'0.5rem', display:'flex', alignItems:'center', justifyContent:'center' }}>
                         <span style={{ fontSize:'0.6rem', color:C.muted }}>personal tasks</span>

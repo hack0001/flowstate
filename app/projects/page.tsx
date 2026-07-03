@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, RefreshCw, Plus, ExternalLink, X, Target, ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronLeft, Plus, X, Target, ExternalLink } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -55,7 +55,6 @@ function PriorityDot({ priority }: { priority: string | null }) {
   return <span style={{ width:'8px', height:'8px', borderRadius:'50%', background:m.color, flexShrink:0, display:'inline-block' }} title={priority + ' priority'}/>
 }
 
-// Add/Edit modal
 function ProjectModal({ initial, onSave, onClose }: {
   initial?: Partial<Project>
   onSave: (data: Partial<Project>) => void
@@ -78,28 +77,24 @@ function ProjectModal({ initial, onSave, onClose }: {
           <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex' }}><X size={18}/></button>
         </div>
 
-        {[
-          { label:'Project name', val:title, set:setTitle, placeholder:'e.g. YouTube channel relaunch', type:'text' },
-        ].map(f => (
-          <div key={f.label} style={{ marginBottom:'0.875rem' }}>
-            <label style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, display:'block', marginBottom:'0.3rem' }}>{f.label}</label>
-            <input value={f.val} onChange={e => f.set(e.target.value)} placeholder={f.placeholder}
-              style={{ width:'100%', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.88rem', boxSizing:'border-box' }}/>
-          </div>
-        ))}
+        <div style={{ marginBottom:'0.875rem' }}>
+          <label style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, display:'block', marginBottom:'0.3rem' }}>Project name</label>
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. YouTube channel relaunch"
+            style={{ width:'100%', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.88rem', boxSizing:'border-box', outline:'none' }}/>
+        </div>
 
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem', marginBottom:'0.875rem' }}>
           <div>
             <label style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, display:'block', marginBottom:'0.3rem' }}>Status</label>
             <select value={status} onChange={e => setStatus(e.target.value)}
-              style={{ width:'100%', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', boxSizing:'border-box' }}>
+              style={{ width:'100%', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', boxSizing:'border-box', outline:'none' }}>
               {Object.keys(STATUS_META).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div>
             <label style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, display:'block', marginBottom:'0.3rem' }}>Priority</label>
             <select value={priority} onChange={e => setPriority(e.target.value)}
-              style={{ width:'100%', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', boxSizing:'border-box' }}>
+              style={{ width:'100%', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', boxSizing:'border-box', outline:'none' }}>
               <option value="">None</option>
               {Object.keys(PRIORITY_META).map(p => <option key={p} value={p}>{p}</option>)}
             </select>
@@ -109,19 +104,19 @@ function ProjectModal({ initial, onSave, onClose }: {
         <div style={{ marginBottom:'0.875rem' }}>
           <label style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, display:'block', marginBottom:'0.3rem' }}>Deadline</label>
           <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)}
-            style={{ width:'100%', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', boxSizing:'border-box' }}/>
+            style={{ width:'100%', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', boxSizing:'border-box', outline:'none' }}/>
         </div>
 
         <div style={{ marginBottom:'0.875rem' }}>
           <label style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, display:'block', marginBottom:'0.3rem' }}>Why does this project exist?</label>
           <textarea value={goal} onChange={e => setGoal(e.target.value)} rows={2} placeholder="The goal / outcome..."
-            style={{ width:'100%', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', resize:'vertical', boxSizing:'border-box' }}/>
+            style={{ width:'100%', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', resize:'vertical', boxSizing:'border-box', outline:'none' }}/>
         </div>
 
         <div style={{ marginBottom:'1.25rem' }}>
           <label style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, display:'block', marginBottom:'0.3rem' }}>Single next action</label>
           <input value={nextAction} onChange={e => setNextAction(e.target.value)} placeholder="The very next physical step..."
-            style={{ width:'100%', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', boxSizing:'border-box' }}/>
+            style={{ width:'100%', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', boxSizing:'border-box', outline:'none' }}/>
         </div>
 
         <button onClick={() => onSave({ title, status, priority: priority||null, deadline: deadline||null, goal: goal||null, next_action: nextAction||null, notes: notes||null })}
@@ -139,8 +134,6 @@ export default function ProjectsPage() {
   const router = useRouter()
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
-  const [syncMsg, setSyncMsg] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
@@ -157,16 +150,6 @@ export default function ProjectsPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
-
-  async function handleSync() {
-    setSyncing(true); setSyncMsg('')
-    const r = await fetch('/api/sync/notion', { method: 'POST' })
-    const d = await r.json()
-    setSyncMsg(d.errors?.['projects'] ? 'Error: ' + d.errors['projects'] : `Synced ${d.synced?.projects ?? 0} projects`)
-    await load()
-    setSyncing(false)
-    setTimeout(() => setSyncMsg(''), 4000)
-  }
 
   async function saveProject(data: Partial<Project>) {
     if (editProject) {
@@ -188,17 +171,14 @@ export default function ProjectsPage() {
     setProjects(prev => prev.filter(p => p.id !== id))
   }
 
+  const today = new Date().toISOString().split('T')[0]
   const allStatuses = ['All', ...STATUS_ORDER]
   const filtered = projects.filter(p => statusFilter === 'All' || p.status === statusFilter)
-  const grouped = STATUS_ORDER.map(s => ({ status: s, items: filtered.filter(p => p.status === s) })).filter(g => g.items.length > 0)
-
-  const today = new Date().toISOString().split('T')[0]
 
   return (
     <main style={{ minHeight:'100vh', background:C.bg, color:C.text }}>
-      {/* Header */}
       <div style={{ padding:'1.75rem 2rem 1.25rem', borderBottom:'1px solid '+C.border, background:'linear-gradient(160deg,rgba(0,212,255,0.05) 0%,transparent 100%)' }}>
-        <div style={{ maxWidth:'900px', margin:'0 auto' }}>
+        <div style={{ maxWidth:'1100px', margin:'0 auto' }}>
           <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
             <div>
               <button onClick={() => router.push('/')} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.8rem', fontFamily:'inherit', marginBottom:'0.6rem' }}>
@@ -211,19 +191,11 @@ export default function ProjectsPage() {
                 {projects.filter(p => p.status === 'In progress').length} active &mdash; {projects.length} total
               </p>
             </div>
-            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
-              {syncMsg && <span style={{ fontSize:'0.72rem', color:C.green, fontWeight:600 }}>{syncMsg}</span>}
-              <button onClick={handleSync} disabled={syncing} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:'0.75rem', color:C.cyan, cursor:syncing?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, opacity:syncing?0.6:1 }}>
-                <RefreshCw size={13} style={{ animation:syncing?'spin 1s linear infinite':'none' }}/>
-                {syncing ? 'Syncing...' : 'Sync Notion'}
-              </button>
-              <button onClick={() => { setEditProject(null); setShowModal(true) }} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background:'linear-gradient(135deg,'+C.purple+',#6d28d9)', border:'none', borderRadius:'0.75rem', color:'#fff', cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
-                <Plus size={14}/> New project
-              </button>
-            </div>
+            <button onClick={() => { setEditProject(null); setShowModal(true) }} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background:'linear-gradient(135deg,'+C.purple+',#6d28d9)', border:'none', borderRadius:'0.75rem', color:'#fff', cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
+              <Plus size={14}/> New project
+            </button>
           </div>
 
-          {/* Status filter */}
           <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap', marginTop:'1.25rem' }}>
             {allStatuses.map(s => {
               const active = statusFilter === s
@@ -245,100 +217,86 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.5rem 2rem' }}>
+      <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'1.5rem 2rem' }}>
         {loading ? (
           <p style={{ color:C.muted }}>Loading...</p>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign:'center', padding:'3rem', color:C.muted }}>
             <Target size={32} style={{ marginBottom:'1rem', opacity:0.3 }}/>
-            <p>No projects yet. Sync from Notion or add one.</p>
+            <p>No projects yet. Add one above.</p>
           </div>
         ) : (
-          <div style={{ display:'flex', flexDirection:'column', gap:'1.5rem' }}>
-            {(statusFilter === 'All' ? grouped : [{ status: statusFilter, items: filtered }]).map(group => (
-              <div key={group.status}>
-                {statusFilter === 'All' && (
-                  <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:STATUS_META[group.status]?.color ?? C.muted, margin:'0 0 0.625rem' }}>
-                    {group.status} &mdash; {group.items.length}
-                  </p>
-                )}
-                <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
-                  {group.items.map(project => {
-                    const isExp = expanded === project.id
-                    const sm = STATUS_META[project.status] ?? STATUS_META['Not started']
-                    const isOverdue = project.deadline && project.deadline < today && project.status !== 'Done'
-                    return (
-                      <div key={project.id} style={{
-                        background:C.card, border:'1px solid '+(isExp?sm.color+'40':C.border),
-                        borderRadius:'1.125rem', overflow:'hidden', transition:'all 0.2s',
-                      }}>
-                        {/* Main row */}
-                        <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'1rem 1.125rem', cursor:'pointer' }}
-                          onClick={() => setExpanded(isExp ? null : project.id)}>
-                          <PriorityDot priority={project.priority}/>
-                          <div style={{ flex:1, minWidth:0 }}>
-                            <p style={{ fontSize:'0.9rem', fontWeight:800, color:C.text, margin:'0 0 0.25rem', lineHeight:1.2 }}>{project.title}</p>
-                            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
-                              <StatusBadge status={project.status}/>
-                              {project.deadline && (
-                                <span style={{ fontSize:'0.65rem', color:isOverdue?C.red:C.muted, fontWeight:isOverdue?700:400 }}>
-                                  {isOverdue ? '⚠ overdue: ' : 'by '}{project.deadline}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {project.notion_url && (
-                            <a href={project.notion_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                              style={{ color:C.muted, display:'flex', flexShrink:0 }}><ExternalLink size={13}/></a>
-                          )}
-                          {isExp ? <ChevronUp size={14} color={C.muted}/> : <ChevronDown size={14} color={C.muted}/>}
-                        </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))', gap:'0.75rem' }}>
+            {filtered.map(project => {
+              const isExp = expanded === project.id
+              const sm = STATUS_META[project.status] ?? STATUS_META['Not started']
+              const isOverdue = project.deadline && project.deadline < today && project.status !== 'Done'
+              return (
+                <div key={project.id}
+                  style={{
+                    background:C.card, border:'1px solid '+(isExp?sm.color+'40':C.border),
+                    borderRadius:'1rem', overflow:'hidden', transition:'border-color 0.2s',
+                    boxShadow: isExp ? '0 0 18px '+sm.color+'10' : 'none',
+                  }}>
+                  <div style={{ padding:'1rem', cursor:'pointer' }} onClick={() => setExpanded(isExp ? null : project.id)}>
+                    <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.6rem' }}>
+                      <PriorityDot priority={project.priority}/>
+                      <StatusBadge status={project.status}/>
+                      {project.notion_url && (
+                        <a href={project.notion_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                          style={{ marginLeft:'auto', color:C.muted, display:'flex', flexShrink:0 }}><ExternalLink size={12}/></a>
+                      )}
+                    </div>
+                    <h3 style={{ fontSize:'0.9rem', fontWeight:800, color:C.text, margin:'0 0 0.4rem', lineHeight:1.3 }}>{project.title}</h3>
+                    {project.deadline && (
+                      <p style={{ fontSize:'0.68rem', color:isOverdue?C.red:C.muted, margin:'0 0 0.4rem', fontWeight:isOverdue?700:400 }}>
+                        {isOverdue ? '⚠ overdue: ' : '📅 '}{project.deadline}
+                      </p>
+                    )}
+                    {project.next_action && (
+                      <p style={{ fontSize:'0.75rem', color:C.sec, margin:0, lineHeight:1.4,
+                        overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box',
+                        WebkitLineClamp: isExp ? 'unset' : 2, WebkitBoxOrient:'vertical' }}>
+                        &#8594; {project.next_action}
+                      </p>
+                    )}
+                  </div>
 
-                        {/* Expanded detail */}
-                        {isExp && (
-                          <div style={{ borderTop:'1px solid '+C.border, padding:'1rem 1.125rem', background:C.surface }}>
-                            {project.next_action && (
-                              <div style={{ marginBottom:'0.875rem', padding:'0.75rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem' }}>
-                                <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.cyan, margin:'0 0 0.3rem' }}>Single next action</p>
-                                <p style={{ fontSize:'0.88rem', fontWeight:700, color:C.text, margin:0, lineHeight:1.4 }}>{project.next_action}</p>
-                              </div>
-                            )}
-                            {project.goal && (
-                              <div style={{ marginBottom:'0.875rem' }}>
-                                <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.3rem' }}>Why this exists</p>
-                                <p style={{ fontSize:'0.82rem', color:C.sec, margin:0, lineHeight:1.6 }}>{project.goal}</p>
-                              </div>
-                            )}
-                            {project.notes && (
-                              <div style={{ marginBottom:'0.875rem' }}>
-                                <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.3rem' }}>Notes</p>
-                                <p style={{ fontSize:'0.82rem', color:C.sec, margin:0, lineHeight:1.6, whiteSpace:'pre-wrap' }}>{project.notes}</p>
-                              </div>
-                            )}
-                            <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
-                              <button onClick={() => { setEditProject(project); setShowModal(true) }}
-                                style={{ padding:'0.4rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:600 }}>
-                                Edit
-                              </button>
-                              {project.status !== 'Done' && (
-                                <button onClick={() => markDone(project.id)}
-                                  style={{ padding:'0.4rem 0.875rem', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:'0.625rem', color:C.green, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700 }}>
-                                  Mark done
-                                </button>
-                              )}
-                              <button onClick={() => archiveProject(project.id)}
-                                style={{ padding:'0.4rem 0.875rem', background:'rgba(255,68,102,0.06)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'0.625rem', color:C.red, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:600 }}>
-                                Archive
-                              </button>
-                            </div>
-                          </div>
+                  {isExp && (
+                    <div style={{ borderTop:'1px solid '+C.border, padding:'0.875rem 1rem', background:C.surface }}>
+                      {project.goal && (
+                        <div style={{ marginBottom:'0.75rem' }}>
+                          <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.25rem' }}>Why this exists</p>
+                          <p style={{ fontSize:'0.8rem', color:C.sec, margin:0, lineHeight:1.5 }}>{project.goal}</p>
+                        </div>
+                      )}
+                      {project.notes && (
+                        <div style={{ marginBottom:'0.75rem' }}>
+                          <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.25rem' }}>Notes</p>
+                          <p style={{ fontSize:'0.8rem', color:C.sec, margin:0, lineHeight:1.5, whiteSpace:'pre-wrap' }}>{project.notes}</p>
+                        </div>
+                      )}
+                      <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' }}>
+                        <button onClick={() => { setEditProject(project); setShowModal(true) }}
+                          style={{ padding:'0.35rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:600 }}>
+                          Edit
+                        </button>
+                        {project.status !== 'Done' && (
+                          <button onClick={() => markDone(project.id)}
+                            style={{ padding:'0.35rem 0.75rem', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:'0.5rem', color:C.green, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700 }}>
+                            Mark done
+                          </button>
                         )}
+                        <button onClick={() => archiveProject(project.id)}
+                          style={{ padding:'0.35rem 0.75rem', background:'rgba(255,68,102,0.06)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'0.5rem', color:C.red, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:600 }}>
+                          Archive
+                        </button>
                       </div>
-                    )
-                  })}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
@@ -352,7 +310,6 @@ export default function ProjectsPage() {
       )}
 
       <style>{`
-        @keyframes spin { to { transform:rotate(360deg) } }
         @keyframes fadeInUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
         button:hover { opacity:0.85; }
         input, select, textarea { outline:none; }

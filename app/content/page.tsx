@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, RefreshCw, Plus, X, ExternalLink, ChevronRight } from 'lucide-react'
+import { ChevronLeft, Plus, X, ExternalLink, ChevronRight } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -85,8 +85,6 @@ export default function ContentPage() {
   const router = useRouter()
   const [items, setItems] = useState<ContentItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
-  const [syncMsg, setSyncMsg] = useState('')
   const [moveTarget, setMoveTarget] = useState<ContentItem | null>(null)
   const [view, setView] = useState<'kanban'|'list'>('kanban')
 
@@ -101,16 +99,6 @@ export default function ContentPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
-
-  async function handleSync() {
-    setSyncing(true); setSyncMsg('')
-    const r = await fetch('/api/sync/notion', { method: 'POST' })
-    const d = await r.json()
-    setSyncMsg(d.errors?.['content'] ? 'Error: ' + d.errors['content'] : `Synced ${d.synced?.content ?? 0} content items`)
-    await load()
-    setSyncing(false)
-    setTimeout(() => setSyncMsg(''), 4000)
-  }
 
   async function moveStage(item: ContentItem, stage: string) {
     setMoveTarget(null)
@@ -175,16 +163,11 @@ export default function ContentPage() {
               </p>
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
-              {syncMsg && <span style={{ fontSize:'0.72rem', color:C.green, fontWeight:600 }}>{syncMsg}</span>}
               <div style={{ display:'flex', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', overflow:'hidden' }}>
                 {(['kanban','list'] as const).map(v => (
                   <button key={v} onClick={() => setView(v)} style={{ padding:'0.4rem 0.75rem', background:view===v?C.surface:'transparent', border:'none', color:view===v?C.text:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700 }}>{v}</button>
                 ))}
               </div>
-              <button onClick={handleSync} disabled={syncing} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', borderRadius:'0.75rem', color:'#ff6b35', cursor:syncing?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, opacity:syncing?0.6:1 }}>
-                <RefreshCw size={13} style={{ animation:syncing?'spin 1s linear infinite':'none' }}/>
-                {syncing ? 'Syncing...' : 'Sync Notion'}
-              </button>
             </div>
           </div>
         </div>

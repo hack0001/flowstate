@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Search, Plus, ExternalLink, RefreshCw, X, BookOpen, Wrench, Lightbulb, Film, FileText, Headphones, ShoppingCart, Star } from 'lucide-react'
+import { ChevronLeft, Search, ExternalLink, X, BookOpen, Wrench, Lightbulb, Film, FileText, Headphones, ShoppingCart, Star } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -63,8 +63,6 @@ export default function VaultPage() {
   const router = useRouter()
   const [items, setItems] = useState<VaultItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
-  const [syncMsg, setSyncMsg] = useState('')
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('All')
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -80,17 +78,6 @@ export default function VaultPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
-
-  async function handleSync() {
-    setSyncing(true); setSyncMsg('')
-    const r = await fetch('/api/sync/notion', { method: 'POST' })
-    const d = await r.json()
-    if (d.error) { setSyncMsg('Error: ' + d.error) }
-    else { setSyncMsg(`Synced ${d.synced?.vault ?? 0} vault items`) }
-    await load()
-    setSyncing(false)
-    setTimeout(() => setSyncMsg(''), 4000)
-  }
 
   const filtered = items.filter(item => {
     const matchCat = catFilter === 'All' || item.category === catFilter
@@ -124,13 +111,7 @@ export default function VaultPage() {
                 {items.length} items &mdash; books, articles, tools, ideas
               </p>
             </div>
-            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
-              {syncMsg && <span style={{ fontSize:'0.72rem', color:C.green, fontWeight:600 }}>{syncMsg}</span>}
-              <button onClick={handleSync} disabled={syncing} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.75rem', color:C.purple, cursor:syncing?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, opacity:syncing?0.6:1 }}>
-                <RefreshCw size={13} style={{ animation:syncing?'spin 1s linear infinite':'none' }}/>
-                {syncing ? 'Syncing...' : 'Sync Notion'}
-              </button>
-            </div>
+            <div/>
           </div>
         </div>
       </div>
@@ -226,12 +207,6 @@ export default function VaultPage() {
                       <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0 0 0.25rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em' }}>Notes</p>
                       <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.6, whiteSpace:'pre-wrap' }}>{item.notes}</p>
                     </div>
-                  )}
-                  {isExp && item.notion_url && (
-                    <a href={item.notion_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                      style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', marginTop:'0.75rem', fontSize:'0.7rem', color:C.purple, textDecoration:'none', fontWeight:600 }}>
-                      <ExternalLink size={11}/>Open in Notion
-                    </a>
                   )}
                 </div>
               )

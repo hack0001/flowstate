@@ -86,7 +86,7 @@ export default function FocusPage() {
   const sprintRef = useRef<NodeJS.Timeout | null>(null)
   const taskStartRef = useRef<number>(Date.now())
   const { celebrate } = useCelebration()
-  const [ytTrack, setYtTrack] = useState<0|1|2>(0) // 0=off, 1=lofi, 2=rain
+  const [ytTrack, setYtTrack] = useState<0|1|2|3>(0) // 0=off, 1=lofi, 2=rain, 3=study
   const [focusMins, setFocusMins] = useState(0)
   const focusStartRef = useRef<number>(Date.now())
   const [showCheck, setShowCheck] = useState(true)
@@ -170,7 +170,7 @@ export default function FocusPage() {
   const sprintSecsDisp = String(sprintSecs % 60).padStart(2, '0')
   const sprintProg = 1 - sprintSecs / 300
 
-  function toggleYT(track: 1|2) {
+  function toggleYT(track: 1|2|3) {
     setYtTrack(prev => prev === track ? 0 : track)
   }
 
@@ -302,10 +302,10 @@ export default function FocusPage() {
               {mode === 'whitenoise' ? 'Noise' : mode === 'waves' ? 'Waves' : 'Off'}
             </button>
           ))}
-          {([1,2] as const).map(track => (
+          {([1,2,3] as const).map(track => (
             <button key={track} onClick={() => toggleYT(track)}
               style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', padding: '0.25rem 0.5rem', borderRadius: '0.4rem', fontSize: '0.65rem', fontWeight: 600, border: '1px solid ' + (ytTrack === track ? '#8b5cf6' : C.border), background: ytTrack === track ? 'rgba(139,92,246,0.1)' : 'transparent', color: ytTrack === track ? '#8b5cf6' : C.muted, cursor: 'pointer', fontFamily: 'inherit' }}>
-              <Music2 size={10} />{track === 1 ? 'Lo-Fi' : 'Rain'}
+              <Music2 size={10} />{track === 1 ? 'Lo-Fi' : track === 2 ? 'Rain' : 'Jazz'}
             </button>
           ))}
           <button onClick={() => setShowPomodoro(v => !v)}
@@ -349,6 +349,15 @@ export default function FocusPage() {
           src="https://www.youtube.com/embed/8F1-1j_ZDgc?autoplay=1&loop=1&playlist=8F1-1j_ZDgc&controls=0"
           allow="autoplay"
           title="Rain ambient sound"
+          style={{ display:'none' }}
+        />
+      )}
+      {ytTrack === 3 && (
+        <iframe
+          key="yt3"
+          src="https://www.youtube.com/embed/iXv92OgO4yY?autoplay=1&start=450&loop=1&playlist=iXv92OgO4yY&controls=0"
+          allow="autoplay"
+          title="Jazz focus music"
           style={{ display:'none' }}
         />
       )}
