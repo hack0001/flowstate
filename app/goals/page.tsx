@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, Plus, X, Check, ChevronDown, ChevronUp, RotateCcw, Target } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useLanguage } from '@/context/LanguageContext'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -164,6 +165,7 @@ function AddModal({ onSave, onClose }: { onSave: (name: string, priority: string
 
 export default function GoalsPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [goals, setGoals] = useState<Goal[]>([])
   const [done, setDone] = useState<Goal[]>([])
   const [loading, setLoading] = useState(true)
@@ -231,17 +233,17 @@ export default function GoalsPage() {
           <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
             <div>
               <button onClick={() => router.push('/')} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.8rem', fontFamily:'inherit', marginBottom:'0.6rem' }}>
-                <ChevronLeft size={14}/> Home
+                <ChevronLeft size={14}/> {t('back')}
               </button>
               <h1 style={{ fontSize:'clamp(1.4rem,3vw,1.9rem)', fontWeight:900, margin:'0 0 0.2rem', letterSpacing:'-0.02em', display:'flex', alignItems:'center', gap:'0.5rem' }}>
-                <Target size={22} color={C.green}/> Goals
+                <Target size={22} color={C.green}/> {t('goals')}
               </h1>
               <p style={{ fontSize:'0.82rem', color:C.sec, margin:0 }}>
-                {goals.length} active &mdash; {done.length} done
+                {goals.length} {t('active')} &mdash; {done.length} {t('done')}
               </p>
             </div>
             <button onClick={() => setAdding(true)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.55rem 1rem', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:'0.75rem', color:C.green, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, alignSelf:'flex-start' }}>
-              <Plus size={14}/> Add Goal
+              <Plus size={14}/> {t('addGoal')}
             </button>
           </div>
 

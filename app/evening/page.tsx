@@ -228,7 +228,188 @@ function PhaseKitchen({ onNext }: { onNext: () => void }) {
   )
 }
 
-// Phase 3: Sleep routine checklist
+// ---- Welsh vocabulary ----
+const VOCAB: { en:string; cy:string }[] = [
+  { en:'hello', cy:'shwmae' },
+  { en:'good morning', cy:'bore da' },
+  { en:'good afternoon', cy:'prynhawn da' },
+  { en:'good evening', cy:'noswaith dda' },
+  { en:'good night', cy:'nos da' },
+  { en:'thank you', cy:'diolch' },
+  { en:'please', cy:'os gwelwch yn dda' },
+  { en:'welcome', cy:'croeso' },
+  { en:'yes', cy:'ie' },
+  { en:'no', cy:'na' },
+  { en:'one', cy:'un' },
+  { en:'two', cy:'dau' },
+  { en:'three', cy:'tri' },
+  { en:'four', cy:'pedwar' },
+  { en:'five', cy:'pump' },
+  { en:'six', cy:'chwech' },
+  { en:'seven', cy:'saith' },
+  { en:'eight', cy:'wyth' },
+  { en:'nine', cy:'naw' },
+  { en:'ten', cy:'deg' },
+  { en:'Monday', cy:'Dydd Llun' },
+  { en:'Tuesday', cy:'Dydd Mawrth' },
+  { en:'Wednesday', cy:'Dydd Mercher' },
+  { en:'Thursday', cy:'Dydd Iau' },
+  { en:'Friday', cy:'Dydd Gwener' },
+  { en:'Saturday', cy:'Dydd Sadwrn' },
+  { en:'Sunday', cy:'Dydd Sul' },
+  { en:'water', cy:'dwr' },
+  { en:'food', cy:'bwyd' },
+  { en:'house', cy:'ty' },
+  { en:'work', cy:'gwaith' },
+  { en:'money', cy:'arian' },
+  { en:'cat', cy:'cath' },
+  { en:'dog', cy:'ci' },
+  { en:'Wales', cy:'Cymru' },
+  { en:'Welsh language', cy:'Cymraeg' },
+  { en:'sleep', cy:'cysgu' },
+  { en:'today', cy:'heddiw' },
+  { en:'tomorrow', cy:'yfory' },
+  { en:'friend', cy:'ffrind' },
+  { en:'school', cy:'ysgol' },
+  { en:'book', cy:'llyfr' },
+  { en:'shop', cy:'siop' },
+  { en:'red', cy:'coch' },
+  { en:'blue', cy:'glas' },
+  { en:'green', cy:'gwyrdd' },
+  { en:'white', cy:'gwyn' },
+  { en:'black', cy:'du' },
+]
+
+type Direction = 'en-cy' | 'cy-en'
+type Q = { word:string; answer:string; direction:Direction }
+
+// Phase 3: Welsh vocabulary quiz
+function PhaseWelsh({ onNext }: { onNext:()=>void }) {
+  const TOTAL = 10
+  const [questions] = useState<Q[]>(() => {
+    const shuffled = [...VOCAB].sort(() => Math.random()-0.5).slice(0, TOTAL)
+    return shuffled.map(v => {
+      const dir: Direction = Math.random() > 0.5 ? 'en-cy' : 'cy-en'
+      return dir === 'en-cy'
+        ? { word:v.en, answer:v.cy, direction:dir }
+        : { word:v.cy, answer:v.en, direction:dir }
+    })
+  })
+  const [current, setCurrent] = useState(0)
+  const [input, setInput] = useState('')
+  const [result, setResult] = useState<'correct'|'incorrect'|null>(null)
+  const [score, setScore] = useState(0)
+  const [done, setDone] = useState(false)
+
+  const q = questions[current]
+  const isLast = current + 1 >= TOTAL
+
+  function check() {
+    if (!input.trim() || result) return
+    const correct = input.trim().toLowerCase() === q.answer.toLowerCase()
+    if (correct) setScore(s => s+1)
+    setResult(correct ? 'correct' : 'incorrect')
+  }
+
+  function advance() {
+    if (isLast) { setDone(true); return }
+    setCurrent(c => c+1)
+    setInput('')
+    setResult(null)
+  }
+
+  if (done) return (
+    <div style={{ animation:'fadeInUp 0.35s ease both', textAlign:'center' }}>
+      <div style={{ fontSize:'2.5rem', marginBottom:'0.75rem' }}>&#127988;&#917607;&#917602;&#917623;&#917612;&#917619;&#917631;</div>
+      <h2 style={{ fontSize:'1.4rem', fontWeight:900, color:C.text, margin:'0 0 0.4rem', letterSpacing:'-0.02em' }}>Cwis wedi gorffen!</h2>
+      <p style={{ fontSize:'0.85rem', color:C.sec, marginBottom:'0.5rem' }}>Quiz complete</p>
+      <div style={{ display:'inline-flex', alignItems:'center', gap:'0.5rem', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'1rem', padding:'0.875rem 2rem', margin:'1rem 0 2rem' }}>
+        <span style={{ fontSize:'2rem', fontWeight:900, color:C.green }}>{score}</span>
+        <span style={{ fontSize:'1rem', color:C.sec }}>/ {TOTAL}</span>
+      </div>
+      <p style={{ fontSize:'0.78rem', color:C.muted, marginBottom:'2rem' }}>
+        {score >= 8 ? 'Ardderchog! (Excellent!)' : score >= 5 ? 'Da iawn! (Well done!)' : 'Dal ati! (Keep going!)'}
+      </p>
+      <button onClick={onNext} style={{ width:'100%', padding:'0.95rem', background:'linear-gradient(135deg,'+C.purple+',#6d28d9)', border:'none', borderRadius:'1rem', cursor:'pointer', fontFamily:'inherit', fontWeight:800, fontSize:'0.95rem', color:'#fff', boxShadow:'0 4px 24px rgba(139,92,246,0.3)' }}>
+        Continue to sleep routine &rarr;
+      </button>
+    </div>
+  )
+
+  return (
+    <div style={{ animation:'fadeInUp 0.35s ease both' }}>
+      <div style={{ textAlign:'center', marginBottom:'1.75rem' }}>
+        <div style={{ fontSize:'2.5rem', marginBottom:'0.5rem' }}>&#127988;&#917607;&#917602;&#917623;&#917612;&#917619;&#917631;</div>
+        <h2 style={{ fontSize:'1.4rem', fontWeight:900, color:C.text, margin:'0 0 0.3rem', letterSpacing:'-0.02em' }}>Prawf Cymraeg</h2>
+        <p style={{ fontSize:'0.82rem', color:C.sec, margin:0 }}>Welsh nightly vocab test</p>
+      </div>
+
+      {/* Progress */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.4rem' }}>
+        <span style={{ fontSize:'0.68rem', color:C.muted, fontWeight:700 }}>Question {current+1} of {TOTAL}</span>
+        <span style={{ fontSize:'0.68rem', color:C.green, fontWeight:700 }}>{score} correct</span>
+      </div>
+      <div style={{ height:'3px', background:'#2a2a3a', borderRadius:'2px', marginBottom:'1.75rem', overflow:'hidden' }}>
+        <div style={{ height:'100%', background:'linear-gradient(90deg,#00c04b,#00ff88)', width:((current)/TOTAL*100)+'%', transition:'width 0.3s', borderRadius:'2px' }}/>
+      </div>
+
+      {/* Card */}
+      <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1.25rem', padding:'1.75rem', marginBottom:'1.25rem', textAlign:'center' }}>
+        <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.875rem' }}>
+          Translate to {q.direction === 'en-cy' ? 'Welsh (Cymraeg)' : 'English'}
+        </p>
+        <p style={{ fontSize:'1.6rem', fontWeight:900, color:C.text, margin:'0 0 1.5rem', letterSpacing:'-0.02em' }}>
+          {q.word}
+        </p>
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') check() }}
+          placeholder={q.direction === 'en-cy' ? 'Type in Welsh...' : 'Type in English...'}
+          disabled={!!result}
+          autoFocus
+          style={{
+            width:'100%', padding:'0.75rem 1rem', boxSizing:'border-box',
+            background: result === 'correct' ? 'rgba(0,255,136,0.08)' : result === 'incorrect' ? 'rgba(255,68,102,0.08)' : '#0a0a0f',
+            border:'1px solid '+(result === 'correct' ? 'rgba(0,255,136,0.35)' : result === 'incorrect' ? 'rgba(255,68,102,0.35)' : C.border),
+            borderRadius:'0.875rem', color:C.text, fontFamily:'inherit', fontSize:'1rem',
+            textAlign:'center', transition:'all 0.2s',
+          }}
+        />
+        {result && (
+          <div style={{ marginTop:'0.875rem' }}>
+            <p style={{ fontSize:'0.9rem', fontWeight:800, color: result==='correct' ? C.green : C.red, margin:'0 0 0.25rem' }}>
+              {result === 'correct' ? 'Cywir! (Correct!)' : 'Anghywir. (Incorrect)'}
+            </p>
+            {result === 'incorrect' && (
+              <p style={{ fontSize:'0.8rem', color:C.sec, margin:0 }}>
+                Answer: <strong style={{ color:C.text }}>{q.answer}</strong>
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {!result ? (
+        <button onClick={check} disabled={!input.trim()} style={{ width:'100%', padding:'0.875rem', background: input.trim() ? 'rgba(0,192,75,0.12)' : C.card, border:'1px solid '+(input.trim() ? 'rgba(0,192,75,0.3)' : C.border), borderRadius:'1rem', cursor:input.trim()?'pointer':'default', fontFamily:'inherit', fontWeight:700, fontSize:'0.9rem', color:input.trim() ? '#00c04b' : C.muted, transition:'all 0.2s' }}>
+          Check answer (Enter)
+        </button>
+      ) : (
+        <button onClick={advance} style={{ width:'100%', padding:'0.875rem', background:'linear-gradient(135deg,'+C.purple+',#6d28d9)', border:'none', borderRadius:'1rem', cursor:'pointer', fontFamily:'inherit', fontWeight:800, fontSize:'0.9rem', color:'#fff' }}>
+          {isLast ? 'See score' : 'Next word &rarr;'}
+        </button>
+      )}
+
+      <div style={{ textAlign:'center', marginTop:'1rem' }}>
+        <button onClick={onNext} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', textDecoration:'underline' }}>
+          Skip Welsh test
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Phase 4: Sleep routine checklist
 function PhaseSleep({ onComplete }: { onComplete: () => void }) {
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const allDone = checked.size === SLEEP_ITEMS.length
@@ -312,8 +493,8 @@ function PhaseSleep({ onComplete }: { onComplete: () => void }) {
 }
 
 // ---- Steps nav ----
-const PHASES = ['Tomorrow', 'Kitchen', 'Sleep']
-const PHASE_ICONS = ['&#127919;', '&#127869;&#65039;', '&#127769;']
+const PHASES = ['Tomorrow', 'Kitchen', 'Welsh', 'Sleep']
+const PHASE_ICONS = ['&#127919;', '&#127869;&#65039;', '&#127988;&#917607;&#917602;&#917623;&#917612;&#917619;&#917631;', '&#127769;']
 
 export default function EveningPage() {
   const router = useRouter()
@@ -407,7 +588,8 @@ export default function EveningPage() {
       <div style={{ maxWidth:'600px', margin:'0 auto', padding:'2.5rem 2rem' }}>
         {phase === 0 && <PhaseTomorrow onNext={() => setPhase(1)} />}
         {phase === 1 && <PhaseKitchen onNext={() => setPhase(2)} />}
-        {phase === 2 && <PhaseSleep onComplete={() => setComplete(true)} />}
+        {phase === 2 && <PhaseWelsh onNext={() => setPhase(3)} />}
+        {phase === 3 && <PhaseSleep onComplete={() => setComplete(true)} />}
       </div>
 
       <style>{`

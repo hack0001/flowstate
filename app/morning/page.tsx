@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Edit3, Check, Flame, Sunrise, Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react'
+import { useLanguage } from '@/context/LanguageContext'
 import { MORNING_ROUTINE } from '@/lib/morningRoutine'
 import type { RoutineItem } from '@/lib/morningRoutine'
 import { supabase } from '@/lib/supabase'
@@ -187,6 +188,7 @@ function EditPanel({ items, onClose, onSave }:{ items:RoutineItem[]; onClose:()=
 
 export default function MorningPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [items, setItems]         = useState<RoutineItem[]>(MORNING_ROUTINE)
   const [completed, setCompleted] = useState<string[]>([])
   const [streak, setStreak]       = useState(0)
@@ -248,7 +250,7 @@ export default function MorningPage() {
   const h        = new Date().getHours()
   const dayLabel = new Date().toLocaleDateString('en-GB', { weekday:'long' }).toUpperCase()
   const dateLabel = new Date().toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })
-  const greetingWord = h<12 ? 'Good morning' : h<17 ? 'Good afternoon' : 'Good evening'
+  const greetingWord = h<12 ? t('goodMorning') : h<17 ? t('goodAfternoon') : t('goodEvening')
 
   if (!loaded) return (
     <div style={{ minHeight:'100vh', background:'#0a0a0f', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -275,7 +277,7 @@ export default function MorningPage() {
             </span>
           )}
           <button onClick={() => setEditing(true)} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.35rem 0.75rem', background:'transparent', border:'1px solid #2a2a3a', borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem' }}>
-            <Edit3 size={11}/>Edit
+            <Edit3 size={11}/>{t('edit')}
           </button>
         </div>
       </div>

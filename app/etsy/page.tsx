@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ShoppingBag, CheckCircle, Circle, RotateCcw, ChevronDown } from 'lucide-react'
+import { useLanguage } from '@/context/LanguageContext'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -285,6 +286,7 @@ function SOPCard({ sop }: { sop:SOP }) {
 
 export default function EtsyPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [activeTab, setActiveTab] = useState<'checklists'|'sops'>('checklists')
   const [checked, setChecked] = useState<Record<string,boolean>>({})
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['product']))
@@ -340,7 +342,7 @@ export default function EtsyPage() {
       <div style={{ background:C.surface, borderBottom:'1px solid '+C.border, padding:'1.5rem 2rem 0' }}>
         <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', alignItems:'center', gap:'1rem', paddingBottom:'0.75rem' }}>
           <button onClick={() => router.back()} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', alignItems:'center', gap:'0.4rem', fontFamily:'inherit', fontSize:'0.8rem', padding:0 }}>
-            &#8592; Back
+            &#8592; {t('back')}
           </button>
           <div style={{ flex:1 }} />
           <ShoppingBag size={18} color={C.orange} />
@@ -359,7 +361,7 @@ export default function EtsyPage() {
               borderBottom: activeTab===tab ? '2px solid '+tabColor[tab] : '2px solid transparent',
               marginBottom:'-1px', transition:'all 0.15s', textTransform:'capitalize',
             }}>
-              {tab === 'sops' ? 'Production SOPs' : 'Checklists'}
+              {tab === 'sops' ? t('productionSOPs') : t('checklists')}
             </button>
           ))}
         </div>
@@ -375,7 +377,7 @@ export default function EtsyPage() {
             <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.25rem', marginBottom:'1.5rem' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
                 <div>
-                  <h2 style={{ fontSize:'0.9rem', fontWeight:800, margin:0 }}>Overall Progress</h2>
+                  <h2 style={{ fontSize:'0.9rem', fontWeight:800, margin:0 }}>{t('overallProgress')}</h2>
                   <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.2rem 0 0' }}>{totalDone} of {totalItems} items complete</p>
                 </div>
                 <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>

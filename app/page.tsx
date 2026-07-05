@@ -1,10 +1,11 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag } from 'lucide-react'
+import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X } from 'lucide-react'
 import { getPrioritySession, getSessions, setPrioritySession } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
 import type { WorkflowSession } from '@/types'
+import { useLanguage } from '@/context/LanguageContext'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -139,6 +140,7 @@ function FocusCheck({ onProceed, onClose }: { onProceed: () => void; onClose: ()
 
 export default function Home() {
   const router = useRouter()
+  const { t, lang, toggle } = useLanguage()
 
   const h = new Date().getHours()
   const dateLabel = new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' })
@@ -159,6 +161,7 @@ export default function Home() {
   const [topTask, setTopTask] = useState<{ title: string; id: string } | null>(null)
   const [contentReady, setContentReady] = useState(false)
   const [showFocusCheck, setShowFocusCheck] = useState(false)
+  const [showReminder, setShowReminder] = useState(false)
 
   const today = toDateStr(new Date())
   const quote = QUOTES[new Date().getDate() % QUOTES.length]
@@ -212,6 +215,16 @@ export default function Home() {
       window.removeEventListener('focus', loadData)
     }
   }, [loadData])
+
+  useEffect(() => {
+    const now = new Date()
+    const day = now.getDay()
+    const hour = now.getHours()
+    const isWeekday = day >= 1 && day <= 5
+    const isAfternoon = hour >= 13 && hour < 20
+    const dismissed = (() => { try { return localStorage.getItem('flowstate_reminder_dismissed') === toDateStr(now) } catch { return false } })()
+    setShowReminder(isWeekday && isAfternoon && !dismissed)
+  }, [])
 
   function handleFocusClick() {
     // Show the pre-flight check before starting focus
@@ -284,21 +297,25 @@ export default function Home() {
           </div>
 
           <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', alignItems:'flex-start' }}>
+            {/* Welsh / English toggle */}
+            <button onClick={toggle} title={lang === 'en' ? 'Switch to Welsh' : 'Newid i Saesneg'} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background: lang === 'cy' ? 'rgba(0,192,75,0.12)' : 'rgba(255,255,255,0.04)', border:'1px solid '+(lang === 'cy' ? 'rgba(0,192,75,0.3)' : C.border), borderRadius:'0.75rem', color: lang === 'cy' ? '#00c04b' : C.muted, cursor:'pointer', fontSize:'0.75rem', fontWeight:700, fontFamily:'inherit', letterSpacing:'0.05em' }}>
+              {lang === 'en' ? 'CY' : 'EN'}
+            </button>
             <button onClick={() => router.push('/morning')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem', color:C.amber, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Sunrise size={14}/>Morning
+              <Sunrise size={14}/>{t('morning')}
             </button>
             <button onClick={() => router.push('/calendar')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <CalendarDays size={14}/>Calendar
+              <CalendarDays size={14}/>{t('calendar')}
             </button>
             <button onClick={() => router.push('/tracking')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.25)', borderRadius:'0.75rem', color:C.purple, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <BarChart2 size={14}/>Tracking
+              <BarChart2 size={14}/>{t('tracking')}
             </button>
             <button onClick={() => router.push('/evening')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.18)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Moon size={14}/>Evening
+              <Moon size={14}/>{t('evening')}
             </button>
             <button onClick={() => router.push('/vault')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.18)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
@@ -310,39 +327,58 @@ export default function Home() {
             </button>
             <button onClick={() => router.push('/projects')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem', color:'#00d4ff', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <FolderOpen size={14}/>Projects
+              <FolderOpen size={14}/>{t('projects')}
             </button>
             <button onClick={() => router.push('/tasks')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,255,136,0.06)', border:'1px solid rgba(0,255,136,0.18)', borderRadius:'0.75rem', color:'#00ff88', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <CheckSquare size={14}/>Tasks
+              <CheckSquare size={14}/>{t('tasks')}
             </button>
             <button onClick={() => router.push('/personal')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.18)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <User size={14}/>Personal
+              <User size={14}/>{t('personal')}
             </button>
             <button onClick={() => router.push('/goals')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,255,136,0.06)', border:'1px solid rgba(0,255,136,0.18)', borderRadius:'0.75rem', color:'#00ff88', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Target size={14}/>Goals
+              <Target size={14}/>{t('goals')}
             </button>
             <button onClick={() => router.push('/youtube')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(255,68,102,0.07)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'0.75rem', color:'#ff4466', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Tv size={14}/>YouTube
+              <Tv size={14}/>{t('youtube')}
             </button>
             <button onClick={() => router.push('/links')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem', color:'#00d4ff', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Link2 size={14}/>Links
+              <Link2 size={14}/>{t('links')}
             </button>
             <button onClick={() => router.push('/etsy')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(249,115,22,0.07)', border:'1px solid rgba(249,115,22,0.22)', borderRadius:'0.75rem', color:'#f97316', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <ShoppingBag size={14}/>Etsy
+              <ShoppingBag size={14}/>{t('etsy')}
             </button>
             <button onClick={() => router.push('/workflows')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', cursor:'pointer', fontSize:'0.8rem', fontWeight:700, fontFamily:'inherit' }}>
-              <Plus size={14}/>New Workflow
+              <Plus size={14}/>{t('workflows')}
             </button>
           </div>
         </div>
       </div>
+
+      {/* Weekday afternoon reminder banner */}
+      {showReminder && (
+        <div style={{ position:'relative', zIndex:2, background:'rgba(249,115,22,0.08)', borderBottom:'1px solid rgba(249,115,22,0.2)' }}>
+          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'0.75rem 2rem', display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap' }}>
+            <span style={{ fontSize:'1rem' }}>&#9989;</span>
+            <div style={{ flex:1 }}>
+              <span style={{ fontSize:'0.78rem', fontWeight:700, color:'#f97316' }}>{t('reminderTitle')}: </span>
+              <span style={{ fontSize:'0.78rem', color:'#8888aa' }}>{t('reminderMemes')} &nbsp;&bull;&nbsp; {t('reminderMewing')}</span>
+            </div>
+            <button onClick={() => {
+              try { localStorage.setItem('flowstate_reminder_dismissed', toDateStr(new Date())) } catch {}
+              setShowReminder(false)
+            }} style={{ background:'none', border:'none', color:'#4a4a6a', cursor:'pointer', display:'flex', alignItems:'center', padding:'0.25rem', borderRadius:'0.25rem' }}>
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main body */}
       <div style={{

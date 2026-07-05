@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle, Circle, RotateCcw, Tv, ChevronDown } from 'lucide-react'
+import { useLanguage } from '@/context/LanguageContext'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -232,6 +233,7 @@ function SOPCard({ sop }: { sop: SOP }) {
 
 export default function YouTubePage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [creation, setCreation] = useState<Set<string>>(new Set(INITIAL_CREATION))
   const [health, setHealth] = useState<Set<string>>(new Set())
   const [mounted, setMounted] = useState(false)
@@ -280,15 +282,15 @@ export default function YouTubePage() {
       <div style={{ background:C.surface, borderBottom:'1px solid '+C.border, padding:'1.5rem 2rem 0' }}>
         <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', alignItems:'center', gap:'1rem', paddingBottom:'0.75rem' }}>
           <button onClick={() => router.back()} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', alignItems:'center', gap:'0.4rem', fontFamily:'inherit', fontSize:'0.8rem', padding:0 }}>
-            <ArrowLeft size={16} /> Back
+            <ArrowLeft size={16} /> {t('back')}
           </button>
           <div style={{ flex:1 }} />
           <Tv size={18} color={C.red} />
           <span style={{ fontSize:'0.72rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.red }}>YouTube</span>
         </div>
         <div style={{ maxWidth:'960px', margin:'0 auto' }}>
-          <h1 style={{ fontSize:'1.6rem', fontWeight:900, margin:0, letterSpacing:'-0.02em' }}>Channel Hub</h1>
-          <p style={{ fontSize:'0.875rem', color:C.sec, margin:'0.25rem 0 1rem' }}>Checklists and production workflow reference</p>
+          <h1 style={{ fontSize:'1.6rem', fontWeight:900, margin:0, letterSpacing:'-0.02em' }}>{t('channelHub')}</h1>
+          <p style={{ fontSize:'0.875rem', color:C.sec, margin:'0.25rem 0 1rem' }}>{t('checklists')} &amp; {t('productionSOPs')}</p>
         </div>
         <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', gap:'0.25rem' }}>
           {(['checklists','sops'] as const).map(tab => (
@@ -299,7 +301,7 @@ export default function YouTubePage() {
               borderBottom: activeTab === tab ? '2px solid '+(tab === 'sops' ? C.amber : C.red) : '2px solid transparent',
               marginBottom:'-1px', transition:'all 0.15s', textTransform:'capitalize',
             }}>
-              {tab === 'sops' ? 'Production SOPs' : 'Checklists'}
+              {tab === 'sops' ? t('productionSOPs') : t('checklists')}
             </button>
           ))}
         </div>
