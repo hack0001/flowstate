@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target } from 'lucide-react'
+import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2 } from 'lucide-react'
 import { getPrioritySession, getSessions, setPrioritySession } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
 import type { WorkflowSession } from '@/types'
@@ -321,6 +321,14 @@ export default function Home() {
             <button onClick={() => router.push('/goals')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,255,136,0.06)', border:'1px solid rgba(0,255,136,0.18)', borderRadius:'0.75rem', color:'#00ff88', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
               <Target size={14}/>Goals
+            </button>
+            <button onClick={() => router.push('/youtube')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(255,68,102,0.07)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'0.75rem', color:'#ff4466', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              <Tv size={14}/>YouTube
+            </button>
+            <button onClick={() => router.push('/links')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem', color:'#00d4ff', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              <Link2 size={14}/>Links
             </button>
             <button onClick={() => router.push('/workflows')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', cursor:'pointer', fontSize:'0.8rem', fontWeight:700, fontFamily:'inherit' }}>
