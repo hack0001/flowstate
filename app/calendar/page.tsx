@@ -162,7 +162,7 @@ export default function CalendarPage() {
         .select('*')
         .gte('due_date', startDate)
         .lte('due_date', endDate)
-        .eq('archived', false)
+        .neq('archived', true)
         .neq('status', 'Done')
         .order('is_frog', { ascending: false })
         .order('created_at')

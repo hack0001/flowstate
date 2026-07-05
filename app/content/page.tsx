@@ -92,7 +92,7 @@ export default function ContentPage() {
     const { data } = await supabase
       .from('content_items')
       .select('*')
-      .eq('archived', false)
+      .neq('archived', true)
       .order('created_at', { ascending: false })
     setItems(data ?? [])
     setLoading(false)

@@ -143,7 +143,7 @@ export default function ProjectsPage() {
     const { data } = await supabase
       .from('projects')
       .select('*')
-      .eq('archived', false)
+      .neq('archived', true)
       .order('created_at', { ascending: false })
     setProjects(data ?? [])
     setLoading(false)

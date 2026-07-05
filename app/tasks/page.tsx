@@ -102,7 +102,7 @@ export default function TasksPage() {
     const { data } = await supabase
       .from('master_tasks')
       .select('*')
-      .eq('archived', false)
+      .neq('archived', true)
       .order('created_at', { ascending: false })
     setTasks(data ?? [])
     setLoading(false)
