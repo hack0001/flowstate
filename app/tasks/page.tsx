@@ -99,11 +99,12 @@ export default function TasksPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('master_tasks')
       .select('*')
       .neq('archived', true)
       .order('created_at', { ascending: false })
+    if (error) setImportMsg('Load error: ' + error.message)
     setTasks(data ?? [])
     setLoading(false)
   }, [])
