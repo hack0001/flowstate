@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Plus, X, Check, ChevronDown, ChevronUp, RotateCcw, User } from 'lucide-react'
+import { ChevronLeft, Plus, X, Check, RotateCcw, User, Pencil } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 const C = {
@@ -10,10 +10,10 @@ const C = {
   red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
 }
 
-const PRIORITY_META: Record<string, { color: string; bg: string; label: string }> = {
-  High:   { color:'#ff4466', bg:'rgba(255,68,102,0.1)',  label:'High'   },
-  Medium: { color:'#ffb800', bg:'rgba(255,184,0,0.1)',   label:'Medium' },
-  Low:    { color:'#4a4a6a', bg:'rgba(74,74,106,0.15)',  label:'Low'    },
+const PRIORITY_META: Record<string, { color: string; bg: string }> = {
+  High:   { color:'#ff4466', bg:'rgba(255,68,102,0.1)'  },
+  Medium: { color:'#ffb800', bg:'rgba(255,184,0,0.1)'   },
+  Low:    { color:'#4a4a6a', bg:'rgba(74,74,106,0.15)'  },
 }
 
 const PRIORITIES = ['High', 'Medium', 'Low'] as const
@@ -24,100 +24,118 @@ type Item = {
 }
 
 function PriorityBadge({ priority }: { priority: string }) {
-  const m = PRIORITY_META[priority] ?? { color: C.muted, bg: 'transparent', label: priority }
+  const m = PRIORITY_META[priority] ?? { color: C.muted, bg: 'transparent' }
   return (
     <span style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:m.color, background:m.bg, border:'1px solid '+m.color+'40', borderRadius:'9999px', padding:'0.12rem 0.45rem' }}>
-      {m.label}
+      {priority}
     </span>
   )
 }
 
-function ItemCard({ item, onDone, onRestore }: { item: Item; onDone?: (id: string) => void; onRestore?: (id: string) => void }) {
+function ItemCard({ item, onToggleDone, onEdit }: {
+  item: Item
+  onToggleDone: (id: string, archived: boolean) => void
+  onEdit: (item: Item) => void
+}) {
   const [expanded, setExpanded] = useState(false)
   const m = PRIORITY_META[item.priority]
   const isDone = item.archived
 
   return (
     <div
-      onClick={() => item.notes && setExpanded(e => !e)}
       style={{
         background: C.card,
-        border: '1px solid ' + (expanded ? (m?.color ?? C.cyan) + '40' : C.border),
+        border: '1px solid ' + (isDone ? C.border : (expanded ? (m?.color ?? C.cyan) + '40' : C.border)),
         borderRadius: '1rem', padding: '1rem',
-        cursor: item.notes ? 'pointer' : 'default',
-        transition: 'border-color 0.2s', opacity: isDone ? 0.65 : 1,
-        boxShadow: expanded ? '0 0 18px ' + (m?.color ?? C.cyan) + '10' : 'none',
+        transition: 'border-color 0.2s', opacity: isDone ? 0.55 : 1,
+        boxShadow: expanded && !isDone ? '0 0 18px ' + (m?.color ?? C.cyan) + '10' : 'none',
       }}>
-      <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.5rem', flexWrap:'wrap' }}>
+      {/* Top row: badges + actions */}
+      <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.5rem' }}>
         <PriorityBadge priority={item.priority} />
-        {item.notes && (
-          <span style={{ fontSize:'0.6rem', color:C.muted, marginLeft:'auto' }}>
-            {expanded ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
-          </span>
+        {isDone && (
+          <span style={{ fontSize:'0.6rem', fontWeight:700, color:C.green, background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'9999px', padding:'0.12rem 0.45rem' }}>Done</span>
         )}
+        <div style={{ marginLeft:'auto', display:'flex', gap:'0.35rem', alignItems:'center' }}>
+          {/* Edit */}
+          <button
+            onClick={() => onEdit(item)}
+            title="Edit"
+            style={{ display:'flex', alignItems:'center', justifyContent:'center', width:'26px', height:'26px', background:'none', border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.muted, cursor:'pointer' }}>
+            <Pencil size={11}/>
+          </button>
+          {/* Done / Restore */}
+          <button
+            onClick={() => onToggleDone(item.id, !item.archived)}
+            title={isDone ? 'Restore' : 'Mark done'}
+            style={{ display:'flex', alignItems:'center', justifyContent:'center', width:'26px', height:'26px', background: isDone ? 'rgba(0,255,136,0.08)' : 'none', border:'1px solid '+(isDone ? 'rgba(0,255,136,0.3)' : C.border), borderRadius:'0.4rem', color: isDone ? C.green : C.muted, cursor:'pointer' }}>
+            {isDone ? <RotateCcw size={11}/> : <Check size={11}/>}
+          </button>
+        </div>
       </div>
 
-      <h3 style={{ fontSize:'0.9rem', fontWeight:800, color: isDone ? C.sec : C.text, margin:'0 0 0.6rem', lineHeight:1.35,
-        textDecoration: isDone ? 'line-through' : 'none' }}>
+      {/* Name */}
+      <h3
+        onClick={() => item.notes && setExpanded(e => !e)}
+        style={{ fontSize:'0.9rem', fontWeight:800, color: isDone ? C.sec : C.text, margin:'0 0 0.35rem', lineHeight:1.35,
+          textDecoration: isDone ? 'line-through' : 'none', cursor: item.notes ? 'pointer' : 'default' }}>
         {item.name}
       </h3>
 
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:'0.25rem' }}>
+      {/* Notes preview or expand */}
+      {item.notes && !expanded && (
+        <p onClick={() => setExpanded(true)} style={{ fontSize:'0.72rem', color:C.muted, margin:'0 0 0.35rem', lineHeight:1.5, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor:'pointer' }}>
+          {item.notes}
+        </p>
+      )}
+      {item.notes && expanded && (
+        <div onClick={() => setExpanded(false)} style={{ cursor:'pointer' }}>
+          <p style={{ fontSize:'0.75rem', color:C.sec, margin:'0 0 0.35rem', lineHeight:1.65, whiteSpace:'pre-wrap' }}>{item.notes}</p>
+        </div>
+      )}
+
+      {/* Notion link + date */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:'0.35rem' }}>
         {item.notion_url ? (
           <a href={item.notion_url} target="_blank" rel="noreferrer"
-            onClick={e => e.stopPropagation()}
             style={{ fontSize:'0.6rem', color:C.muted, border:'1px solid '+C.border, borderRadius:'0.25rem', padding:'0.1rem 0.35rem', textDecoration:'none' }}>
             Notion &#8599;
           </a>
         ) : <span />}
-
-        {onDone && !isDone && (
-          <button
-            onClick={e => { e.stopPropagation(); onDone(item.id) }}
-            style={{ display:'flex', alignItems:'center', gap:'0.25rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.375rem', color:C.muted, cursor:'pointer', padding:'0.2rem 0.5rem', fontSize:'0.62rem', fontWeight:700 }}>
-            <Check size={11}/> Done
-          </button>
-        )}
-        {onRestore && isDone && (
-          <button
-            onClick={e => { e.stopPropagation(); onRestore(item.id) }}
-            style={{ display:'flex', alignItems:'center', gap:'0.25rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.375rem', color:C.muted, cursor:'pointer', padding:'0.2rem 0.5rem', fontSize:'0.62rem', fontWeight:700 }}>
-            <RotateCcw size={11}/> Restore
-          </button>
-        )}
+        <span style={{ fontSize:'0.62rem', color:C.muted }}>
+          {new Date(item.created_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+        </span>
       </div>
-
-      {expanded && item.notes && (
-        <div style={{ marginTop:'0.75rem', paddingTop:'0.75rem', borderTop:'1px solid '+C.border }}>
-          <p style={{ fontSize:'0.75rem', color:C.sec, margin:0, lineHeight:1.65, whiteSpace:'pre-wrap' }}>{item.notes}</p>
-          <p style={{ fontSize:'0.65rem', color:C.muted, margin:'0.5rem 0 0' }}>
-            Added {new Date(item.created_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
-          </p>
-        </div>
-      )}
     </div>
   )
 }
 
-function AddModal({ onSave, onClose }: { onSave: (name: string, priority: string, notes: string) => Promise<void>; onClose: () => void }) {
-  const [name, setName] = useState('')
-  const [priority, setPriority] = useState('Medium')
-  const [notes, setNotes] = useState('')
-  const [saving, setSaving] = useState(false)
+function ItemModal({ item, onSave, onClose }: {
+  item: Item | null
+  onSave: (id: string | null, name: string, priority: string, notes: string) => Promise<void>
+  onClose: () => void
+}) {
+  const [name, setName]         = useState(item?.name ?? '')
+  const [priority, setPriority] = useState(item?.priority ?? 'Medium')
+  const [notes, setNotes]       = useState(item?.notes ?? '')
+  const [saving, setSaving]     = useState(false)
+
   const submit = async () => {
     if (!name.trim()) return
     setSaving(true)
-    await onSave(name.trim(), priority, notes.trim())
+    await onSave(item?.id ?? null, name.trim(), priority, notes.trim())
     onClose()
   }
+
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}>
       <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem', width:'90%', maxWidth:'24rem' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
-          <h2 style={{ margin:0, fontSize:'1rem', fontWeight:800, color:C.text }}>New Item</h2>
+          <h2 style={{ margin:0, fontSize:'1rem', fontWeight:800, color:C.text }}>{item ? 'Edit Item' : 'New Item'}</h2>
           <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer' }}><X size={16}/></button>
         </div>
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="Item name..."
+        <input
+          value={name} onChange={e => setName(e.target.value)} placeholder="Item name..."
           onKeyDown={e => { if (e.key==='Enter') submit() }}
           style={{ width:'100%', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'0.6rem 0.75rem', color:C.text, fontFamily:'inherit', fontSize:'0.875rem', outline:'none', boxSizing:'border-box', marginBottom:'0.75rem' }}/>
         <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.4rem' }}>Priority</p>
@@ -130,7 +148,8 @@ function AddModal({ onSave, onClose }: { onSave: (name: string, priority: string
           })}
         </div>
         <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.4rem' }}>Notes</p>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes..." rows={3}
+        <textarea
+          value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes..." rows={3}
           style={{ width:'100%', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'0.6rem 0.75rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', boxSizing:'border-box', resize:'vertical', marginBottom:'1rem' }}/>
         <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end' }}>
           <button onClick={onClose} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Cancel</button>
@@ -143,54 +162,56 @@ function AddModal({ onSave, onClose }: { onSave: (name: string, priority: string
 
 export default function PersonalPage() {
   const router = useRouter()
-  const [items, setItems] = useState<Item[]>([])
-  const [done, setDone] = useState<Item[]>([])
-  const [loading, setLoading] = useState(true)
-  const [filterPriority, setFilterPriority] = useState<string | null>(null)
-  const [showDone, setShowDone] = useState(false)
-  const [adding, setAdding] = useState(false)
+  const [items, setItems]               = useState<Item[]>([])
+  const [loading, setLoading]           = useState(true)
+  const [filterPriority, setFilter]     = useState<string | null>(null)
+  const [filterDone, setFilterDone]     = useState<'all' | 'active' | 'done'>('all')
+  const [editItem, setEditItem]         = useState<Item | null | 'new'>('new' as unknown as Item | null)
+  const [modalOpen, setModalOpen]       = useState(false)
+  const [selectedItem, setSelectedItem] = useState<Item | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [activeRes, doneRes] = await Promise.all([
-      supabase.from('personal_items').select('*').neq('archived', true).order('priority').order('name'),
-      supabase.from('personal_items').select('*').eq('archived', true).order('name'),
-    ])
-    setItems(activeRes.data ?? [])
-    setDone(doneRes.data ?? [])
+    const { data } = await supabase.from('personal_items').select('*').order('archived').order('priority').order('name')
+    setItems(data ?? [])
     setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  const handleDone = async (id: string) => {
-    await supabase.from('personal_items').update({ archived: true }).eq('id', id)
-    const item = items.find(x => x.id === id)
-    if (item) {
-      setItems(prev => prev.filter(x => x.id !== id))
-      setDone(prev => [{ ...item, archived: true }, ...prev])
+  const handleToggleDone = async (id: string, archived: boolean) => {
+    await supabase.from('personal_items').update({ archived }).eq('id', id)
+    setItems(prev => prev.map(i => i.id === id ? { ...i, archived } : i))
+  }
+
+  const handleSave = async (id: string | null, name: string, priority: string, notes: string) => {
+    if (id) {
+      await supabase.from('personal_items').update({ name, priority, notes: notes || null }).eq('id', id)
+      setItems(prev => prev.map(i => i.id === id ? { ...i, name, priority, notes: notes || null } : i))
+    } else {
+      const { data } = await supabase.from('personal_items').insert({ name, priority, notes: notes || null, archived: false }).select().single()
+      if (data) setItems(prev => [...prev, data as Item])
     }
   }
 
-  const handleRestore = async (id: string) => {
-    await supabase.from('personal_items').update({ archived: false }).eq('id', id)
-    const item = done.find(x => x.id === id)
-    if (item) {
-      setDone(prev => prev.filter(x => x.id !== id))
-      setItems(prev => [...prev, { ...item, archived: false }].sort((a, b) => (a.priority ?? '').localeCompare(b.priority ?? '')))
-    }
+  const openEdit = (item: Item | null) => {
+    setSelectedItem(item)
+    setModalOpen(true)
   }
 
-  const handleAdd = async (name: string, priority: string, notes: string) => {
-    const { data } = await supabase.from('personal_items').insert({ name, priority, notes: notes || null, archived: false }).select().single()
-    if (data) setItems(prev => [...prev, data as Item])
-  }
+  const activeCount = items.filter(i => !i.archived).length
+  const doneCount   = items.filter(i =>  i.archived).length
 
-  const filtered = filterPriority ? items.filter(i => i.priority === filterPriority) : items
+  const visible = items.filter(i => {
+    if (filterDone === 'active' && i.archived)  return false
+    if (filterDone === 'done'   && !i.archived) return false
+    if (filterPriority && i.priority !== filterPriority) return false
+    return true
+  })
 
-  const highCount   = items.filter(i => i.priority === 'High').length
-  const medCount    = items.filter(i => i.priority === 'Medium').length
-  const lowCount    = items.filter(i => i.priority === 'Low').length
+  const highCount = items.filter(i => i.priority === 'High'   && !i.archived).length
+  const medCount  = items.filter(i => i.priority === 'Medium' && !i.archived).length
+  const lowCount  = items.filter(i => i.priority === 'Low'    && !i.archived).length
 
   return (
     <main style={{ minHeight:'100vh', background:C.bg, color:C.text, fontFamily:"'Inter', system-ui, sans-serif" }}>
@@ -206,48 +227,38 @@ export default function PersonalPage() {
                 <User size={22} color={C.cyan}/> Personal
               </h1>
               <p style={{ fontSize:'0.82rem', color:C.sec, margin:0 }}>
-                {items.length} active &mdash; {done.length} done
+                {activeCount} active &mdash; {doneCount} done
               </p>
             </div>
-            <button onClick={() => setAdding(true)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.55rem 1rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, alignSelf:'flex-start' }}>
+            <button onClick={() => openEdit(null)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.55rem 1rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, alignSelf:'flex-start' }}>
               <Plus size={14}/> Add Item
             </button>
           </div>
 
-          {/* Priority chips */}
+          {/* Priority chips (active only) */}
           <div style={{ display:'flex', gap:'0.75rem', marginTop:'1rem', flexWrap:'wrap' }}>
-            {highCount > 0 && (
-              <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.3rem 0.75rem', background:'rgba(255,68,102,0.07)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'9999px' }}>
-                <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:C.red }}/>
-                <span style={{ fontSize:'0.7rem', fontWeight:700, color:C.red }}>{highCount} high</span>
-              </div>
-            )}
-            {medCount > 0 && (
-              <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.3rem 0.75rem', background:'rgba(255,184,0,0.07)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'9999px' }}>
-                <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:C.amber }}/>
-                <span style={{ fontSize:'0.7rem', fontWeight:700, color:C.amber }}>{medCount} medium</span>
-              </div>
-            )}
-            {lowCount > 0 && (
-              <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.3rem 0.75rem', background:'rgba(74,74,106,0.15)', border:'1px solid rgba(74,74,106,0.35)', borderRadius:'9999px' }}>
-                <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:C.muted }}/>
-                <span style={{ fontSize:'0.7rem', fontWeight:700, color:C.muted }}>{lowCount} low</span>
-              </div>
-            )}
+            {highCount > 0 && <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.3rem 0.75rem', background:'rgba(255,68,102,0.07)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'9999px' }}><div style={{ width:'6px', height:'6px', borderRadius:'50%', background:C.red }}/><span style={{ fontSize:'0.7rem', fontWeight:700, color:C.red }}>{highCount} high</span></div>}
+            {medCount  > 0 && <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.3rem 0.75rem', background:'rgba(255,184,0,0.07)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'9999px' }}><div style={{ width:'6px', height:'6px', borderRadius:'50%', background:C.amber }}/><span style={{ fontSize:'0.7rem', fontWeight:700, color:C.amber }}>{medCount} medium</span></div>}
+            {lowCount  > 0 && <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.3rem 0.75rem', background:'rgba(74,74,106,0.15)', border:'1px solid rgba(74,74,106,0.35)', borderRadius:'9999px' }}><div style={{ width:'6px', height:'6px', borderRadius:'50%', background:C.muted }}/><span style={{ fontSize:'0.7rem', fontWeight:700, color:C.muted }}>{lowCount} low</span></div>}
           </div>
 
           {/* Filters */}
           <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap', marginTop:'0.875rem', alignItems:'center' }}>
-            <button onClick={() => setFilterPriority(null)} style={{ padding:'0.3rem 0.75rem', borderRadius:'9999px', cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, background:!filterPriority ? 'rgba(255,255,255,0.07)' : C.card, border:'1px solid '+(!filterPriority ? 'rgba(255,255,255,0.2)' : C.border), color:!filterPriority ? C.text : C.sec }}>
-              All <span style={{ opacity:0.6 }}>({items.length})</span>
-            </button>
+            {/* Show filter */}
+            {(['all','active','done'] as const).map(v => (
+              <button key={v} onClick={() => setFilterDone(v)} style={{ padding:'0.3rem 0.75rem', borderRadius:'9999px', cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, background: filterDone===v ? 'rgba(255,255,255,0.07)' : C.card, border:'1px solid '+(filterDone===v ? 'rgba(255,255,255,0.2)' : C.border), color: filterDone===v ? C.text : C.sec, textTransform:'capitalize' }}>
+                {v === 'all' ? `All (${items.length})` : v === 'active' ? `Active (${activeCount})` : `Done (${doneCount})`}
+              </button>
+            ))}
+            <span style={{ width:'1px', height:'20px', background:C.border, display:'inline-block', margin:'0 0.15rem' }}/>
+            {/* Priority filter */}
             {PRIORITIES.map(p => {
               const m = PRIORITY_META[p]
               const active = filterPriority === p
               const count = items.filter(i => i.priority === p).length
               if (count === 0) return null
               return (
-                <button key={p} onClick={() => setFilterPriority(active ? null : p)} style={{ padding:'0.3rem 0.75rem', borderRadius:'9999px', cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, background:active ? m.bg : C.card, border:'1px solid '+(active ? m.color+'60' : C.border), color:active ? m.color : C.sec }}>
+                <button key={p} onClick={() => setFilter(active ? null : p)} style={{ padding:'0.3rem 0.75rem', borderRadius:'9999px', cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, background:active ? m.bg : C.card, border:'1px solid '+(active ? m.color+'60' : C.border), color:active ? m.color : C.sec }}>
                   {p} <span style={{ opacity:0.6 }}>({count})</span>
                 </button>
               )
@@ -260,43 +271,32 @@ export default function PersonalPage() {
       <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'1.5rem 2rem' }}>
         {loading ? (
           <p style={{ color:C.muted, fontSize:'0.85rem' }}>Loading...</p>
-        ) : filtered.length === 0 && items.length > 0 ? (
-          <p style={{ color:C.muted, fontSize:'0.85rem' }}>No items match your filter.</p>
-        ) : filtered.length === 0 ? (
+        ) : visible.length === 0 ? (
           <div style={{ textAlign:'center', padding:'4rem 1rem', color:C.muted }}>
             <User size={40} style={{ marginBottom:'1rem', opacity:0.3 }}/>
-            <p style={{ fontSize:'1rem', color:C.sec, fontWeight:700 }}>No items yet</p>
+            <p style={{ fontSize:'1rem', color:C.sec, fontWeight:700 }}>{items.length === 0 ? 'No items yet' : 'No items match your filter'}</p>
           </div>
         ) : (
           <>
-            <p style={{ fontSize:'0.72rem', color:C.muted, marginBottom:'1rem' }}>{filtered.length} item{filtered.length !== 1 ? 's' : ''}</p>
+            <p style={{ fontSize:'0.72rem', color:C.muted, marginBottom:'1rem' }}>{visible.length} item{visible.length !== 1 ? 's' : ''}</p>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))', gap:'0.75rem' }}>
-              {filtered.map(i => <ItemCard key={i.id} item={i} onDone={handleDone} />)}
+              {visible.map(i => (
+                <ItemCard key={i.id} item={i} onToggleDone={handleToggleDone} onEdit={openEdit} />
+              ))}
             </div>
           </>
         )}
-
-        {/* Done section */}
-        {done.length > 0 && (
-          <div style={{ marginTop:'2.5rem' }}>
-            <button
-              onClick={() => setShowDone(s => !s)}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'inherit', marginBottom:'1rem' }}>
-              <span style={{ fontSize:'0.75rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted }}>Done ({done.length})</span>
-              {showDone ? <ChevronUp size={14} color={C.muted}/> : <ChevronDown size={14} color={C.muted}/>}
-            </button>
-            {showDone && (
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))', gap:'0.75rem' }}>
-                {done.map(i => <ItemCard key={i.id} item={i} onRestore={handleRestore} />)}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
-      {adding && <AddModal onSave={handleAdd} onClose={() => setAdding(false)} />}
+      {modalOpen && (
+        <ItemModal
+          item={selectedItem}
+          onSave={handleSave}
+          onClose={() => { setModalOpen(false); setSelectedItem(null) }}
+        />
+      )}
+
       <style>{`
-        @keyframes spin{to{transform:rotate(360deg)}}
         ::-webkit-scrollbar{width:5px;height:5px}
         ::-webkit-scrollbar-track{background:transparent}
         ::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:10px}
