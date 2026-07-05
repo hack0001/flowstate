@@ -482,7 +482,14 @@ export default function CalendarPage() {
         </div>
       )}
 
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <style>{`
+        @keyframes spin{to{transform:rotate(360deg)}}
+        ::-webkit-scrollbar{width:5px;height:5px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:10px}
+        ::-webkit-scrollbar-thumb:hover{background:rgba(0,212,255,0.35)}
+        *{scrollbar-width:thin;scrollbar-color:#2a2a3a transparent}
+      `}</style>
     </main>
   )
 }
