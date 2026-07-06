@@ -1,13 +1,57 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ShoppingBag, CheckCircle, Circle, RotateCcw, ChevronDown } from 'lucide-react'
+import { ShoppingBag, CheckCircle, Circle, RotateCcw, ChevronDown, ExternalLink, Search } from 'lucide-react'
 import { useLanguage } from '@/context/LanguageContext'
+import { ETSY_NOTES, SOFTWARE_PIPELINE, ETSY_TODOS, ETSY_LINKS, BATCH_WORKFLOW } from '@/lib/etsy-data'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
   orange:'#f97316', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6',
-  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a'
+  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
+  teal:'#14b8a6', pink:'#ec4899',
+}
+
+type Tab = 'checklists' | 'sops' | 'notes' | 'pipeline' | 'todos' | 'links' | 'batch'
+
+const tabColor: Record<Tab, string> = {
+  checklists: C.orange, sops: C.amber, notes: C.purple,
+  pipeline: C.green, todos: C.red, links: C.teal, batch: C.pink,
+}
+
+function priorityColor(p: string): string {
+  return p === 'High' ? C.red : p === 'Medium' ? C.amber : '#555577'
+}
+
+function stageColor(s: string): string {
+  return s === 'Completed' ? C.green : s === 'Ongoing' ? C.teal : s === 'Started' ? C.amber : C.muted
+}
+
+function Badge({ label, color }: { label: string; color: string }) {
+  return (
+    <span style={{
+      display:'inline-block', background: color+'22', color,
+      padding:'0.1rem 0.42rem', borderRadius:'0.3rem',
+      fontSize:'0.6rem', fontWeight:700, whiteSpace:'nowrap', letterSpacing:'0.02em',
+    }}>{label}</span>
+  )
+}
+
+function SearchBar({ value, onChange, placeholder }: { value:string; onChange:(v:string)=>void; placeholder:string }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.45rem 0.875rem', marginBottom:'1rem' }}>
+      <Search size={13} color={C.muted} />
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{ flex:1, background:'none', border:'none', outline:'none', color:C.text, fontSize:'0.82rem', fontFamily:'inherit' }}
+      />
+      {value && (
+        <button onClick={() => onChange('')} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0 0.2rem', fontSize:'0.8rem', fontFamily:'inherit' }}>x</button>
+      )}
+    </div>
+  )
 }
 
 // ---- Checklists ----
@@ -287,10 +331,13 @@ function SOPCard({ sop }: { sop:SOP }) {
 export default function EtsyPage() {
   const router = useRouter()
   const { t } = useLanguage()
-  const [activeTab, setActiveTab] = useState<'checklists'|'sops'>('checklists')
+  const [activeTab, setActiveTab] = useState<Tab>('checklists')
   const [checked, setChecked] = useState<Record<string,boolean>>({})
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['product']))
   const [mounted, setMounted] = useState(false)
+  const [search, setSearch] = useState('')
+  const [todoFilter, setTodoFilter] = useState('All')
+  const [pipeFilter, setPipeFilter] = useState('All')
 
   useEffect(() => {
     try {
@@ -325,7 +372,23 @@ export default function EtsyPage() {
   const totalDone  = Object.values(checked).filter(Boolean).length
   const pct = Math.round(totalDone / totalItems * 100)
 
-  const tabColor = { checklists: C.orange, sops: C.amber }
+  const tabs: { key: Tab; label: string }[] = [
+    { key:'checklists', label: t('checklists') },
+    { key:'sops', label: t('productionSOPs') },
+    { key:'notes', label:'Notes' },
+    { key:'pipeline', label:'Pipeline' },
+    { key:'todos', label:'Todos' },
+    { key:'links', label:'Links' },
+    { key:'batch', label:'Batch' },
+  ]
+
+  const linkStyle = (color: string) => ({
+    display:'flex' as const, alignItems:'center' as const, gap:'0.3rem',
+    background: color+'14', border:'1px solid '+color+'33',
+    borderRadius:'0.45rem', color, textDecoration:'none',
+    padding:'0.28rem 0.55rem', fontSize:'0.67rem', fontWeight:700, flexShrink:0 as const,
+    whiteSpace:'nowrap' as const,
+  })
 
   return (
     <main style={{ minHeight:'100vh', background:C.bg, color:C.text }}>
@@ -336,6 +399,7 @@ export default function EtsyPage() {
         ::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:10px}
         ::-webkit-scrollbar-thumb:hover{background:rgba(249,115,22,0.35)}
         *{scrollbar-width:thin;scrollbar-color:#2a2a3a transparent}
+        input::placeholder{color:#4a4a6a}
       `}</style>
 
       {/* Header */}
@@ -350,18 +414,18 @@ export default function EtsyPage() {
         </div>
         <div style={{ maxWidth:'960px', margin:'0 auto' }}>
           <h1 style={{ fontSize:'1.6rem', fontWeight:900, margin:0, letterSpacing:'-0.02em' }}>TopNotchThreadz</h1>
-          <p style={{ fontSize:'0.875rem', color:C.sec, margin:'0.25rem 0 1rem' }}>SOPs and checklists for the Etsy POD shop</p>
+          <p style={{ fontSize:'0.875rem', color:C.sec, margin:'0.25rem 0 1rem' }}>SOPs, checklists, notes, and data for the Etsy POD shop</p>
         </div>
-        <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', gap:'0.25rem' }}>
-          {(['checklists','sops'] as const).map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)} style={{
-              padding:'0.7rem 1.25rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit',
-              fontSize:'0.82rem', fontWeight: activeTab===tab ? 700 : 500,
-              color: activeTab===tab ? tabColor[tab] : C.muted,
-              borderBottom: activeTab===tab ? '2px solid '+tabColor[tab] : '2px solid transparent',
-              marginBottom:'-1px', transition:'all 0.15s', textTransform:'capitalize',
+        <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', gap:'0', overflowX:'auto', msOverflowStyle:'none', scrollbarWidth:'none' }}>
+          {tabs.map(tab => (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
+              padding:'0.7rem 1rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit',
+              fontSize:'0.8rem', fontWeight: activeTab===tab.key ? 700 : 500,
+              color: activeTab===tab.key ? tabColor[tab.key] : C.muted,
+              borderBottom: activeTab===tab.key ? '2px solid '+tabColor[tab.key] : '2px solid transparent',
+              marginBottom:'-1px', transition:'all 0.15s', whiteSpace:'nowrap', flexShrink:0,
             }}>
-              {tab === 'sops' ? t('productionSOPs') : t('checklists')}
+              {tab.label}
             </button>
           ))}
         </div>
@@ -370,10 +434,9 @@ export default function EtsyPage() {
       {/* Content */}
       <div style={{ maxWidth:'960px', margin:'0 auto', padding:'2rem', opacity: mounted ? 1 : 0, transition:'opacity 0.3s ease' }}>
 
+        {/* -- Checklists -- */}
         {activeTab === 'checklists' && (
           <div style={{ animation:'fadeInUp 0.3s ease both' }}>
-
-            {/* Overall progress card */}
             <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.25rem', marginBottom:'1.5rem' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
                 <div>
@@ -393,8 +456,6 @@ export default function EtsyPage() {
                 <div style={{ height:'100%', width:pct+'%', borderRadius:'2px', transition:'width 0.4s ease', background: pct===100 ? 'linear-gradient(90deg,'+C.green+',#00cc6a)' : 'linear-gradient(90deg,'+C.orange+',#ea580c)' }} />
               </div>
             </div>
-
-            {/* Sections */}
             <div style={{ display:'flex', flexDirection:'column', gap:'0.625rem' }}>
               {SECTIONS.map(section => {
                 const secDone = section.items.filter(item => checked[item.id]).length
@@ -402,49 +463,4 @@ export default function EtsyPage() {
                 const isOpen  = openSections.has(section.id)
                 return (
                   <div key={section.id} style={{ background:C.card, border:'1px solid '+(secPct===100 ? 'rgba(0,255,136,0.25)' : C.border), borderRadius:'0.875rem', overflow:'hidden', transition:'border-color 0.3s' }}>
-                    <button onClick={() => toggleSection(section.id)} style={{ width:'100%', display:'flex', alignItems:'center', gap:'0.75rem', padding:'1rem 1.125rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', textAlign:'left' }}>
-                      <span style={{ fontSize:'1.1rem' }} dangerouslySetInnerHTML={{ __html: section.emoji }} />
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <p style={{ fontSize:'0.85rem', fontWeight:700, color: secPct===100 ? C.green : C.text, margin:0 }}>{section.title}</p>
-                        <p style={{ fontSize:'0.65rem', color:C.muted, margin:'0.15rem 0 0' }}>{secDone}/{section.items.length} complete</p>
-                      </div>
-                      <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
-                        <div style={{ width:'48px', height:'3px', background:C.border, borderRadius:'2px', overflow:'hidden' }}>
-                          <div style={{ height:'100%', width:secPct+'%', background: secPct===100 ? C.green : C.orange, borderRadius:'2px', transition:'width 0.3s' }} />
-                        </div>
-                        <ChevronDown size={15} color={C.muted} style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition:'transform 0.2s', flexShrink:0 }} />
-                      </div>
-                    </button>
-                    {isOpen && (
-                      <div style={{ padding:'0.25rem 1rem 1rem', borderTop:'1px solid '+C.border }}>
-                        <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-                          {section.items.map(item => (
-                            <CheckItem key={item.id} id={item.id} label={item.label} note={item.note} checked={!!checked[item.id]} onToggle={toggleCheck} />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'sops' && (
-          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
-            <div style={{ marginBottom:'1.5rem', padding:'0.875rem 1rem', background:'rgba(249,115,22,0.05)', border:'1px solid rgba(249,115,22,0.15)', borderRadius:'0.875rem', display:'flex', alignItems:'center', gap:'0.75rem' }}>
-              <span style={{ fontSize:'1rem' }}>&#128722;</span>
-              <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5 }}>
-                TopNotchThreadz operating procedures &mdash; sourced from Notion SOPs. Open the relevant accordion when you need it.
-              </p>
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
-              {SOPS.map(sop => <SOPCard key={sop.id} sop={sop} />)}
-            </div>
-          </div>
-        )}
-      </div>
-    </main>
-  )
-}
+                    <button onClick={() => toggleSection(section.id)} style={{ width:'100%', display:'flex', alignItems:'center', gap:'0.75rem', padding:'1rem
