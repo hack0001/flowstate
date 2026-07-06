@@ -100,7 +100,17 @@ function ParticleCanvas() {
   return <canvas ref={ref} aria-hidden="true" style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0, width:'100%', height:'100%' }} />
 }
 
-const STORAGE_KEY = 'flowstate_routine_v2'
+const STORAGE_KEY   = 'flowstate_routine_v2'
+const ERROR_LOG_KEY = 'flowstate_error_log'
+
+type ErrorEntry = { id: string; date: string; text: string }
+
+function loadErrors(): ErrorEntry[] {
+  try { return JSON.parse(localStorage.getItem(ERROR_LOG_KEY) ?? '[]') } catch { return [] }
+}
+function saveErrors(entries: ErrorEntry[]) {
+  try { localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(entries)) } catch {}
+}
 
 function todayStr() {
   const d = new Date()
@@ -195,12 +205,16 @@ export default function MorningPage() {
   const [editing, setEditing]     = useState(false)
   const [celebrating, setCelebrating] = useState(false)
   const [loaded, setLoaded]       = useState(false)
+  const [errors, setErrors]       = useState<ErrorEntry[]>([])
+  const [errInput, setErrInput]   = useState('')
+  const [errOpen, setErrOpen]     = useState(false)
   const today = todayStr()
 
   useEffect(() => {
     const state = loadState()
     setItems(state.items)
     setCompleted(state.completed)
+    setErrors(loadErrors())
     setLoaded(true)
 
     supabase.from('routine_completions').select('routine_date').eq('routine_date', today).maybeSingle()
@@ -244,6 +258,17 @@ export default function MorningPage() {
   function handleSaveItems(newItems:RoutineItem[]) {
     setItems(newItems)
     saveState(newItems, completed)
+  }
+
+  function addError() {
+    if (!errInput.trim()) return
+    const entry: ErrorEntry = { id: Date.now().toString(), date: todayStr(), text: errInput.trim() }
+    const next = [entry, ...errors]
+    setErrors(next); saveErrors(next); setErrInput('')
+  }
+  function removeError(id: string) {
+    const next = errors.filter(e => e.id !== id)
+    setErrors(next); saveErrors(next)
   }
 
   const quote    = DONE_QUOTES[new Date().getDate() % DONE_QUOTES.length]
@@ -417,6 +442,80 @@ export default function MorningPage() {
             )}
           </>
         )}
+      </div>
+
+      {/* ---- Error Log ---- */}
+      <div style={{ position:'relative', zIndex:2, padding:'0 1.75rem 2.5rem' }}>
+        <div style={{ maxWidth:'26rem', margin:'0 auto' }}>
+          <button
+            onClick={() => setErrOpen(o => !o)}
+            style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%',
+              background:'transparent', border:'1px solid #2a2a3a', borderRadius:'0.75rem',
+              color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem',
+              fontWeight:700, padding:'0.65rem 1rem' }}
+          >
+            <span style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+              <span style={{ width:'7px', height:'7px', borderRadius:'50%', background:C.red, display:'inline-block', flexShrink:0 }}/>
+              Error Log
+              {errors.length > 0 && (
+                <span style={{ fontSize:'0.62rem', fontWeight:700, background:'rgba(255,68,68,0.15)', color:C.red, borderRadius:'0.3rem', padding:'0.05rem 0.35rem' }}>
+                  {errors.length}
+                </span>
+              )}
+            </span>
+            {errOpen ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+          </button>
+
+          {errOpen && (
+            <div style={{ marginTop:'0.4rem', background:'rgba(18,18,26,0.88)', border:'1px solid #2a2a3a',
+              borderRadius:'0.75rem', padding:'1rem', backdropFilter:'blur(12px)' }}>
+              <p style={{ fontSize:'0.65rem', color:C.muted, margin:'0 0 0.75rem', lineHeight:1.6 }}>
+                What went wrong yesterday? Log it here and review periodically to spot patterns worth fixing.
+              </p>
+              <div style={{ display:'flex', gap:'0.5rem', marginBottom:'0.75rem' }}>
+                <textarea
+                  value={errInput}
+                  onChange={e => setErrInput(e.target.value)}
+                  placeholder="Be specific — what failed, what did you do, what was the result?"
+                  rows={2}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addError() } }}
+                  style={{ flex:1, background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'0.5rem',
+                    padding:'0.5rem 0.6rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem',
+                    outline:'none', resize:'none', lineHeight:1.5 }}
+                />
+                <button
+                  onClick={addError}
+                  style={{ alignSelf:'flex-end', padding:'0.45rem 0.65rem', background:'rgba(255,68,68,0.1)',
+                    border:'1px solid rgba(255,68,68,0.25)', borderRadius:'0.5rem', color:C.red,
+                    cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center' }}
+                >
+                  <Plus size={14}/>
+                </button>
+              </div>
+
+              {errors.length === 0 ? (
+                <p style={{ fontSize:'0.72rem', color:C.muted, textAlign:'center', padding:'0.5rem 0' }}>
+                  No errors logged yet.
+                </p>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem', maxHeight:'16rem', overflowY:'auto' }}>
+                  {errors.map(e => (
+                    <div key={e.id} style={{ display:'flex', gap:'0.5rem', padding:'0.5rem 0.6rem',
+                      background:'#12121a', borderRadius:'0.5rem', border:'1px solid #2a2a3a' }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ fontSize:'0.6rem', color:C.muted, margin:'0 0 0.2rem', fontWeight:600 }}>{e.date}</p>
+                        <p style={{ fontSize:'0.78rem', color:C.text, margin:0, lineHeight:1.5, wordBreak:'break-word' }}>{e.text}</p>
+                      </div>
+                      <button onClick={() => removeError(e.id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', flexShrink:0, alignSelf:'flex-start', padding:'1px' }}>
+                        <X size={11}/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {editing && <EditPanel items={items} onClose={() => setEditing(false)} onSave={handleSaveItems}/>}

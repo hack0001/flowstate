@@ -317,6 +317,10 @@ export default function Home() {
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.18)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
               <Moon size={14}/>{t('evening')}
             </button>
+            <button onClick={() => router.push('/welsh')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,192,75,0.07)', border:'1px solid rgba(0,192,75,0.25)', borderRadius:'0.75rem', color:'#00c04b', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              &#127988;&#917607;&#917602;&#917623;&#917612;&#917619;&#917631; Welsh
+            </button>
             <button onClick={() => router.push('/vault')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.18)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
               <BookOpen size={14}/>Vault
