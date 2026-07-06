@@ -32,7 +32,7 @@ function Badge({ label, color }: { label: string; color: string }) {
     <span style={{
       display:'inline-block', background: color+'22', color,
       padding:'0.1rem 0.42rem', borderRadius:'0.3rem',
-      fontSize:'0.6rem', fontWeight:700, whiteSpace:'nowrap', letterSpacing:'0.02em',
+      fontSize:'0.6rem', fontWeight:700, whiteSpace:'nowrap' as const, letterSpacing:'0.02em',
     }}>{label}</span>
   )
 }
@@ -194,7 +194,7 @@ const SOPS: SOP[] = [
   },
   {
     id:'04', icon:'&#128228;', title:'Uploading',
-    tagline:'Systematic batch upload: Prelist &rarr; Printify &rarr; Vela &rarr; Etsy.',
+    tagline:'Systematic batch upload: Prelist to Printify to Vela to Etsy.',
     steps:[
       'Prepare listing content in Prelist first: title, description, 13 tags, price, personalisation instructions',
       'In Printify: select supplier (Swift POD or Monster Digital), upload design, configure all variants',
@@ -215,7 +215,7 @@ const SOPS: SOP[] = [
       '<strong>Photos:</strong> Mockups at 2700&times;2200px minimum. No AI main photo. Guarantee slide in images 1&ndash;2. Alt text on main photo.',
       'SEO completeness: fill About Me, shop title, shop sections, attributes &mdash; Etsy ranks incomplete shops lower',
       'On new listings: run 25% off for 5 days to kickstart conversion signals that improve organic rank',
-      'All external traffic &rarr; Etsy via Share &amp; Save link (saves 4% on transaction fees)',
+      'All external traffic via Share &amp; Save link (saves 4% on transaction fees)',
     ]
   },
   {
@@ -259,7 +259,7 @@ const SOPS: SOP[] = [
   },
   {
     id:'09', icon:'&#128201;', title:'Etsy Analytics',
-    tagline:'Track the right numbers. Most shops get 1&ndash;3% conversion &mdash; optimise visits, not views.',
+    tagline:'Track the right numbers. Most shops get 1-3% conversion &mdash; optimise visits, not views.',
     steps:[
       'Key metric: conversion rate = orders &divide; visits (not views). Industry average 1&ndash;3%. Below 1% = listing or trust problem.',
       'High views + low visits = thumbnail not compelling enough. High visits + low conversion = pricing or listing quality issue.',
@@ -382,13 +382,15 @@ export default function EtsyPage() {
     { key:'batch', label:'Batch' },
   ]
 
-  const linkStyle = (color: string) => ({
-    display:'flex' as const, alignItems:'center' as const, gap:'0.3rem',
-    background: color+'14', border:'1px solid '+color+'33',
-    borderRadius:'0.45rem', color, textDecoration:'none',
-    padding:'0.28rem 0.55rem', fontSize:'0.67rem', fontWeight:700, flexShrink:0 as const,
-    whiteSpace:'nowrap' as const,
-  })
+  function lnk(color: string): React.CSSProperties {
+    return {
+      display:'flex', alignItems:'center', gap:'0.3rem',
+      background: color+'14', border:'1px solid '+color+'33',
+      borderRadius:'0.45rem', color, textDecoration:'none',
+      padding:'0.28rem 0.55rem', fontSize:'0.67rem', fontWeight:700, flexShrink:0,
+      whiteSpace:'nowrap',
+    }
+  }
 
   return (
     <main style={{ minHeight:'100vh', background:C.bg, color:C.text }}>
@@ -416,7 +418,7 @@ export default function EtsyPage() {
           <h1 style={{ fontSize:'1.6rem', fontWeight:900, margin:0, letterSpacing:'-0.02em' }}>TopNotchThreadz</h1>
           <p style={{ fontSize:'0.875rem', color:C.sec, margin:'0.25rem 0 1rem' }}>SOPs, checklists, notes, and data for the Etsy POD shop</p>
         </div>
-        <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', gap:'0', overflowX:'auto', msOverflowStyle:'none', scrollbarWidth:'none' }}>
+        <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', gap:'0', overflowX:'auto' }}>
           {tabs.map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
               padding:'0.7rem 1rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit',
@@ -434,7 +436,7 @@ export default function EtsyPage() {
       {/* Content */}
       <div style={{ maxWidth:'960px', margin:'0 auto', padding:'2rem', opacity: mounted ? 1 : 0, transition:'opacity 0.3s ease' }}>
 
-        {/* -- Checklists -- */}
+        {/* Checklists */}
         {activeTab === 'checklists' && (
           <div style={{ animation:'fadeInUp 0.3s ease both' }}>
             <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.25rem', marginBottom:'1.5rem' }}>
@@ -463,4 +465,229 @@ export default function EtsyPage() {
                 const isOpen  = openSections.has(section.id)
                 return (
                   <div key={section.id} style={{ background:C.card, border:'1px solid '+(secPct===100 ? 'rgba(0,255,136,0.25)' : C.border), borderRadius:'0.875rem', overflow:'hidden', transition:'border-color 0.3s' }}>
-                    <button onClick={() => toggleSection(section.id)} style={{ width:'100%', display:'flex', alignItems:'center', gap:'0.75rem', padding:'1rem
+                    <button onClick={() => toggleSection(section.id)} style={{ width:'100%', display:'flex', alignItems:'center', gap:'0.75rem', padding:'1rem 1.125rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', textAlign:'left' }}>
+                      <span style={{ fontSize:'1.1rem' }} dangerouslySetInnerHTML={{ __html: section.emoji }} />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ fontSize:'0.85rem', fontWeight:700, color: secPct===100 ? C.green : C.text, margin:0 }}>{section.title}</p>
+                        <p style={{ fontSize:'0.65rem', color:C.muted, margin:'0.15rem 0 0' }}>{secDone}/{section.items.length} complete</p>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+                        <div style={{ width:'48px', height:'3px', background:C.border, borderRadius:'2px', overflow:'hidden' }}>
+                          <div style={{ height:'100%', width:secPct+'%', background: secPct===100 ? C.green : C.orange, borderRadius:'2px', transition:'width 0.3s' }} />
+                        </div>
+                        <ChevronDown size={15} color={C.muted} style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition:'transform 0.2s', flexShrink:0 }} />
+                      </div>
+                    </button>
+                    {isOpen && (
+                      <div style={{ padding:'0.25rem 1rem 1rem', borderTop:'1px solid '+C.border }}>
+                        <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+                          {section.items.map(item => (
+                            <CheckItem key={item.id} id={item.id} label={item.label} note={item.note} checked={!!checked[item.id]} onToggle={toggleCheck} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* SOPs */}
+        {activeTab === 'sops' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <div style={{ marginBottom:'1.5rem', padding:'0.875rem 1rem', background:'rgba(249,115,22,0.05)', border:'1px solid rgba(249,115,22,0.15)', borderRadius:'0.875rem', display:'flex', alignItems:'center', gap:'0.75rem' }}>
+              <span style={{ fontSize:'1rem' }}>&#128722;</span>
+              <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5 }}>
+                TopNotchThreadz operating procedures. Open the relevant accordion when you need it.
+              </p>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+              {SOPS.map(sop => <SOPCard key={sop.id} sop={sop} />)}
+            </div>
+          </div>
+        )}
+
+        {/* Notes */}
+        {activeTab === 'notes' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <SearchBar value={search} onChange={setSearch} placeholder="Search notes and study materials..." />
+            <p style={{ fontSize:'0.7rem', color:C.muted, margin:'-0.25rem 0 1rem' }}>
+              {ETSY_NOTES.filter(n => !search || n.name.toLowerCase().includes(search.toLowerCase()) || n.notes.toLowerCase().includes(search.toLowerCase())).length} of {ETSY_NOTES.length} notes
+            </p>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+              {ETSY_NOTES
+                .filter(n => !search || n.name.toLowerCase().includes(search.toLowerCase()) || n.notes.toLowerCase().includes(search.toLowerCase()))
+                .map((note, i) => (
+                  <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem' }}>
+                    <Badge label={note.priority} color={priorityColor(note.priority)} />
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{note.name}</p>
+                      {note.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.15rem 0 0' }}>{note.notes}</p>}
+                    </div>
+                    <a href={note.file_url || note.notion_url} target="_blank" rel="noreferrer" style={lnk(C.purple)}>
+                      <ExternalLink size={11} />
+                      {note.file_url ? 'Open' : 'Notion'}
+                    </a>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Pipeline */}
+        {activeTab === 'pipeline' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <SearchBar value={search} onChange={setSearch} placeholder="Search tools and software..." />
+            <div style={{ display:'flex', gap:'0.4rem', marginBottom:'1rem', flexWrap:'wrap' }}>
+              {['All','Active','Not Active',''].map(f => {
+                const label = f === '' ? 'Misc' : f
+                const isAct = pipeFilter === f
+                const col = f === 'Active' ? C.green : f === 'Not Active' ? C.red : f === '' ? C.muted : C.orange
+                return (
+                  <button key={label} onClick={() => setPipeFilter(f)} style={{
+                    padding:'0.22rem 0.6rem', borderRadius:'999px',
+                    border:'1px solid '+(isAct ? col : C.border),
+                    background: isAct ? col+'18' : 'transparent',
+                    color: isAct ? col : C.muted,
+                    cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:600,
+                  }}>
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+              {SOFTWARE_PIPELINE
+                .filter(tool => !search || tool.name.toLowerCase().includes(search.toLowerCase()) || tool.notes.toLowerCase().includes(search.toLowerCase()))
+                .filter(tool => pipeFilter === 'All' || tool.status === pipeFilter)
+                .map((tool, i) => (
+                  <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem' }}>
+                    <div style={{ display:'flex', flexDirection:'column', gap:'0.25rem', flexShrink:0, minWidth:'4.5rem' }}>
+                      <Badge label={tool.status || 'Misc'} color={tool.status === 'Active' ? C.green : tool.status === 'Not Active' ? C.red : C.muted} />
+                      {tool.priority === 'High' && <Badge label="High priority" color={C.red} />}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{tool.name}</p>
+                      {tool.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.15rem 0 0', lineHeight:1.5 }}>{tool.notes}</p>}
+                    </div>
+                    {(tool.file_url || tool.notion_url) && (
+                      <a href={tool.file_url || tool.notion_url} target="_blank" rel="noreferrer" style={lnk(C.green)}>
+                        <ExternalLink size={11} /> Open
+                      </a>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Todos */}
+        {activeTab === 'todos' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <SearchBar value={search} onChange={setSearch} placeholder="Search todos..." />
+            <div style={{ display:'flex', gap:'0.4rem', marginBottom:'1rem', flexWrap:'wrap' }}>
+              {['All','Not Started','Started','Ongoing','Completed'].map(f => {
+                const isAct = todoFilter === f
+                const col = f === 'All' ? C.orange : stageColor(f)
+                return (
+                  <button key={f} onClick={() => setTodoFilter(f)} style={{
+                    padding:'0.22rem 0.6rem', borderRadius:'999px',
+                    border:'1px solid '+(isAct ? col : C.border),
+                    background: isAct ? col+'18' : 'transparent',
+                    color: isAct ? col : C.muted,
+                    cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:600,
+                  }}>
+                    {f}
+                  </button>
+                )
+              })}
+            </div>
+            <p style={{ fontSize:'0.7rem', color:C.muted, margin:'-0.25rem 0 1rem' }}>
+              {ETSY_TODOS.filter(td => (!search || td.name.toLowerCase().includes(search.toLowerCase())) && (todoFilter === 'All' || td.stage === todoFilter)).length} todos
+            </p>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+              {ETSY_TODOS
+                .filter(td => !search || td.name.toLowerCase().includes(search.toLowerCase()) || td.notes.toLowerCase().includes(search.toLowerCase()))
+                .filter(td => todoFilter === 'All' || td.stage === todoFilter)
+                .map((td, i) => (
+                  <div key={i} style={{ background:C.card, border:'1px solid '+(td.stage === 'Completed' ? 'rgba(0,255,136,0.12)' : C.border), borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'flex-start', gap:'0.625rem' }}>
+                    <div style={{ display:'flex', flexDirection:'column', gap:'0.25rem', flexShrink:0, paddingTop:'1px' }}>
+                      <Badge label={td.stage} color={stageColor(td.stage)} />
+                      <Badge label={td.priority} color={priorityColor(td.priority)} />
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:'0.8rem', fontWeight:600, color: td.stage === 'Completed' ? C.muted : C.text, margin:0, textDecoration: td.stage === 'Completed' ? 'line-through' : 'none', opacity: td.stage === 'Completed' ? 0.7 : 1 }}>{td.name}</p>
+                      {td.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.2rem 0 0', lineHeight:1.5 }}>{td.notes}</p>}
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'0.35rem', flexShrink:0 }}>
+                      {td.target_date && <span style={{ fontSize:'0.62rem', color:C.muted, whiteSpace:'nowrap' }}>{td.target_date}</span>}
+                      <a href={td.notion_url} target="_blank" rel="noreferrer" style={lnk(C.red)}>
+                        <ExternalLink size={10} />
+                      </a>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Links */}
+        {activeTab === 'links' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <p style={{ fontSize:'0.7rem', color:C.muted, margin:'0 0 1rem' }}>{ETSY_LINKS.length} saved links from Notion</p>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+              {ETSY_LINKS.map((link, i) => (
+                <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem' }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:'0 0 0.2rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{link.name}</p>
+                    <p style={{ fontSize:'0.65rem', color:C.muted, margin:0 }}>Saved {link.created}</p>
+                  </div>
+                  <a href={link.url} target="_blank" rel="noreferrer" style={lnk(C.teal)}>
+                    <ExternalLink size={11} /> Open
+                  </a>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Batch */}
+        {activeTab === 'batch' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <SearchBar value={search} onChange={setSearch} placeholder="Search ideas, niches, seed keywords..." />
+            <p style={{ fontSize:'0.7rem', color:C.muted, margin:'-0.25rem 0 1rem' }}>
+              {BATCH_WORKFLOW.filter(item => !search || item.idea_theme.toLowerCase().includes(search.toLowerCase()) || item.seed_keyword.toLowerCase().includes(search.toLowerCase()) || item.niche.toLowerCase().includes(search.toLowerCase())).length} of {BATCH_WORKFLOW.length} batch items
+            </p>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+              {BATCH_WORKFLOW
+                .filter(item => !search || item.idea_theme.toLowerCase().includes(search.toLowerCase()) || item.seed_keyword.toLowerCase().includes(search.toLowerCase()) || item.niche.toLowerCase().includes(search.toLowerCase()))
+                .map((item, i) => (
+                  <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'flex-start', gap:'0.625rem' }}>
+                    <span style={{ fontSize:'0.6rem', color:C.muted, fontWeight:700, minWidth:'1.75rem', flexShrink:0, paddingTop:'2px' }}>#{item.id}</span>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:'0 0 0.3rem' }}>{item.idea_theme}</p>
+                      <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap', alignItems:'center' }}>
+                        {item.niche && <Badge label={item.niche} color={C.muted} />}
+                        <Badge label={item.batch_priority} color={priorityColor(item.batch_priority)} />
+                        {item.batch_stage && <Badge label={item.batch_stage} color={C.pink} />}
+                        {item.method && <Badge label={item.method} color={C.teal} />}
+                      </div>
+                      {item.seed_keyword && (
+                        <p style={{ fontSize:'0.67rem', color:C.sec, margin:'0.3rem 0 0' }}>Keyword: {item.seed_keyword}</p>
+                      )}
+                    </div>
+                    <a href={item.notion_url} target="_blank" rel="noreferrer" style={lnk(C.pink)}>
+                      <ExternalLink size={10} />
+                    </a>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+      </div>
+    </main>
+  )
+}
