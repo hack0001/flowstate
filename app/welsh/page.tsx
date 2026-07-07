@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, RotateCcw, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, RotateCcw, Plus, Trash2, CheckCircle2, SkipForward } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -243,7 +244,8 @@ const LAST_KEY   = 'flowstate_welsh_last'
 const CUSTOM_KEY = 'flowstate_welsh_custom'
 const TOTAL      = 10
 
-type Tab = 'quiz' | 'mutations' | 'mywords'
+type Tab = 'quiz' | 'mutations' | 'mywords' | 'todos'
+type TodoTask = { id: string; title: string }
 type Direction = 'en-cy' | 'cy-en'
 type Q = { word: string; answer: string; direction: Direction }
 type CustomWord = { en: string; cy: string }
@@ -285,6 +287,14 @@ export default function WelshPage() {
   const [newEn, setNewEn] = useState('')
   const [newCy, setNewCy] = useState('')
 
+  // Todos practice state
+  const [todoTasks,   setTodoTasks]   = useState<TodoTask[]>([])
+  const [todoLoading, setTodoLoading] = useState(false)
+  const [todoIdx,     setTodoIdx]     = useState(0)
+  const [todoCy,      setTodoCy]      = useState('')
+  const [todoSavedIds, setTodoSavedIds] = useState<Set<string>>(new Set())
+  const [todoFinished, setTodoFinished] = useState(false)
+
   useEffect(() => {
     try {
       setBest(Number(localStorage.getItem(BEST_KEY) ?? 0))
@@ -303,6 +313,23 @@ export default function WelshPage() {
   useEffect(() => {
     if (!result) inputRef.current?.focus()
   }, [result, current])
+
+  // Load todos when that tab is first opened
+  useEffect(() => {
+    if (tab !== 'todos' || todoTasks.length > 0 || todoLoading) return
+    setTodoLoading(true)
+    supabase
+      .from('master_tasks')
+      .select('id,title')
+      .eq('archived', false)
+      .neq('status', 'Done')
+      .order('created_at', { ascending: false })
+      .limit(25)
+      .then(({ data }) => {
+        setTodoTasks(data ?? [])
+        setTodoLoading(false)
+      })
+  }, [tab, todoTasks.length, todoLoading])
 
   const q      = questions[current]
   const isLast = current + 1 >= questions.length
@@ -361,6 +388,35 @@ export default function WelshPage() {
     try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(updated)) } catch {}
   }
 
+  function todoSaveAndNext() {
+    const task = todoTasks[todoIdx]
+    if (!task || !todoCy.trim()) return
+    // Save the pair to custom words
+    const already = customWords.some(w => w.en.toLowerCase() === task.title.toLowerCase())
+    if (!already) {
+      const updated = [...customWords, { en: task.title, cy: todoCy.trim() }]
+      setCustomWords(updated)
+      try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(updated)) } catch {}
+    }
+    setTodoSavedIds(prev => new Set([...prev, task.id]))
+    setTodoCy('')
+    if (todoIdx + 1 >= todoTasks.length) { setTodoFinished(true) }
+    else { setTodoIdx(i => i + 1) }
+  }
+
+  function todoSkip() {
+    setTodoCy('')
+    if (todoIdx + 1 >= todoTasks.length) { setTodoFinished(true) }
+    else { setTodoIdx(i => i + 1) }
+  }
+
+  function todoRestart() {
+    setTodoIdx(0)
+    setTodoCy('')
+    setTodoSavedIds(new Set())
+    setTodoFinished(false)
+  }
+
   if (!mounted) return (
     <div style={{ minHeight:'100vh', background:C.bg, display:'flex', alignItems:'center', justifyContent:'center' }}>
       <div style={{ width:'1.25rem', height:'1.25rem', borderRadius:'50%', border:'2px solid '+C.purple, borderTopColor:'transparent', animation:'spin 1s linear infinite' }}/>
@@ -385,18 +441,21 @@ export default function WelshPage() {
           </div>
 
           {/* Tabs */}
-          <div style={{ display:'flex', gap:'0' }}>
-            {(['quiz','mutations','mywords'] as Tab[]).map(t => (
+          <div style={{ display:'flex', gap:'0', overflowX:'auto' }}>
+            {(['quiz','mutations','mywords','todos'] as Tab[]).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 style={{
-                  padding:'0.6rem 1.25rem', background:'none', border:'none',
+                  padding:'0.6rem 1.1rem', background:'none', border:'none',
                   borderBottom: t === tab ? '2px solid '+C.purple : '2px solid transparent',
                   color: t === tab ? C.purple : C.muted,
-                  fontWeight: t === tab ? 700 : 500, fontSize:'0.82rem',
+                  fontWeight: t === tab ? 700 : 500, fontSize:'0.8rem',
                   cursor:'pointer', fontFamily:'inherit', transition:'all 0.15s',
-                  textTransform:'capitalize',
+                  whiteSpace:'nowrap', flexShrink:0,
                 }}>
-                {t === 'mywords' ? 'My Words' + (customWords.length > 0 ? ' ('+customWords.length+')' : '') : t === 'mutations' ? 'Mutations' : 'Quiz'}
+                {t === 'mywords' ? 'My Words' + (customWords.length > 0 ? ' ('+customWords.length+')' : '')
+                  : t === 'mutations' ? 'Mutations'
+                  : t === 'todos' ? 'Todos'
+                  : 'Quiz'}
               </button>
             ))}
           </div>
@@ -632,10 +691,134 @@ export default function WelshPage() {
           </div>
         )}
 
+        {/* ---- TODOS TAB ---- */}
+        {tab === 'todos' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <div style={{ textAlign:'center', marginBottom:'2rem' }}>
+              <h1 style={{ fontSize:'1.4rem', fontWeight:900, margin:'0 0 0.3rem', letterSpacing:'-0.02em' }}>Translate Your Todos</h1>
+              <p style={{ fontSize:'0.82rem', color:C.sec, margin:0 }}>Write the Welsh for each task — saved pairs go into your quiz pool</p>
+            </div>
+
+            {todoLoading && (
+              <div style={{ textAlign:'center', padding:'3rem', color:C.muted, display:'flex', flexDirection:'column', alignItems:'center', gap:'0.75rem' }}>
+                <div style={{ width:'1.25rem', height:'1.25rem', borderRadius:'50%', border:'2px solid '+C.purple, borderTopColor:'transparent', animation:'spin 1s linear infinite' }}/>
+                Loading tasks...
+              </div>
+            )}
+
+            {!todoLoading && todoTasks.length === 0 && (
+              <div style={{ textAlign:'center', padding:'3rem', color:C.muted, fontSize:'0.875rem' }}>
+                No incomplete tasks found.
+              </div>
+            )}
+
+            {!todoLoading && todoTasks.length > 0 && todoFinished && (
+              <div style={{ textAlign:'center', animation:'fadeInUp 0.4s ease both' }}>
+                <div style={{ fontSize:'2.5rem', marginBottom:'0.75rem' }}>&#127988;&#917607;&#917602;&#917623;&#917612;&#917619;&#917631;</div>
+                <h2 style={{ fontSize:'1.4rem', fontWeight:900, color:C.text, margin:'0 0 0.4rem', letterSpacing:'-0.02em' }}>
+                  Da iawn! (Well done!)
+                </h2>
+                <p style={{ fontSize:'0.85rem', color:C.sec, margin:'0 0 0.5rem' }}>
+                  {todoSavedIds.size > 0
+                    ? todoSavedIds.size + ' Welsh pair' + (todoSavedIds.size !== 1 ? 's' : '') + ' saved to your quiz pool'
+                    : 'No pairs saved this round'}
+                </p>
+                <div style={{ display:'flex', gap:'0.75rem', justifyContent:'center', marginTop:'1.5rem', flexWrap:'wrap' }}>
+                  <button onClick={todoRestart}
+                    style={{ display:'inline-flex', alignItems:'center', gap:'0.4rem', padding:'0.75rem 1.5rem', background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.875rem', color:C.purple, fontWeight:700, fontSize:'0.875rem', cursor:'pointer', fontFamily:'inherit' }}>
+                    <RotateCcw size={13}/> Go again
+                  </button>
+                  {todoSavedIds.size > 0 && (
+                    <button onClick={() => { restart(); setTab('quiz') }}
+                      style={{ display:'inline-flex', alignItems:'center', gap:'0.4rem', padding:'0.75rem 1.5rem', background:'linear-gradient(135deg,'+C.purple+',#6d28d9)', border:'none', borderRadius:'0.875rem', color:'#fff', fontWeight:700, fontSize:'0.875rem', cursor:'pointer', fontFamily:'inherit' }}>
+                      Start quiz &#8594;
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {!todoLoading && todoTasks.length > 0 && !todoFinished && (() => {
+              const task = todoTasks[todoIdx]
+              const alreadySaved = todoSavedIds.has(task.id)
+              const alreadyInPool = customWords.some(w => w.en.toLowerCase() === task.title.toLowerCase())
+              return (
+                <div>
+                  {/* Progress */}
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.4rem' }}>
+                    <span style={{ fontSize:'0.68rem', color:C.muted, fontWeight:700 }}>Task {todoIdx + 1} of {todoTasks.length}</span>
+                    {todoSavedIds.size > 0 && (
+                      <span style={{ fontSize:'0.68rem', color:C.green, fontWeight:700 }}>{todoSavedIds.size} saved</span>
+                    )}
+                  </div>
+                  <div style={{ height:'3px', background:'#2a2a3a', borderRadius:'2px', marginBottom:'1.75rem', overflow:'hidden' }}>
+                    <div style={{ height:'100%', background:'linear-gradient(90deg,'+C.purple+','+C.cyan+')', width:((todoIdx / todoTasks.length) * 100) + '%', transition:'width 0.3s', borderRadius:'2px' }}/>
+                  </div>
+
+                  {/* Card */}
+                  <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1.25rem', padding:'2rem 1.75rem', marginBottom:'1.25rem' }}>
+                    <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.875rem', textAlign:'center' }}>
+                      How do you say this in Welsh?
+                    </p>
+                    <p style={{ fontSize:'1.35rem', fontWeight:800, color:C.text, margin:'0 0 1.5rem', lineHeight:1.35, textAlign:'center', letterSpacing:'-0.01em' }}>
+                      {task.title}
+                    </p>
+                    {alreadyInPool ? (
+                      <div style={{ textAlign:'center', padding:'0.75rem', background:'rgba(0,255,136,0.06)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'0.75rem' }}>
+                        <p style={{ fontSize:'0.78rem', color:C.green, margin:0, fontWeight:700 }}>
+                          <CheckCircle2 size={12} style={{ verticalAlign:'middle', marginRight:'0.3rem' }}/>
+                          Already in your quiz pool
+                        </p>
+                      </div>
+                    ) : (
+                      <input
+                        value={todoCy}
+                        onChange={e => setTodoCy(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && todoCy.trim()) todoSaveAndNext() }}
+                        placeholder="Type your Welsh translation..."
+                        autoFocus
+                        style={{
+                          width:'100%', padding:'0.875rem 1rem', boxSizing:'border-box',
+                          background:C.surface, border:'1px solid '+C.border,
+                          borderRadius:'0.875rem', color:C.text, fontFamily:'inherit', fontSize:'1rem',
+                          textAlign:'center', outline:'none', transition:'border-color 0.2s',
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  {/* Action buttons */}
+                  <div style={{ display:'flex', gap:'0.625rem' }}>
+                    <button onClick={todoSkip}
+                      style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.875rem 1.25rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.875rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontWeight:600, fontSize:'0.85rem', flexShrink:0 }}>
+                      <SkipForward size={13}/> Skip
+                    </button>
+                    {alreadyInPool ? (
+                      <button onClick={todoSkip}
+                        style={{ flex:1, padding:'0.875rem', background:'linear-gradient(135deg,'+C.purple+',#6d28d9)', border:'none', borderRadius:'0.875rem', color:'#fff', cursor:'pointer', fontFamily:'inherit', fontWeight:800, fontSize:'0.9rem' }}>
+                        Next &#8594;
+                      </button>
+                    ) : (
+                      <button onClick={todoSaveAndNext} disabled={!todoCy.trim()}
+                        style={{ flex:1, padding:'0.875rem', background:todoCy.trim() ? 'linear-gradient(135deg,'+C.green+',#00cc6a)' : C.card, border:'none', borderRadius:'0.875rem', color:todoCy.trim() ? '#000' : C.muted, cursor:todoCy.trim() ? 'pointer' : 'default', fontFamily:'inherit', fontWeight:800, fontSize:'0.9rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.4rem', transition:'all 0.2s' }}>
+                        <CheckCircle2 size={15}/> Save &amp; Next
+                      </button>
+                    )}
+                  </div>
+                  <p style={{ textAlign:'center', fontSize:'0.68rem', color:C.muted, marginTop:'0.75rem' }}>
+                    Saved pairs are added to your custom quiz pool and appear in the quiz tab
+                  </p>
+                </div>
+              )
+            })()}
+          </div>
+        )}
+
       </div>
 
       <style>{`
         @keyframes fadeInUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes spin { to { transform:rotate(360deg) } }
         input:focus { border-color: #8b5cf6 !important; }
         button:hover { opacity:0.85; }
       `}</style>
