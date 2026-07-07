@@ -9,13 +9,13 @@ const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
   orange:'#f97316', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6',
   red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-  teal:'#14b8a6', pink:'#ec4899',
+  teal:'#14b8a6', pink:'#ec4899', blue:'#60a5fa',
 }
 
-type Tab = 'checklists' | 'sops' | 'notes' | 'pipeline' | 'todos' | 'links' | 'batch'
+type Tab = 'framework' | 'checklists' | 'sops' | 'notes' | 'pipeline' | 'todos' | 'links' | 'batch'
 
 const tabColor: Record<Tab, string> = {
-  checklists: C.orange, sops: C.amber, notes: C.purple,
+  framework: C.blue, checklists: C.orange, sops: C.amber, notes: C.purple,
   pipeline: C.green, todos: C.red, links: C.teal, batch: C.pink,
 }
 
@@ -143,6 +143,61 @@ const SECTIONS: Section[] = [
       { id:'cs3', label:'Package insert: thank you + discount for next order + IG tag CTA', note:'Many buyers tag your shop on IG, giving free exposure to their followers' },
       { id:'cs4', label:'Review requests sent to recent deliveries (ask once, directly)', note:'Most people will not review without being asked. Send to delivered orders via messages.' },
       { id:'cs5', label:'Update dispatch date BEFORE deadline if order is running late', note:'Missing dispatch date = automatic Star Seller loss. Negative reviews: resolve privately first.' },
+    ]
+  },
+  {
+    id:'listing_photos', title:'Listing Photos (Detailed)', emoji:'&#128247;',
+    items:[
+      { id:'lp1', label:'Main photo viewable at 4:3 ratio (2700x2025px) AND square (2000x2000px min)', note:'Etsy shows different ratios in different views - both must look correct' },
+      { id:'lp2', label:'Design fully readable when thumbnail is very small (mobile grid size ~120px)', note:'Open Etsy on mobile and verify - the buyer must read the design from the list view' },
+      { id:'lp3', label:'Main photo high resolution - minimum 2000px on shortest side, not blurry', note:'Low resolution looks unprofessional and kills buyer trust instantly' },
+      { id:'lp4', label:'Full product visible in main photo - not so zoomed in you cannot see it is a t-shirt', note:'Buyer must understand what the product is from the very first image' },
+      { id:'lp5', label:'No placeholder text on customised items - show a real example design instead', note:'Against Etsy TOS since policy update - must show a real custom example' },
+      { id:'lp6', label:'Mockup for every colour variant offered in the listing', note:'Buyers rarely purchase colours they cannot see in a mockup photo' },
+      { id:'lp7', label:'Colours clearly labelled OR photos linked to match each variation to its picture', note:'Avoids complaints and wrong-colour orders' },
+      { id:'lp8', label:'Model or item facing forward in first mockup so full design is easy to see', note:'First photo must clearly show what you sell and what the design says' },
+      { id:'lp9', label:'Design rotated to match shirt direction if necessary - mockup looks fully realistic', note:'Unrealistic mockups reduce conversion and increase returns and disputes' },
+      { id:'lp10', label:'Photos look realistic - no hair blocking design, no wrinkles, design fits on product', note:'If design runs off the edge it looks like a print error and deters buyers' },
+      { id:'lp11', label:'Photos consistent in product placement sizing across all mockups in listing', note:'Inconsistent sizing looks unprofessional and creates confusion between colours' },
+      { id:'lp12', label:'First mockup photo is NOT AI-generated - must be real exact model mockup', note:'Etsy TOS: main image must accurately represent the exact product sold' },
+      { id:'lp13', label:'Size guide or chart included in listing photos', note:'Reduces size-related customer service questions, complaints and returns' },
+      { id:'lp14', label:'Trust info highlighted in photos: fit guide, guarantee, sustainability, best review', note:'Stand out from competition and make buyers decision easier' },
+      { id:'lp15', label:'All photo cards match branding with clear, easy-to-read fonts', note:'Consistent branding increases trust and makes your shop memorable' },
+      { id:'lp16', label:'Video (if included) is of the exact design being sold - not size charts or other products', note:'Video auto-plays on hover in Etsy search - must feature that exact listing item' },
+    ]
+  },
+  {
+    id:'listing_seo', title:'Listing SEO (Detailed)', emoji:'&#128269;',
+    items:[
+      { id:'ls1', label:'Keywords do not violate trademarks - verify every text phrase on USPTO before publishing', note:'Even image and design can violate - not just title/tags. Store shutdowns happen.' },
+      { id:'ls2', label:'First keyword in title = most accurate description of the product (e.g. Custom Vintage Mama Tshirt)', note:'This is your most important keyword and signals relevance to Etsy algorithm' },
+      { id:'ls3', label:'Rest of title filled with alternative PHRASES someone may actually type in Etsy search bar', note:'Accounts for every possible way a buyer might search for a product like yours' },
+      { id:'ls4', label:'Title does NOT include vague keyphrases like "gift for her" or "girls shirt"', note:'These waste character space and are not likely to result in sales' },
+      { id:'ls5', label:'Title phrases separated by commas for readability', note:'Etsy Seller Handbook recommends commas over stuffing all keywords together' },
+      { id:'ls6', label:'At least one "gift" keyphrase in title matched to your niche', note:'"Gift" is one of the highest-volume search terms on Etsy - pair it with niche' },
+      { id:'ls7', label:'Keyphrases in title are NOT single words only - must be descriptive phrases', note:'Single words like "shirt" or "gift" are highly saturated and not descriptive' },
+      { id:'ls8', label:'Relevant attributes fully utilised - size, style, occasion, holiday, colour, neckline', note:'Etsy attributes count as additional tags - filling them out is free SEO' },
+      { id:'ls9', label:'Alt text entered on main photo describing what the image shows', note:'Etsy Seller Handbook states alt text helps both Etsy SEO and external Google SEO' },
+      { id:'ls10', label:'First 2 description sentences are keyword-rich - NOT the title copy-pasted', note:'Top of description is indexed for SEO. Etsy Handbook explicitly says do not paste title.' },
+      { id:'ls11', label:'After keyword sentences, rest of description is point-form with clear headings', note:'Buyers cannot find information in giant paragraphs of unbroken text' },
+      { id:'ls12', label:'All 13 tags used - no empty slots', note:'Unused tags = missed searches. Every slot is a potential sale opportunity.' },
+      { id:'ls13', label:'Most relevant keyphrases appear in BOTH title AND tags', note:'Etsy Seller Handbook: appearing in both signals stronger relevance to the algorithm' },
+      { id:'ls14', label:'Tags are multi-word phrases - not single words', note:'Descriptive keyphrases cover real buyer searches; single words are too vague to convert' },
+      { id:'ls15', label:'Tags do NOT duplicate attributes - attributes already count as tags', note:'Repeating attributes in tags wastes your 13 available tag slots' },
+    ]
+  },
+  {
+    id:'printify_config', title:'Printify and Shop Config', emoji:'&#128230;',
+    items:[
+      { id:'pc1', label:'Printify account linked to the correct Etsy store', note:'Printify &gt; Sales Channels &gt; Selection - verify the right shop is connected' },
+      { id:'pc2', label:'Etsy production partner set up in account: SwiftPod or Duplium selected on all listings', note:'Must disclose production partner on every listing to avoid Etsy shutdown' },
+      { id:'pc3', label:'Order routing turned OFF in Printify settings', note:'Order routing has caused fulfilment issues in the past - manually choose supplier' },
+      { id:'pc4', label:'Order approval window set to 24 hours in Printify settings', note:'Gives time to edit or cancel orders before they automatically go into production' },
+      { id:'pc5', label:'Delayed orders set to auto-send to production when item comes back in stock', note:'Ensures fulfilment resumes automatically if a variant was temporarily out of stock' },
+      { id:'pc6', label:'Package inserts turned ON in Printify branding settings', note:'Use inserts for thank you message, discount code, and Instagram tag CTA' },
+      { id:'pc7', label:'Gift messages enabled in Printify if your supplier supports printing them', note:'Required setting to automate gift message fulfilment through Printify' },
+      { id:'pc8', label:'Printify Premium enabled when monthly sales exceed $145 USD', note:'Past $145/month premium subscription saves more than it costs - code "cuonline" for free trial' },
+      { id:'pc9', label:'Etsy: sold listings hidden; auto translation ON; gift notes option turned on', note:'Hidden sales deters competitors from copying winners. Translation reaches global buyers.' },
     ]
   },
 ]
@@ -328,6 +383,39 @@ function SOPCard({ sop }: { sop:SOP }) {
   )
 }
 
+// ---- Framework ----
+const PHASE_RULES = [
+  'Buyer profile: Christian women - apparel only',
+  'Products: t-shirts and sweatshirts only in Phase 1',
+  'Designs: simple typography only - no florals, illustrations, embroidery, or mugs',
+  'Goal: reach 1,000 active listings as quickly as possible using a template system',
+  'Listing speed target: 15-20 minutes per listing at scale once templates are built',
+]
+
+const TIME_BLOCK_RULES = [
+  'Do not task switch during sessions - batch by task type',
+  'Research day, design day, upload day - never mix all three in one session',
+  'Set up a recurring calendar with fixed task blocks for each phase',
+  'Take action every single day - consistency compounds more than bursts',
+]
+
+const STRATEGY_RULES = [
+  '70% evergreen niches - content that sells year-round (nurse shirts, teacher gifts)',
+  '30% trends and holidays - seasonal spikes planned 6-8 weeks in advance',
+  'Target 25 new listings per week as the primary growth velocity goal',
+  '10k/month revenue requires approx. 333,000 monthly views at 3% CVR',
+  'Double-down strategy: if a design sells, make 5-10 variations immediately',
+  'Cross-niche method: take what works in one niche and apply it to another niche',
+]
+
+const WORKFLOW_PHASES: { num:string; title:string; color:string; tasks:string[] }[] = [
+  { num:'01', title:'Research &amp; Validate', color:'#8b5cf6', tasks:['Everbee/Erank niche research','Validate search volume + competition','Confirm buyer demand before designing'] },
+  { num:'02', title:'Ideas &amp; Keywords', color:'#ffb800', tasks:['Alek / Cassiy / Simply POD methods','ChatGPT phrase generation','Seasonal trend planning'] },
+  { num:'03', title:'Design &amp; Export', color:'#f97316', tasks:['Canva / Kittl / Midjourney','4500x5100px transparent PNG','8-15 variations per theme'] },
+  { num:'04', title:'Upload &amp; Publish', color:'#00ff88', tasks:['Prelist for titles + tags','Printify for product setup','Vela for mockup assignment'] },
+  { num:'05', title:'Market &amp; Optimise', color:'#14b8a6', tasks:['Guarantee slides in photos','Run 25% off for 5 days','Review requests on delivery'] },
+]
+
 export default function EtsyPage() {
   const router = useRouter()
   const { t } = useLanguage()
@@ -373,6 +461,7 @@ export default function EtsyPage() {
   const pct = Math.round(totalDone / totalItems * 100)
 
   const tabs: { key: Tab; label: string }[] = [
+    { key:'framework', label:'Framework' },
     { key:'checklists', label: t('checklists') },
     { key:'sops', label: t('productionSOPs') },
     { key:'notes', label:'Notes' },
@@ -435,6 +524,67 @@ export default function EtsyPage() {
 
       {/* Content */}
       <div style={{ maxWidth:'960px', margin:'0 auto', padding:'2rem', opacity: mounted ? 1 : 0, transition:'opacity 0.3s ease' }}>
+
+        {/* Framework */}
+        {activeTab === 'framework' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            {/* Phase 1 Rules */}
+            <div style={{ background:'rgba(96,165,250,0.06)', border:'1px solid rgba(96,165,250,0.2)', borderRadius:'1rem', padding:'1.25rem', marginBottom:'1rem' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.75rem' }}>
+                <span dangerouslySetInnerHTML={{ __html:'&#128204;' }} />
+                <h2 style={{ fontSize:'0.75rem', fontWeight:800, color:C.blue, margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Phase 1 Rules</h2>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.3rem' }}>
+                {PHASE_RULES.map((rule, i) => (
+                  <div key={i} style={{ display:'flex', gap:'0.5rem', alignItems:'flex-start' }}>
+                    <span style={{ color:C.blue, fontSize:'0.65rem', marginTop:'0.15rem', flexShrink:0 }}>&#8227;</span>
+                    <p style={{ fontSize:'0.8rem', color:C.sec, margin:0, lineHeight:1.5 }}>{rule}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Time Block + Strategy grid */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem', marginBottom:'1rem' }}>
+              <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', padding:'1rem' }}>
+                <p style={{ fontSize:'0.72rem', fontWeight:700, color:C.amber, margin:'0 0 0.6rem', textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>Time Block</p>
+                {TIME_BLOCK_RULES.map((item, i) => (
+                  <div key={i} style={{ display:'flex', gap:'0.4rem', marginBottom:'0.35rem' }}>
+                    <span style={{ color:C.amber, fontSize:'0.7rem', marginTop:'0.1rem', flexShrink:0 }}>&#8594;</span>
+                    <p style={{ fontSize:'0.72rem', color:C.muted, margin:0, lineHeight:1.5 }}>{item}</p>
+                  </div>
+                ))}
+              </div>
+              <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', padding:'1rem' }}>
+                <p style={{ fontSize:'0.72rem', fontWeight:700, color:C.green, margin:'0 0 0.6rem', textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>Strategy</p>
+                {STRATEGY_RULES.map((item, i) => (
+                  <div key={i} style={{ display:'flex', gap:'0.4rem', marginBottom:'0.35rem' }}>
+                    <span style={{ color:C.green, fontSize:'0.7rem', marginTop:'0.1rem', flexShrink:0 }}>&#8594;</span>
+                    <p style={{ fontSize:'0.72rem', color:C.muted, margin:0, lineHeight:1.5 }}>{item}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Workflow Phases */}
+            <p style={{ fontSize:'0.7rem', fontWeight:700, color:C.muted, letterSpacing:'0.07em', textTransform:'uppercase' as const, margin:'0 0 0.75rem' }}>Workflow Phases</p>
+            <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.5rem' }}>
+              {WORKFLOW_PHASES.map(phase => (
+                <div key={phase.num} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', padding:'0.875rem 1rem', display:'flex', gap:'0.875rem', alignItems:'flex-start' }}>
+                  <div style={{ width:'2.1rem', height:'2.1rem', borderRadius:'50%', background:phase.color+'18', border:'1.5px solid '+phase.color+'44', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <span style={{ fontSize:'0.6rem', fontWeight:800, color:phase.color }}>{phase.num}</span>
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ fontSize:'0.82rem', fontWeight:700, color:C.text, margin:'0 0 0.35rem' }} dangerouslySetInnerHTML={{ __html: phase.title }} />
+                    <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap' as const }}>
+                      {phase.tasks.map((task, ti) => (
+                        <span key={ti} style={{ fontSize:'0.65rem', color:C.muted, background:phase.color+'0e', border:'1px solid '+phase.color+'22', borderRadius:'0.3rem', padding:'0.1rem 0.4rem' }}>{task}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Checklists */}
         {activeTab === 'checklists' && (
