@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ShoppingBag, CheckCircle, Circle, RotateCcw, ChevronDown, ExternalLink, Search } from 'lucide-react'
+import { ShoppingBag, CheckCircle, Circle, RotateCcw, ChevronDown, ExternalLink, Search, BookOpen } from 'lucide-react'
 import { useLanguage } from '@/context/LanguageContext'
 import { ETSY_NOTES, SOFTWARE_PIPELINE, ETSY_TODOS, ETSY_LINKS, BATCH_WORKFLOW } from '@/lib/etsy-data'
 
@@ -500,6 +500,12 @@ export default function EtsyPage() {
             &#8592; {t('back')}
           </button>
           <div style={{ flex:1 }} />
+          <button
+            onClick={() => router.push('/etsy/knowledge')}
+            style={{ display:'flex', alignItems:'center', gap:'0.4rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.blue, cursor:'pointer', padding:'0.35rem 0.75rem', fontSize:'0.75rem', fontWeight:600, fontFamily:'inherit' }}
+          >
+            <BookOpen size={13} /> Knowledge Base
+          </button>
           <ShoppingBag size={18} color={C.orange} />
           <span style={{ fontSize:'0.72rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.orange }}>Etsy</span>
         </div>
