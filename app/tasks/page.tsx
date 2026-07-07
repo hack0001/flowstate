@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Search, X, CheckSquare, Download } from 'lucide-react'
+import { ChevronLeft, Search, X, CheckSquare, Download, Plus, Edit3, Trash2, ExternalLink, Zap, TrendingUp, ChevronDown } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -23,15 +23,40 @@ const STATUS_META: Record<string, { color: string; bg: string }> = {
   'In progress': { color:'#00d4ff', bg:'rgba(0,212,255,0.1)' },
   'Done':        { color:'#00ff88', bg:'rgba(0,255,136,0.1)' },
 }
+const STATUS_CYCLE: Record<string, string> = {
+  'Not started': 'In progress',
+  'In progress': 'Done',
+  'Done': 'Not started',
+}
 
 const TYPES    = ['All', 'Flow', 'Personal', 'Admin', 'Quick Task', 'Recurring']
 const STATUSES = ['All', 'Not started', 'In progress', 'Done']
+const TASK_TYPES = ['Flow', 'Personal', 'Admin', 'Quick Task', 'Recurring']
+const URGENCY_OPTS = ['', 'Urgent', 'Not Urgent']
+const IMPORTANCE_OPTS = ['', 'Moved the Needle', 'Important', 'Not Important']
+const PRIORITY_OPTS = ['', 'High', 'Medium', 'Low']
+const TIME_OPTS = ['', 'Quick (< 15 min)', 'Short (15–30 min)', 'Medium (30–60 min)', 'Long (1–2 hrs)', 'Deep (2+ hrs)']
 const SORTS = [
   { key: 'created_at_desc', label: 'Newest first' },
   { key: 'created_at_asc',  label: 'Oldest first' },
   { key: 'deadline_asc',    label: 'Deadline (soonest)' },
   { key: 'task_type',       label: 'Category' },
   { key: 'urgency',         label: 'Urgency first' },
+]
+
+const MARGINAL_GAINS = [
+  { icon:'&#128693;', title:'Change your lycra', detail:'British Cycling switched to a thinner, lighter lycra suit — 0.1% faster. The aggregation of hundreds of changes like this won them 8 Olympic golds in 4 years.' },
+  { icon:'&#128295;', title:'Prepare your workspace before you sit', detail:'Spend 2 minutes clearing your desk and opening only the tabs you need. The friction-free start adds up to 20+ extra focused minutes per day.' },
+  { icon:'&#128169;', title:'Eat the frog before coffee', detail:'Mark your hardest task as a Frog and do it first — before email, before Slack, before anything. David Goins: the hardest action first is the identity of elite performers.' },
+  { icon:'&#128200;', title:'Write the outcome, not the action', detail:'"Email John about project" fails. "Get sign-off from John on Phase 2 brief" wins. Specific task language = specific mental clarity = faster execution.' },
+  { icon:'&#9749;', title:'Make the next action frictionless', detail:'Fill the kettle the night before. Set your running shoes by the door. The 1% habit trick: reduce activation energy to near zero for the behaviours you want.' },
+  { icon:'&#128337;', title:'Use a 25-minute commitment, not a to-do', detail:'Replace "work on report" with "write 3 paragraphs in the next 25 minutes." Time-boxing a task converts intention into action 73% more often.' },
+  { icon:'&#128064;', title:'Close every tab before switching tasks', detail:'Context switching costs 23 minutes of focus recovery per interruption. Closing all tabs before starting a new task is the single highest-leverage focus habit.' },
+  { icon:'&#128203;', title:'Review your tasks the night before', detail:'James Clear: decisions made at night are made by a well-rested brain. Writing tomorrow\'s 3 priorities takes 3 minutes and removes all morning friction.' },
+  { icon:'&#128170;', title:'Anchor habits to existing triggers', detail:'Atomic Habits: habit stacking. "After I close my laptop, I do 5 pull-ups." The existing behaviour becomes the trigger. No willpower required.' },
+  { icon:'&#127968;', title:'Optimise your sleep position', detail:'British Cycling hired a sleep coach. Better pillows, darker rooms, consistent bed times. Sleep improvement alone produced measurable performance gains within 2 weeks.' },
+  { icon:'&#128336;', title:'Single-task the first 90 minutes', detail:'Your brain is in peak cognitive state within 90 minutes of waking. No meetings, no email, no Slack in this window. Guard it like it is your most valuable asset.' },
+  { icon:'&#128640;', title:'Take Action within 5 seconds', detail:'Mel Robbins: if you have an impulse to act on a goal, you must physically move within 5 seconds or your brain will kill the idea. Count 5-4-3-2-1 and go.' },
 ]
 
 type Task = {
@@ -51,10 +76,56 @@ type Task = {
   created_at: string
 }
 
-function StatusBadge({ status }: { status: string }) {
+type DraftTask = {
+  id?: string
+  title: string
+  status: string
+  task_type: string
+  urgency: string
+  importance: string
+  time_commitment: string
+  due_date: string
+  priority: string
+  is_frog: boolean
+  notion_url: string
+}
+
+const EMPTY_DRAFT: DraftTask = {
+  title: '', status: 'Not started', task_type: '', urgency: '',
+  importance: '', time_commitment: '', due_date: '', priority: '',
+  is_frog: false, notion_url: '',
+}
+
+function taskToDraft(t: Task): DraftTask {
+  return {
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    task_type: t.task_type ?? '',
+    urgency: t.urgency ?? '',
+    importance: t.importance ?? '',
+    time_commitment: t.time_commitment ?? '',
+    due_date: t.due_date ?? '',
+    priority: t.priority ?? '',
+    is_frog: t.is_frog,
+    notion_url: t.notion_url ?? '',
+  }
+}
+
+function StatusBadge({ status, onClick }: { status: string; onClick?: (e: React.MouseEvent) => void }) {
   const m = STATUS_META[status] ?? STATUS_META['Not started']
   return (
-    <span style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:m.color, background:m.bg, border:'1px solid '+m.color+'40', borderRadius:'9999px', padding:'0.12rem 0.45rem' }}>
+    <span
+      onClick={onClick}
+      title={onClick ? 'Click to cycle status' : undefined}
+      style={{
+        fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' as const,
+        color:m.color, background:m.bg, border:'1px solid '+m.color+'40',
+        borderRadius:'9999px', padding:'0.12rem 0.45rem',
+        cursor: onClick ? 'pointer' : 'default',
+        userSelect:'none' as const,
+      }}
+    >
       {status}
     </span>
   )
@@ -64,7 +135,11 @@ function TypeBadge({ type }: { type: string | null }) {
   if (!type) return null
   const m = TYPE_META[type] ?? { color: C.muted }
   return (
-    <span style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:m.color, background:m.color+'18', border:'1px solid '+m.color+'40', borderRadius:'9999px', padding:'0.12rem 0.45rem' }}>
+    <span style={{
+      fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' as const,
+      color:m.color, background:m.color+'18', border:'1px solid '+m.color+'40',
+      borderRadius:'9999px', padding:'0.12rem 0.45rem',
+    }}>
       {type}
     </span>
   )
@@ -86,6 +161,192 @@ function sortTasks(tasks: Task[], sort: string): Task[] {
   })
 }
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: '1rem' }}>
+      <label style={{ display:'block', fontSize:'0.7rem', fontWeight:700, color:C.sec, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.4rem' }}>
+        {label}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+const inputStyle: React.CSSProperties = {
+  width:'100%', padding:'0.55rem 0.75rem', background:C.surface, border:'1px solid '+C.border,
+  borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.85rem', outline:'none',
+  boxSizing:'border-box',
+}
+const selectStyle: React.CSSProperties = { ...inputStyle, cursor:'pointer', appearance:'none' as const }
+
+function TaskDrawer({
+  draft, setDraft, onSave, onClose, saving,
+}: {
+  draft: DraftTask
+  setDraft: (d: DraftTask) => void
+  onSave: () => void
+  onClose: () => void
+  saving: boolean
+}) {
+  const set = (k: keyof DraftTask, v: string | boolean) => setDraft({ ...draft, [k]: v })
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:100 }} />
+      {/* Panel */}
+      <div style={{
+        position:'fixed', top:0, right:0, bottom:0, width:'min(480px,100vw)',
+        background:C.surface, borderLeft:'1px solid '+C.border,
+        zIndex:101, display:'flex', flexDirection:'column', overflowY:'auto',
+      }}>
+        {/* Header */}
+        <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid '+C.border, display:'flex', alignItems:'center', gap:'0.75rem', flexShrink:0 }}>
+          <h2 style={{ margin:0, fontSize:'1rem', fontWeight:800, flex:1 }}>
+            {draft.id ? 'Edit Task' : 'New Task'}
+          </h2>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', padding:'0.25rem' }}>
+            <X size={18}/>
+          </button>
+        </div>
+
+        {/* Take Action prompt — new tasks only */}
+        {!draft.id && (
+          <div style={{ padding:'0.75rem 1.5rem', background:'rgba(255,107,0,0.06)', borderBottom:'1px solid rgba(255,107,0,0.15)' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.25rem' }}>
+              <Zap size={13} color='#ff6b00'/>
+              <span style={{ fontSize:'0.72rem', fontWeight:800, color:'#ff6b00', letterSpacing:'0.04em', textTransform:'uppercase' as const }}>Take Action Immediately</span>
+            </div>
+            <p style={{ fontSize:'0.75rem', color:C.sec, margin:0, lineHeight:1.5 }}>
+              People who achieve success do the hard things first. Do not plan to do this — schedule it now.
+            </p>
+          </div>
+        )}
+
+        {/* Form */}
+        <div style={{ padding:'1.25rem 1.5rem', flex:1 }}>
+          <Field label="Title *">
+            <input
+              autoFocus
+              value={draft.title}
+              onChange={e => set('title', e.target.value)}
+              placeholder="e.g. Do 5 pull-ups when I close my laptop at my desk"
+              style={inputStyle}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) onSave() }}
+            />
+          </Field>
+          {/* Specificity hint */}
+          {!draft.id && (
+            <div style={{ marginTop:'-0.65rem', marginBottom:'1rem', padding:'0.6rem 0.75rem', background:'rgba(255,184,0,0.06)', border:'1px solid rgba(255,184,0,0.18)', borderRadius:'0.5rem' }}>
+              <p style={{ fontSize:'0.72rem', color:C.amber, margin:0, lineHeight:1.5 }}>
+                <strong>Be specific and actionable.</strong> Bad: &#34;Exercise&#34; &#8594; Good: &#34;Do 5 pull-ups when I close my laptop and I&#39;m next to my desk&#34;
+              </p>
+            </div>
+          )}
+
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
+            <Field label="Status">
+              <select value={draft.status} onChange={e => set('status', e.target.value)} style={selectStyle}>
+                {['Not started','In progress','Done'].map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </Field>
+            <Field label="Type">
+              <select value={draft.task_type} onChange={e => set('task_type', e.target.value)} style={selectStyle}>
+                <option value="">None</option>
+                {TASK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+          </div>
+
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
+            <Field label="Urgency">
+              <select value={draft.urgency} onChange={e => set('urgency', e.target.value)} style={selectStyle}>
+                {URGENCY_OPTS.map(o => <option key={o} value={o}>{o || 'None'}</option>)}
+              </select>
+            </Field>
+            <Field label="Priority">
+              <select value={draft.priority} onChange={e => set('priority', e.target.value)} style={selectStyle}>
+                {PRIORITY_OPTS.map(o => <option key={o} value={o}>{o || 'None'}</option>)}
+              </select>
+            </Field>
+          </div>
+
+          <Field label="Importance">
+            <select value={draft.importance} onChange={e => set('importance', e.target.value)} style={selectStyle}>
+              {IMPORTANCE_OPTS.map(o => <option key={o} value={o}>{o || 'None'}</option>)}
+            </select>
+          </Field>
+
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
+            <Field label="Time Commitment">
+              <select value={draft.time_commitment} onChange={e => set('time_commitment', e.target.value)} style={selectStyle}>
+                {TIME_OPTS.map(o => <option key={o} value={o}>{o || 'None'}</option>)}
+              </select>
+            </Field>
+            <Field label="Due Date">
+              <input
+                type="date"
+                value={draft.due_date}
+                onChange={e => set('due_date', e.target.value)}
+                style={{ ...inputStyle, colorScheme:'dark' }}
+              />
+            </Field>
+          </div>
+
+          <Field label="Notion URL">
+            <input
+              value={draft.notion_url}
+              onChange={e => set('notion_url', e.target.value)}
+              placeholder="https://notion.so/..."
+              style={inputStyle}
+            />
+          </Field>
+
+          {/* Frog toggle */}
+          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem', background:C.card, borderRadius:'0.75rem', marginBottom:'1rem', cursor:'pointer' }}
+            onClick={() => set('is_frog', !draft.is_frog)}>
+            <div style={{
+              width:36, height:20, borderRadius:10, background: draft.is_frog ? '#ff6b35' : C.border,
+              position:'relative', transition:'background 0.2s', flexShrink:0,
+            }}>
+              <div style={{
+                position:'absolute', top:3, left: draft.is_frog ? 18 : 3, width:14, height:14,
+                borderRadius:'50%', background:'#fff', transition:'left 0.2s',
+              }}/>
+            </div>
+            <span style={{ fontSize:'0.85rem', color:C.text }}>&#128293; Mark as Frog (eat the frog first)</span>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding:'1rem 1.5rem', borderTop:'1px solid '+C.border, display:'flex', gap:'0.75rem', flexShrink:0 }}>
+          <button
+            onClick={onSave}
+            disabled={saving || !draft.title.trim()}
+            style={{
+              flex:1, padding:'0.75rem', background: C.cyan, border:'none',
+              borderRadius:'0.75rem', color:'#000', fontWeight:800, fontSize:'0.9rem',
+              cursor: saving || !draft.title.trim() ? 'not-allowed' : 'pointer',
+              fontFamily:'inherit', opacity: saving || !draft.title.trim() ? 0.5 : 1,
+            }}
+          >
+            {saving ? 'Saving...' : draft.id ? 'Save Changes' : 'Add Task'}
+          </button>
+          <button onClick={onClose} style={{ padding:'0.75rem 1.25rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.9rem' }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
 export default function TasksPage() {
   const router = useRouter()
   const [tasks, setTasks] = useState<Task[]>([])
@@ -97,6 +358,11 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState('All')
   const [sort, setSort] = useState('deadline_asc')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [draft, setDraft] = useState<DraftTask>(EMPTY_DRAFT)
+  const [saving, setSaving] = useState(false)
+  const [showGains, setShowGains] = useState(false)
+  const [gainIdx, setGainIdx] = useState(() => Math.floor(Math.random() * MARGINAL_GAINS.length))
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
@@ -133,6 +399,59 @@ export default function TasksPage() {
     setTimeout(() => setImportMsg(''), 6000)
   }
 
+  function openNew() {
+    setDraft(EMPTY_DRAFT)
+    setDrawerOpen(true)
+  }
+
+  function openEdit(task: Task, e: React.MouseEvent) {
+    e.stopPropagation()
+    setDraft(taskToDraft(task))
+    setDrawerOpen(true)
+  }
+
+  async function saveDrawer() {
+    if (!draft.title.trim()) return
+    setSaving(true)
+    const payload = {
+      title: draft.title.trim(),
+      status: draft.status,
+      task_type: draft.task_type || null,
+      urgency: draft.urgency || null,
+      importance: draft.importance || null,
+      time_commitment: draft.time_commitment || null,
+      due_date: draft.due_date || null,
+      priority: draft.priority || null,
+      is_frog: draft.is_frog,
+      notion_url: draft.notion_url || null,
+    }
+    if (draft.id) {
+      await supabase.from('master_tasks').update(payload).eq('id', draft.id)
+      setTasks(prev => prev.map(t => t.id === draft.id ? { ...t, ...payload } : t))
+    } else {
+      const { error: insertError } = await supabase
+        .from('master_tasks').insert({ ...payload, archived: false })
+      if (!insertError) await load()
+    }
+    setSaving(false)
+    setDrawerOpen(false)
+  }
+
+  async function archiveTask(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!confirm('Archive this task?')) return
+    await supabase.from('master_tasks').update({ archived: true }).eq('id', id)
+    setTasks(prev => prev.filter(t => t.id !== id))
+    if (expanded === id) setExpanded(null)
+  }
+
+  async function cycleStatus(task: Task, e: React.MouseEvent) {
+    e.stopPropagation()
+    const next = STATUS_CYCLE[task.status] ?? 'Not started'
+    await supabase.from('master_tasks').update({ status: next }).eq('id', task.id)
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: next } : t))
+  }
+
   const today = new Date().toISOString().split('T')[0]
 
   const filtered = sortTasks(
@@ -144,7 +463,8 @@ export default function TasksPage() {
         return (
           t.title.toLowerCase().includes(q) ||
           (t.task_type ?? '').toLowerCase().includes(q) ||
-          (t.urgency ?? '').toLowerCase().includes(q)
+          (t.urgency ?? '').toLowerCase().includes(q) ||
+          (t.priority ?? '').toLowerCase().includes(q)
         )
       }
       return true
@@ -164,6 +484,60 @@ export default function TasksPage() {
 
   return (
     <main style={{ minHeight:'100vh', background:C.bg, color:C.text }}>
+
+      {/* Quote + Take Action banner */}
+      <div style={{ background:'linear-gradient(135deg,rgba(255,107,0,0.12) 0%,rgba(255,68,102,0.06) 100%)', borderBottom:'1px solid rgba(255,107,0,0.2)', padding:'0.75rem 2rem' }}>
+        <div style={{ maxWidth:'1100px', margin:'0 auto', display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap', justifyContent:'space-between' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
+            <Zap size={15} color='#ff6b00'/>
+            <span style={{ fontSize:'0.8rem', color:'#ff9a4a', fontStyle:'italic', fontWeight:500 }}>
+              &#8220;People who achieve success do the hard things first.&#8221;
+            </span>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+            <span style={{ fontSize:'0.65rem', fontWeight:800, letterSpacing:'0.1em', color:'#ff6b00', textTransform:'uppercase' as const }}>Take Action Immediately</span>
+            <span style={{ fontSize:'0.65rem', color:C.muted }}>&#8212; it separates you from 99%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 1% Better Every Day panel */}
+      <div style={{ background:'rgba(0,255,136,0.03)', borderBottom:'1px solid rgba(0,255,136,0.12)' }}>
+        <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'0 2rem' }}>
+          <button onClick={() => setShowGains(g => !g)} style={{ display:'flex', alignItems:'center', gap:'0.6rem', width:'100%', background:'none', border:'none', padding:'0.7rem 0', cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const }}>
+            <TrendingUp size={14} color={C.green}/>
+            <span style={{ fontSize:'0.75rem', fontWeight:700, color:C.green }}>1% Better Every Day</span>
+            <span style={{ fontSize:'0.7rem', color:C.muted, flex:1 }}>Marginal gains compound. Small changes &#8594; massive results.</span>
+            <ChevronDown size={14} color={C.muted} style={{ transform: showGains ? 'rotate(180deg)' : 'none', transition:'transform 0.2s' }}/>
+          </button>
+          {showGains && (
+            <div style={{ paddingBottom:'1rem' }}>
+              {/* Featured tip (random, rotates) */}
+              <div style={{ background:C.card, border:'1px solid rgba(0,255,136,0.2)', borderRadius:'0.875rem', padding:'1rem 1.25rem', marginBottom:'1rem', display:'flex', gap:'0.875rem', alignItems:'flex-start' }}>
+                <span style={{ fontSize:'1.5rem', flexShrink:0 }} dangerouslySetInnerHTML={{ __html: MARGINAL_GAINS[gainIdx].icon }}/>
+                <div>
+                  <p style={{ fontSize:'0.82rem', fontWeight:800, color:C.green, margin:'0 0 0.35rem' }}>{MARGINAL_GAINS[gainIdx].title}</p>
+                  <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 0.5rem', lineHeight:1.6 }}>{MARGINAL_GAINS[gainIdx].detail}</p>
+                  <button onClick={() => setGainIdx(i => (i + 1) % MARGINAL_GAINS.length)} style={{ background:'none', border:'1px solid rgba(0,255,136,0.25)', borderRadius:'0.5rem', color:C.green, fontSize:'0.7rem', padding:'0.25rem 0.625rem', cursor:'pointer', fontFamily:'inherit', fontWeight:700 }}>
+                    Next tip &#8594;
+                  </button>
+                </div>
+              </div>
+              {/* All tips grid */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))', gap:'0.5rem' }}>
+                {MARGINAL_GAINS.map((g, i) => (
+                  <div key={i} onClick={() => setGainIdx(i)} style={{ background: i === gainIdx ? 'rgba(0,255,136,0.06)' : C.surface, border:'1px solid '+(i === gainIdx ? 'rgba(0,255,136,0.25)' : C.border), borderRadius:'0.625rem', padding:'0.625rem 0.875rem', cursor:'pointer', transition:'all 0.15s' }}>
+                    <p style={{ fontSize:'0.72rem', fontWeight:700, color: i === gainIdx ? C.green : C.text, margin:'0 0 0.15rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                      <span dangerouslySetInnerHTML={{ __html: g.icon }}/>{g.title}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div style={{ padding:'1.75rem 2rem 1.25rem', borderBottom:'1px solid '+C.border, background:'linear-gradient(160deg,rgba(0,212,255,0.05) 0%,transparent 100%)' }}>
         <div style={{ maxWidth:'1100px', margin:'0 auto' }}>
           <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
@@ -184,11 +558,14 @@ export default function TasksPage() {
                   {importMsg}
                 </span>
               )}
+              <button onClick={openNew} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 0.875rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
+                <Plus size={14}/> New Task
+              </button>
               <button onClick={handleImport} disabled={importing} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 0.875rem', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:'0.75rem', color:C.green, cursor:importing?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700, opacity:importing?0.6:1 }}>
                 <Download size={13} style={{ animation:importing?'spin 1s linear infinite':'none' }}/>
-                {importing ? 'Importing...' : 'Import from CSV'}
+                {importing ? 'Importing...' : 'Import CSV'}
               </button>
-              <label style={{ fontSize:'0.7rem', color:C.muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em' }}>Sort</label>
+              <label style={{ fontSize:'0.7rem', color:C.muted, fontWeight:600, textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>Sort</label>
               <select value={sort} onChange={e => setSort(e.target.value)}
                 style={{ padding:'0.5rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', cursor:'pointer' }}>
                 {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -273,12 +650,16 @@ export default function TasksPage() {
         ) : tasks.length === 0 ? (
           <div style={{ textAlign:'center', padding:'4rem 1rem', color:C.muted }}>
             <CheckSquare size={40} style={{ marginBottom:'1rem', opacity:0.3 }}/>
-            <p style={{ fontSize:'1rem', color:C.sec, marginBottom:'0.5rem', fontWeight:700 }}>No tasks in Supabase yet</p>
-            <p style={{ fontSize:'0.82rem', marginBottom:'2rem', lineHeight:1.6 }}>Your 212 Notion tasks are in the CSV export.<br/>Hit the button below to load them into Supabase.</p>
-            <button onClick={handleImport} disabled={importing} style={{ display:'inline-flex', alignItems:'center', gap:'0.5rem', padding:'0.875rem 2rem', background:'linear-gradient(135deg,'+C.green+',#00cc6a)', border:'none', borderRadius:'0.875rem', color:'#000', fontWeight:800, fontSize:'0.95rem', cursor:importing?'not-allowed':'pointer', fontFamily:'inherit', opacity:importing?0.6:1, boxShadow:'0 4px 20px rgba(0,255,136,0.25)' }}>
-              <Download size={18}/>
-              {importing ? 'Importing...' : 'Import 212 tasks now'}
-            </button>
+            <p style={{ fontSize:'1rem', color:C.sec, marginBottom:'0.5rem', fontWeight:700 }}>No tasks yet</p>
+            <p style={{ fontSize:'0.82rem', marginBottom:'2rem', lineHeight:1.6 }}>Add one manually or import from CSV.</p>
+            <div style={{ display:'flex', gap:'1rem', justifyContent:'center', flexWrap:'wrap' }}>
+              <button onClick={openNew} style={{ display:'inline-flex', alignItems:'center', gap:'0.5rem', padding:'0.875rem 2rem', background:'linear-gradient(135deg,'+C.cyan+',#0099bb)', border:'none', borderRadius:'0.875rem', color:'#000', fontWeight:800, fontSize:'0.95rem', cursor:'pointer', fontFamily:'inherit' }}>
+                <Plus size={18}/> Add First Task
+              </button>
+              <button onClick={handleImport} disabled={importing} style={{ display:'inline-flex', alignItems:'center', gap:'0.5rem', padding:'0.875rem 2rem', background:'linear-gradient(135deg,'+C.green+',#00cc6a)', border:'none', borderRadius:'0.875rem', color:'#000', fontWeight:800, fontSize:'0.95rem', cursor:importing?'not-allowed':'pointer', fontFamily:'inherit', opacity:importing?0.6:1 }}>
+                <Download size={18}/> {importing ? 'Importing...' : 'Import from CSV'}
+              </button>
+            </div>
             {importMsg && <p style={{ marginTop:'1rem', fontSize:'0.8rem', color: importMsg.startsWith('Fail') ? C.red : C.green, fontWeight:600 }}>{importMsg}</p>}
           </div>
         ) : filtered.length === 0 ? (
@@ -301,10 +682,14 @@ export default function TasksPage() {
                       transition:'border-color 0.2s ease',
                       boxShadow: isExp ? '0 0 18px '+(typeM?.color??C.cyan)+'12' : 'none',
                     }}>
+
+                    {/* Top row: type badge + frog + status (click-to-cycle) */}
                     <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.5rem', flexWrap:'wrap' }}>
                       <TypeBadge type={task.task_type}/>
                       {task.is_frog && <span style={{ fontSize:'0.85rem' }}>&#128293;</span>}
-                      <span style={{ marginLeft:'auto' }}><StatusBadge status={task.status}/></span>
+                      <span style={{ marginLeft:'auto' }}>
+                        <StatusBadge status={task.status} onClick={e => cycleStatus(task, e)}/>
+                      </span>
                     </div>
 
                     <h3 style={{ fontSize:'0.9rem', fontWeight:800, color:C.text, margin:'0 0 0.4rem', lineHeight:1.35 }}>{task.title}</h3>
@@ -333,16 +718,44 @@ export default function TasksPage() {
                       )}
                     </div>
 
+                    {/* Expanded detail */}
                     {isExp && (
-                      <div style={{ marginTop:'0.75rem', paddingTop:'0.75rem', borderTop:'1px solid '+C.border }}>
+                      <div style={{ marginTop:'0.875rem', paddingTop:'0.875rem', borderTop:'1px solid '+C.border }}>
                         {task.priority && (
-                          <span style={{ fontSize:'0.62rem', color:C.amber, background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.375rem', padding:'0.2rem 0.5rem', fontWeight:700, display:'inline-block', marginBottom:'0.5rem' }}>
+                          <span style={{ fontSize:'0.62rem', color:C.amber, background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.375rem', padding:'0.2rem 0.5rem', fontWeight:700, display:'inline-block', marginBottom:'0.6rem' }}>
                             {task.priority} priority
                           </span>
                         )}
-                        <p style={{ fontSize:'0.7rem', color:C.muted, margin:0, lineHeight:1.5 }}>
+                        <p style={{ fontSize:'0.7rem', color:C.muted, margin:'0 0 0.875rem', lineHeight:1.5 }}>
                           Added {new Date(task.created_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
                         </p>
+
+                        {/* Action buttons */}
+                        <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
+                          <button
+                            onClick={e => openEdit(task, e)}
+                            style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', borderRadius:'0.625rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700 }}
+                          >
+                            <Edit3 size={12}/> Edit
+                          </button>
+                          {task.notion_url && (
+                            <a
+                              href={task.notion_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, textDecoration:'none', fontSize:'0.75rem', fontWeight:700 }}
+                            >
+                              <ExternalLink size={12}/> Notion
+                            </a>
+                          )}
+                          <button
+                            onClick={e => archiveTask(task.id, e)}
+                            style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(255,68,102,0.06)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'0.625rem', color:C.red, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, marginLeft:'auto' }}
+                          >
+                            <Trash2 size={12}/> Archive
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -353,8 +766,18 @@ export default function TasksPage() {
         )}
       </div>
 
+      {drawerOpen && (
+        <TaskDrawer
+          draft={draft}
+          setDraft={setDraft}
+          onSave={saveDrawer}
+          onClose={() => setDrawerOpen(false)}
+          saving={saving}
+        />
+      )}
+
       <style>{`
-        input:focus { border-color: #8b5cf6 !important; }
+        input:focus, select:focus { border-color: ${C.cyan} !important; }
         button:hover { opacity:0.85; }
         select { appearance:none; }
         @keyframes spin { to { transform:rotate(360deg) } }

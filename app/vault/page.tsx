@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Search, ExternalLink, X, BookOpen, Wrench, Lightbulb, Film, FileText, Headphones, ShoppingCart, Star } from 'lucide-react'
+import { ChevronLeft, Search, ExternalLink, X, BookOpen, Wrench, Lightbulb, Film, FileText, Headphones, ShoppingCart, Star, Plus, Edit3, Trash2 } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -11,6 +11,8 @@ const C = {
 }
 
 const CATEGORIES = ['All','Book','Article','Tool / Software','Business Idea','Reference','Movie','Academic','Audiobook / Podcast','Video','Spreadsheet','Buy']
+const CATEGORY_OPTS = ['Book','Article','Tool / Software','Business Idea','Reference','Movie','Academic','Audiobook / Podcast','Video','Spreadsheet','Buy']
+const STATUS_OPTS = ['', 'To Read', 'In Progress', 'Read', 'Done', 'On Hold']
 
 const CAT_META: Record<string, { icon: React.ReactNode; color: string }> = {
   'Book':               { icon: <BookOpen size={13}/>,   color: '#8b5cf6' },
@@ -42,13 +44,48 @@ type VaultItem = {
   created_at: string
 }
 
+type DraftItem = {
+  id?: string
+  title: string
+  category: string
+  author_source: string
+  link: string
+  key_takeaway: string
+  notes: string
+  platform: string
+  tag: string
+  status: string
+  notion_url: string
+}
+
+const EMPTY_DRAFT: DraftItem = {
+  title:'', category:'', author_source:'', link:'',
+  key_takeaway:'', notes:'', platform:'', tag:'', status:'', notion_url:'',
+}
+
+function itemToDraft(item: VaultItem): DraftItem {
+  return {
+    id: item.id,
+    title: item.title,
+    category: item.category ?? '',
+    author_source: item.author_source ?? '',
+    link: item.link ?? '',
+    key_takeaway: item.key_takeaway ?? '',
+    notes: item.notes ?? '',
+    platform: item.platform ?? '',
+    tag: item.tag ?? '',
+    status: item.status ?? '',
+    notion_url: item.notion_url ?? '',
+  }
+}
+
 function CategoryBadge({ cat }: { cat: string | null }) {
   if (!cat) return null
   const meta = CAT_META[cat]
   return (
     <span style={{
       display:'inline-flex', alignItems:'center', gap:'0.25rem',
-      fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase',
+      fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' as const,
       color: meta?.color ?? C.muted,
       background: (meta?.color ?? '#4a4a6a') + '18',
       border: '1px solid ' + (meta?.color ?? '#4a4a6a') + '40',
@@ -59,6 +96,149 @@ function CategoryBadge({ cat }: { cat: string | null }) {
   )
 }
 
+function StatusChip({ status }: { status: string }) {
+  if (!status) return null
+  const color = status === 'Read' || status === 'Done' ? C.green
+    : status === 'In Progress' ? C.cyan
+    : status === 'On Hold' ? C.amber
+    : C.muted
+  return (
+    <span style={{ fontSize:'0.6rem', fontWeight:700, color, background:color+'15', border:'1px solid '+color+'40', borderRadius:'9999px', padding:'0.1rem 0.45rem', letterSpacing:'0.05em', textTransform:'uppercase' as const }}>
+      {status}
+    </span>
+  )
+}
+
+const inputStyle: React.CSSProperties = {
+  width:'100%', padding:'0.55rem 0.75rem', background:C.surface, border:'1px solid '+C.border,
+  borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.85rem', outline:'none',
+  boxSizing:'border-box',
+}
+const selectStyle: React.CSSProperties = { ...inputStyle, cursor:'pointer', appearance:'none' as const }
+const textareaStyle: React.CSSProperties = { ...inputStyle, resize:'vertical' as const, minHeight:90, lineHeight:1.6 }
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom:'1rem' }}>
+      <label style={{ display:'block', fontSize:'0.7rem', fontWeight:700, color:C.sec, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.4rem' }}>
+        {label}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+function VaultDrawer({
+  draft, setDraft, onSave, onClose, saving,
+}: {
+  draft: DraftItem
+  setDraft: (d: DraftItem) => void
+  onSave: () => void
+  onClose: () => void
+  saving: boolean
+}) {
+  const set = (k: keyof DraftItem, v: string) => setDraft({ ...draft, [k]: v })
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:100 }}/>
+      <div style={{
+        position:'fixed', top:0, right:0, bottom:0, width:'min(520px,100vw)',
+        background:C.surface, borderLeft:'1px solid '+C.border,
+        zIndex:101, display:'flex', flexDirection:'column', overflowY:'auto',
+      }}>
+        <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid '+C.border, display:'flex', alignItems:'center', gap:'0.75rem', flexShrink:0 }}>
+          <h2 style={{ margin:0, fontSize:'1rem', fontWeight:800, flex:1 }}>
+            {draft.id ? 'Edit Item' : 'New Vault Item'}
+          </h2>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', padding:'0.25rem' }}>
+            <X size={18}/>
+          </button>
+        </div>
+
+        <div style={{ padding:'1.25rem 1.5rem', flex:1 }}>
+          <Field label="Title *">
+            <input
+              autoFocus
+              value={draft.title}
+              onChange={e => set('title', e.target.value)}
+              placeholder="Book, article, tool name..."
+              style={inputStyle}
+            />
+          </Field>
+
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
+            <Field label="Category">
+              <select value={draft.category} onChange={e => set('category', e.target.value)} style={selectStyle}>
+                <option value="">None</option>
+                {CATEGORY_OPTS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </Field>
+            <Field label="Status">
+              <select value={draft.status} onChange={e => set('status', e.target.value)} style={selectStyle}>
+                {STATUS_OPTS.map(s => <option key={s} value={s}>{s || 'None'}</option>)}
+              </select>
+            </Field>
+          </div>
+
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
+            <Field label="Author / Source">
+              <input value={draft.author_source} onChange={e => set('author_source', e.target.value)} placeholder="e.g. James Clear" style={inputStyle}/>
+            </Field>
+            <Field label="Platform">
+              <input value={draft.platform} onChange={e => set('platform', e.target.value)} placeholder="e.g. Audible, YouTube" style={inputStyle}/>
+            </Field>
+          </div>
+
+          <Field label="Link / URL">
+            <input value={draft.link} onChange={e => set('link', e.target.value)} placeholder="https://..." style={inputStyle}/>
+          </Field>
+
+          <Field label="Tag">
+            <input value={draft.tag} onChange={e => set('tag', e.target.value)} placeholder="e.g. productivity, business" style={inputStyle}/>
+          </Field>
+
+          <Field label="Key Takeaway">
+            <textarea value={draft.key_takeaway} onChange={e => set('key_takeaway', e.target.value)} placeholder="Main insight or summary..." style={textareaStyle}/>
+          </Field>
+
+          <Field label="Notes">
+            <textarea value={draft.notes} onChange={e => set('notes', e.target.value)} placeholder="Additional notes..." style={{ ...textareaStyle, minHeight:120 }}/>
+          </Field>
+
+          <Field label="Notion URL">
+            <input value={draft.notion_url} onChange={e => set('notion_url', e.target.value)} placeholder="https://notion.so/..." style={inputStyle}/>
+          </Field>
+        </div>
+
+        <div style={{ padding:'1rem 1.5rem', borderTop:'1px solid '+C.border, display:'flex', gap:'0.75rem', flexShrink:0 }}>
+          <button
+            onClick={onSave}
+            disabled={saving || !draft.title.trim()}
+            style={{
+              flex:1, padding:'0.75rem', background:C.purple, border:'none',
+              borderRadius:'0.75rem', color:'#fff', fontWeight:800, fontSize:'0.9rem',
+              cursor: saving || !draft.title.trim() ? 'not-allowed' : 'pointer',
+              fontFamily:'inherit', opacity: saving || !draft.title.trim() ? 0.5 : 1,
+            }}
+          >
+            {saving ? 'Saving...' : draft.id ? 'Save Changes' : 'Add to Vault'}
+          </button>
+          <button onClick={onClose} style={{ padding:'0.75rem 1.25rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.9rem' }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
 export default function VaultPage() {
   const router = useRouter()
   const [items, setItems] = useState<VaultItem[]>([])
@@ -66,6 +246,9 @@ export default function VaultPage() {
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('All')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [draft, setDraft] = useState<DraftItem>(EMPTY_DRAFT)
+  const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -86,20 +269,66 @@ export default function VaultPage() {
       item.title.toLowerCase().includes(q) ||
       (item.author_source ?? '').toLowerCase().includes(q) ||
       (item.key_takeaway ?? '').toLowerCase().includes(q) ||
-      (item.notes ?? '').toLowerCase().includes(q)
+      (item.notes ?? '').toLowerCase().includes(q) ||
+      (item.tag ?? '').toLowerCase().includes(q)
     return matchCat && matchSearch
   })
 
-  // Count per category
   const catCounts: Record<string, number> = {}
   items.forEach(i => { if (i.category) catCounts[i.category] = (catCounts[i.category] ?? 0) + 1 })
+
+  function openNew() {
+    setDraft(EMPTY_DRAFT)
+    setDrawerOpen(true)
+  }
+
+  function openEdit(item: VaultItem, e: React.MouseEvent) {
+    e.stopPropagation()
+    setDraft(itemToDraft(item))
+    setDrawerOpen(true)
+  }
+
+  async function saveDrawer() {
+    if (!draft.title.trim()) return
+    setSaving(true)
+    const payload = {
+      title: draft.title.trim(),
+      category: draft.category || null,
+      author_source: draft.author_source || null,
+      link: draft.link || null,
+      key_takeaway: draft.key_takeaway || null,
+      notes: draft.notes || null,
+      platform: draft.platform || null,
+      tag: draft.tag || null,
+      status: draft.status || '',
+      notion_url: draft.notion_url || null,
+    }
+    if (draft.id) {
+      await supabase.from('vault_items').update(payload).eq('id', draft.id)
+      setItems(prev => prev.map(i => i.id === draft.id ? { ...i, ...payload } as VaultItem : i))
+    } else {
+      const { data: inserted } = await supabase
+        .from('vault_items').insert({ ...payload, archived: false }).select().single()
+      if (inserted) setItems(prev => [inserted as VaultItem, ...prev])
+    }
+    setSaving(false)
+    setDrawerOpen(false)
+  }
+
+  async function archiveItem(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!confirm('Remove this item from vault?')) return
+    await supabase.from('vault_items').update({ archived: true }).eq('id', id)
+    setItems(prev => prev.filter(i => i.id !== id))
+    if (expanded === id) setExpanded(null)
+  }
 
   return (
     <main style={{ minHeight:'100vh', background:C.bg, color:C.text }}>
       {/* Header */}
       <div style={{ padding:'1.75rem 2rem 1.25rem', borderBottom:'1px solid '+C.border, background:'linear-gradient(160deg,rgba(139,92,246,0.06) 0%,transparent 100%)' }}>
         <div style={{ maxWidth:'1000px', margin:'0 auto' }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
+          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
             <div>
               <button onClick={() => router.push('/')} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.8rem', fontFamily:'inherit', marginBottom:'0.6rem' }}>
                 <ChevronLeft size={14}/> Home
@@ -111,7 +340,9 @@ export default function VaultPage() {
                 {items.length} items &mdash; books, articles, tools, ideas
               </p>
             </div>
-            <div/>
+            <button onClick={openNew} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.75rem', color:C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, alignSelf:'flex-end' }}>
+              <Plus size={14}/> New Item
+            </button>
           </div>
         </div>
       </div>
@@ -120,7 +351,7 @@ export default function VaultPage() {
         {/* Search */}
         <div style={{ position:'relative', marginBottom:'1.25rem' }}>
           <Search size={15} color={C.muted} style={{ position:'absolute', left:'0.875rem', top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search title, author, notes..."
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search title, author, notes, tags..."
             style={{ width:'100%', padding:'0.65rem 2.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', color:C.text, fontFamily:'inherit', fontSize:'0.88rem', boxSizing:'border-box', outline:'none' }}/>
           {search && <button onClick={() => setSearch('')} style={{ position:'absolute', right:'0.875rem', top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex' }}><X size={14}/></button>}
         </div>
@@ -153,14 +384,25 @@ export default function VaultPage() {
           <div style={{ color:C.muted, fontSize:'0.85rem' }}>Loading...</div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign:'center', padding:'3rem', color:C.muted }}>
-            <p style={{ fontSize:'1rem', marginBottom:'0.5rem' }}>No items found</p>
-            <p style={{ fontSize:'0.8rem' }}>Try syncing from Notion or adjust your filter</p>
+            {items.length === 0 ? (
+              <>
+                <p style={{ fontSize:'1rem', color:C.sec, marginBottom:'0.5rem', fontWeight:700 }}>Vault is empty</p>
+                <button onClick={openNew} style={{ display:'inline-flex', alignItems:'center', gap:'0.5rem', padding:'0.75rem 1.5rem', background:'linear-gradient(135deg,'+C.purple+',#7c3aed)', border:'none', borderRadius:'0.875rem', color:'#fff', fontWeight:800, fontSize:'0.9rem', cursor:'pointer', fontFamily:'inherit', marginTop:'1rem' }}>
+                  <Plus size={16}/> Add First Item
+                </button>
+              </>
+            ) : (
+              <p>No items match your filters.</p>
+            )}
           </div>
         ) : (
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:'0.75rem' }}>
             {filtered.map(item => {
               const isExp = expanded === item.id
               const meta = item.category ? CAT_META[item.category] : null
+              const takeawayStyle: React.CSSProperties = isExp
+                ? { fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5 }
+                : { fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5, overflow:'hidden', display:'-webkit-box' as string, WebkitLineClamp:2, WebkitBoxOrient:'vertical' as string }
               return (
                 <div key={item.id} onClick={() => setExpanded(isExp ? null : item.id)}
                   style={{
@@ -169,15 +411,19 @@ export default function VaultPage() {
                     transition:'all 0.2s ease',
                     boxShadow: isExp ? '0 0 20px '+(meta?.color??C.purple)+'15' : 'none',
                   }}>
-                  {/* Category + tag row */}
+
+                  {/* Top row */}
                   <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.5rem', flexWrap:'wrap' }}>
                     <CategoryBadge cat={item.category}/>
                     {item.tag && (
                       <span style={{ fontSize:'0.6rem', color:C.muted, background:C.surface, border:'1px solid '+C.border, borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.tag}</span>
                     )}
+                    {item.status && (
+                      <span style={{ marginLeft:'auto' }}><StatusChip status={item.status}/></span>
+                    )}
                     {item.link && (
                       <a href={item.link} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                        style={{ marginLeft:'auto', color:C.cyan, display:'flex' }}>
+                        style={{ color:C.cyan, display:'flex', marginLeft: item.status ? '0' : 'auto' }}>
                         <ExternalLink size={12}/>
                       </a>
                     )}
@@ -186,26 +432,62 @@ export default function VaultPage() {
                   {/* Title */}
                   <h3 style={{ fontSize:'0.9rem', fontWeight:800, color:C.text, margin:'0 0 0.3rem', lineHeight:1.35 }}>{item.title}</h3>
 
-                  {/* Author */}
-                  {item.author_source && (
-                    <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0 0 0.5rem' }}>by {item.author_source}</p>
+                  {/* Author + platform */}
+                  {(item.author_source || item.platform) && (
+                    <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0 0 0.5rem' }}>
+                      {item.author_source && <span>by {item.author_source}</span>}
+                      {item.author_source && item.platform && <span> &middot; </span>}
+                      {item.platform && <span>{item.platform}</span>}
+                    </p>
                   )}
 
-                  {/* Key takeaway preview */}
+                  {/* Key takeaway */}
                   {item.key_takeaway && (
-                    <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5,
-                      overflow:'hidden', display:'-webkit-box', WebkitLineClamp: isExp?'unset':'2',
-                      WebkitBoxOrient:'vertical',
-                    }}>
+                    <p style={takeawayStyle}>
                       {item.key_takeaway}
                     </p>
                   )}
 
-                  {/* Expanded: notes + notion link */}
-                  {isExp && item.notes && (
-                    <div style={{ marginTop:'0.75rem', padding:'0.75rem', background:C.surface, borderRadius:'0.625rem', border:'1px solid '+C.border }}>
-                      <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0 0 0.25rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em' }}>Notes</p>
-                      <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.6, whiteSpace:'pre-wrap' }}>{item.notes}</p>
+                  {/* Expanded detail */}
+                  {isExp && (
+                    <div style={{ marginTop:'0.875rem' }}>
+                      {item.notes && (
+                        <div style={{ padding:'0.75rem', background:C.surface, borderRadius:'0.625rem', border:'1px solid '+C.border, marginBottom:'0.875rem' }}>
+                          <p style={{ fontSize:'0.7rem', color:C.muted, margin:'0 0 0.3rem', fontWeight:700, textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>Notes</p>
+                          <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.6, whiteSpace:'pre-wrap' }}>{item.notes}</p>
+                        </div>
+                      )}
+
+                      <p style={{ fontSize:'0.7rem', color:C.muted, margin:'0 0 0.875rem' }}>
+                        Added {new Date(item.created_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+                      </p>
+
+                      {/* Action buttons */}
+                      <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
+                        <button
+                          onClick={e => openEdit(item, e)}
+                          style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.625rem', color:C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700 }}
+                        >
+                          <Edit3 size={12}/> Edit
+                        </button>
+                        {item.notion_url && (
+                          <a
+                            href={item.notion_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, textDecoration:'none', fontSize:'0.75rem', fontWeight:700 }}
+                          >
+                            <ExternalLink size={12}/> Notion
+                          </a>
+                        )}
+                        <button
+                          onClick={e => archiveItem(item.id, e)}
+                          style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(255,68,102,0.06)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'0.625rem', color:C.red, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, marginLeft:'auto' }}
+                        >
+                          <Trash2 size={12}/> Remove
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -215,10 +497,21 @@ export default function VaultPage() {
         )}
       </div>
 
+      {drawerOpen && (
+        <VaultDrawer
+          draft={draft}
+          setDraft={setDraft}
+          onSave={saveDrawer}
+          onClose={() => setDrawerOpen(false)}
+          saving={saving}
+        />
+      )}
+
       <style>{`
-        @keyframes spin { to { transform:rotate(360deg) } }
-        input:focus { border-color: #8b5cf6 !important; }
+        input:focus, select:focus, textarea:focus { border-color: ${C.purple} !important; }
         button:hover { opacity:0.85; }
+        select { appearance:none; }
+        textarea { font-family:inherit; }
       `}</style>
     </main>
   )
