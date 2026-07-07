@@ -402,7 +402,7 @@ export default function VaultPage() {
               const meta = item.category ? CAT_META[item.category] : null
               const takeawayStyle: React.CSSProperties = isExp
                 ? { fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5 }
-                : { fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5, overflow:'hidden', display:'-webkit-box' as string, WebkitLineClamp:2, WebkitBoxOrient:'vertical' as string }
+                : { fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5, overflow:'hidden', display:'-webkit-box' as React.CSSProperties['display'], WebkitLineClamp:2, WebkitBoxOrient:'vertical' as React.CSSProperties['WebkitBoxOrient'] }
               return (
                 <div key={item.id} onClick={() => setExpanded(isExp ? null : item.id)}
                   style={{
