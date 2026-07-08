@@ -115,11 +115,19 @@ export default function XPage() {
         body: JSON.stringify({ systemPrompt: SYSTEM_PROMPT, userPrompt }),
       })
       const data = await res.json()
+      if (data?.error) {
+        setError('API error: ' + JSON.stringify(data.error))
+        return
+      }
       const raw = data?.content?.[0]?.text ?? ''
+      if (!raw) {
+        setError('Empty response from API. Full response: ' + JSON.stringify(data))
+        return
+      }
       const clean = raw.replace(/```json|```/g, '').trim()
       setTweets(JSON.parse(clean))
-    } catch {
-      setError('Generation failed. Check that ANTHROPIC_API_KEY is set in .env.local and the server was restarted.')
+    } catch (e) {
+      setError('Generation failed: ' + String(e))
     } finally {
       clearInterval(iv); setLoading(false)
     }
