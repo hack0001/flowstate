@@ -22,16 +22,18 @@ const FORMATS = [
 ]
 
 const TOPICS = [
-  { value:'youtube-growth',    label:'YouTube growth & content strategy' },
-  { value:'ai-tools',          label:'AI tools & automation (Claude, agents)' },
-  { value:'productivity',      label:'Productivity systems & flow state' },
-  { value:'etsy',              label:'Etsy & e-commerce growth' },
-  { value:'creator-economy',   label:'Creator economy & monetisation' },
-  { value:'marginal-gains',    label:'Marginal gains & 1% improvement' },
-  { value:'morning-routine',   label:'Morning routines & peak performance' },
-  { value:'build-in-public',   label:'Building in public & transparency' },
-  { value:'deep-work',         label:'Deep work & focus systems' },
-  { value:'passive-income',    label:'Passive income & revenue streams' },
+  { value:'inflation',         label:'Inflation & Purchasing Power' },
+  { value:'cantillon',         label:'The Cantillon Effect' },
+  { value:'fed',               label:'Federal Reserve & Central Banks' },
+  { value:'gold',              label:'Gold as Sound Money' },
+  { value:'bitcoin',           label:'Bitcoin & Hard Money' },
+  { value:'abc',               label:'Austrian Business Cycle' },
+  { value:'fiat',              label:'The Fiat Money System' },
+  { value:'savings',           label:'Savings & Capital Formation' },
+  { value:'rothbard',          label:'Murray Rothbard\'s Ideas' },
+  { value:'hayek',             label:'Hayek & Spontaneous Order' },
+  { value:'mises',             label:'Mises & Human Action' },
+  { value:'wealth-gap',        label:'Monetary Wealth Gap' },
 ]
 
 const TONES = [
@@ -43,11 +45,11 @@ const TONES = [
 ]
 
 const HOOK_FORMULAS = [
-  { formula:'[$X] in [Y days] using [method]',                       example:'"I made £2,000 in 14 days using one Claude workflow"' },
-  { formula:'[N] lazy ways to [desired outcome]',                    example:'"3 lazy ways to 10x your Etsy revenue with AI"' },
-  { formula:'How I turned [small thing] into [big result]',          example:'"How I turned 1 video into £500/month passive income"' },
-  { formula:'Close your [thing] on [day], open it Monday with ...',  example:'"Close your laptop Friday. Open it Monday with £800 in orders."' },
-  { formula:'[N] [niche] tricks → [outcome] → [timeframe]',example:'"7 AI tricks → £3K/month → 90 days"' },
+  { formula:'The [institution] doesn\'t want you to know [truth]',        example:'"The Federal Reserve doesn\'t want you to know your savings lose 7% a year."' },
+  { formula:'[Shocking stat] about [money/economy] since [year]',         example:'"The dollar has lost 97% of its purchasing power since 1913."' },
+  { formula:'[Mainstream belief]. [Austrian reality].',                    example:'"Central banks control inflation. Reality: they cause it."' },
+  { formula:'[N] things [economists/media] won\'t tell you about [topic]', example:'"3 things no one tells you about how inflation really works."' },
+  { formula:'If you understand [concept], you understand [big truth]',     example:'"If you understand the Cantillon Effect, you understand why the rich get richer every time the Fed prints."' },
 ]
 
 const FORMAT_INSTRUCTIONS: Record<string,(n:number)=>string> = {
@@ -69,16 +71,18 @@ const LOADING_MSGS = [
   'Finalising the copy...',
 ]
 
-const SYSTEM_PROMPT = `You are an expert X (Twitter) content strategist. You specialise in the creator, productivity, AI tools, and e-commerce niches.
+const SYSTEM_PROMPT = `You are an expert X (Twitter) content strategist for SoundMoney, a YouTube channel educating people on Austrian economics, sound money principles, and the failures of the fiat monetary system.
+
+The channel covers: inflation, purchasing power, the Cantillon Effect, Federal Reserve criticism, gold, Bitcoin as hard money, Austrian Business Cycle theory, Mises, Hayek, Rothbard, savings vs consumption, and the monetary wealth gap.
 
 Content philosophy:
-1. HOOKS ARE EVERYTHING — the first line must stop a scroll in half a second. Specific numbers + clear value promise.
-2. PROVIDE REAL VALUE — actionable insights. Not vague motivation.
-3. SPECIFIC > VAGUE — "£2,340 in 14 days" beats "made money". Always use real-feeling numbers.
-4. AUTHENTIC WINS — show the method, show the result, make it feel achievable ("15 minutes", "1-2 hours a day").
-5. MAKE THEM THINK "I CAN DO THAT TOO" — empowered, not intimidated.
+1. HOOKS ARE EVERYTHING — the first line must stop a scroll. Use shocking stats, counterintuitive truths, or direct challenges to mainstream economic thinking.
+2. MAKE IT PERSONAL — connect abstract economics to things people feel in their wallet today. "Your salary buys less every year" beats "inflation reduces purchasing power."
+3. SPECIFIC > VAGUE — use real numbers. "The dollar has lost 97% of its value since 1913" beats "money loses value over time."
+4. CHALLENGE THE MAINSTREAM — Austrian economics is contrarian by nature. Own it. Push back on central bank orthodoxy, Keynesian thinking, and fiat money consensus.
+5. EDUCATE WITHOUT LECTURING — the goal is to make followers think "I never thought of it that way." Clear, vivid language. No academic jargon without explanation.
 
-Style: direct, confident, sometimes provocative, always substantive. Numbers create credibility. Results create aspiration.
+Style: confident, intellectually sharp, occasionally provocative. Think: the economy explained by someone who's actually read Mises, not a mainstream financial pundit.
 
 CRITICAL: Return ONLY a valid JSON array. No markdown, no backticks, no preamble. Each object must have exactly: {"tweet":"...","hook_type":"...","why_it_works":"..."}`
 
@@ -325,8 +329,8 @@ export default function XPage() {
         {!loading && tweets.length === 0 && !error && (
           <div style={{ textAlign:'center', padding:'3rem 1rem', color:C.muted }}>
             <div style={{ fontSize:'2.25rem', marginBottom:'0.75rem', opacity:0.5 }}>&#120143;</div>
-            <p style={{ fontSize:'0.9rem', fontWeight:700, color:C.sec, marginBottom:'0.35rem' }}>Ready to build your audience</p>
-            <p style={{ fontSize:'0.8rem', lineHeight:1.7, maxWidth:'280px', margin:'0 auto' }}>Pick a format, choose your topic, then hit generate to get scroll-stopping tweets.</p>
+            <p style={{ fontSize:'0.9rem', fontWeight:700, color:C.sec, marginBottom:'0.35rem' }}>Ready to spread sound money ideas</p>
+            <p style={{ fontSize:'0.8rem', lineHeight:1.7, maxWidth:'280px', margin:'0 auto' }}>Pick a format, choose your topic, then generate Austrian economics content that stops the scroll.</p>
           </div>
         )}
       </div>
