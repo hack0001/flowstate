@@ -86,7 +86,7 @@ export default function FocusPage() {
   const sprintRef = useRef<NodeJS.Timeout | null>(null)
   const taskStartRef = useRef<number>(Date.now())
   const { celebrate } = useCelebration()
-  const [ytTrack, setYtTrack] = useState<0|1|2|3|4>(0) // 0=off, 1=lofi, 2=rain, 3=jazz, 4=motivate
+  const [ytTrack, setYtTrack] = useState<0|1|2|3|4|5>(0) // 0=off, 1=lofi, 2=rain, 3=jazz, 4=motivate, 5=nsdr
   const [focusMins, setFocusMins] = useState(0)
   const focusStartRef = useRef<number>(Date.now())
   const [showCheck, setShowCheck] = useState(true)
@@ -302,10 +302,10 @@ export default function FocusPage() {
               {mode === 'whitenoise' ? 'Noise' : mode === 'waves' ? 'Waves' : 'Off'}
             </button>
           ))}
-          {([1,2,3,4] as const).map(track => (
+          {([1,2,3,4,5] as const).map(track => (
             <button key={track} onClick={() => toggleYT(track)}
               style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', padding: '0.25rem 0.5rem', borderRadius: '0.4rem', fontSize: '0.65rem', fontWeight: 600, border: '1px solid ' + (ytTrack === track ? '#8b5cf6' : C.border), background: ytTrack === track ? 'rgba(139,92,246,0.1)' : 'transparent', color: ytTrack === track ? '#8b5cf6' : C.muted, cursor: 'pointer', fontFamily: 'inherit' }}>
-              <Music2 size={10} />{track === 1 ? 'Lo-Fi' : track === 2 ? 'Rain' : track === 3 ? 'Jazz' : 'Motivate'}
+              <Music2 size={10} />{track === 1 ? 'Lo-Fi' : track === 2 ? 'Rain' : track === 3 ? 'Jazz' : track === 4 ? 'Motivate' : 'NSDR'}
             </button>
           ))}
           <button onClick={() => setShowPomodoro(v => !v)}
@@ -367,6 +367,15 @@ export default function FocusPage() {
           src="https://www.youtube.com/embed/etSMOKrNXEQ?autoplay=1&controls=0"
           allow="autoplay"
           title="Motivational video"
+          style={{ display:'none' }}
+        />
+      )}
+      {ytTrack === 5 && (
+        <iframe
+          key="yt5"
+          src="https://www.youtube.com/embed/AKGrmY8OSHM?autoplay=1&controls=0"
+          allow="autoplay"
+          title="NSDR - Non-Sleep Deep Rest"
           style={{ display:'none' }}
         />
       )}

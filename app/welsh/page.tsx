@@ -201,6 +201,306 @@ const VOCAB: { en:string; cy:string }[] = [
   { en:'Will you come',             cy:'Ddoi di' },
 ]
 
+// Room-by-room vocabulary — Yn y Tŷ (In the House)
+const ROOMS: { name: string; cy: string; icon: string; words: { en:string; cy:string }[] }[] = [
+  {
+    name: 'Kitchen', cy: 'Cegin', icon: '🍳',
+    words: [
+      { en:'kitchen table',       cy:'bwrdd cegin' },
+      { en:'cooker',              cy:'popty' },
+      { en:'oven',                cy:'ffwrn' },
+      { en:'hob',                 cy:'hob' },
+      { en:'fridge',              cy:'oergell' },
+      { en:'freezer',             cy:'rhewgell' },
+      { en:'microwave',           cy:'meicrodon' },
+      { en:'kettle',              cy:'tegell' },
+      { en:'toaster',             cy:'tostwr' },
+      { en:'dishwasher',          cy:'peiriant golchi llestri' },
+      { en:'washing machine',     cy:'peiriant golchi dillad' },
+      { en:'pot',                 cy:'pot' },
+      { en:'pan',                 cy:'padell' },
+      { en:'frying pan',          cy:'padell ffrio' },
+      { en:'knife',               cy:'cyllell' },
+      { en:'fork',                cy:'fforc' },
+      { en:'spoon',               cy:'llwy' },
+      { en:'plate',               cy:'plat' },
+      { en:'bowl',                cy:'powlen' },
+      { en:'cup',                 cy:'cwpan' },
+      { en:'mug',                 cy:'mwg' },
+      { en:'glass',               cy:'gwydr' },
+      { en:'cupboard',            cy:'cwpwrdd' },
+      { en:'drawer',              cy:'dror' },
+      { en:'sink',                cy:'sinc' },
+      { en:'tap',                 cy:'tap' },
+      { en:'chopping board',      cy:'bwrdd torri' },
+      { en:'tin opener',          cy:'agorwr tuniau' },
+      { en:'wooden spoon',        cy:'llwy bren' },
+      { en:'apron',               cy:'ffedog' },
+      { en:'bin',                 cy:'bin' },
+      { en:'blender',             cy:'cymysgydd' },
+      { en:'salt',                cy:'halen' },
+      { en:'pepper',              cy:'pupur' },
+      { en:'sugar',               cy:'siwgr' },
+      { en:'flour',               cy:'blawd' },
+      { en:'butter',              cy:'menyn' },
+      { en:'cheese',              cy:'caws' },
+      { en:'eggs',                cy:'wyau' },
+      { en:'bread bin',           cy:'bin bara' },
+    ],
+  },
+  {
+    name: 'Living Room', cy: 'Ystafell Fyw', icon: '🛋️',
+    words: [
+      { en:'sofa',                cy:'soffa' },
+      { en:'armchair',            cy:'cadair freichiau' },
+      { en:'coffee table',        cy:'bwrdd coffi' },
+      { en:'television',          cy:'teledu' },
+      { en:'remote control',      cy:'rheolydd o bell' },
+      { en:'bookshelf',           cy:'silff lyfrau' },
+      { en:'bookcase',            cy:'cwpwrdd llyfrau' },
+      { en:'lamp',                cy:'lamp' },
+      { en:'curtains',            cy:'llenni' },
+      { en:'cushion',             cy:'clustog' },
+      { en:'carpet',              cy:'carped' },
+      { en:'rug',                 cy:'ryg' },
+      { en:'fireplace',           cy:'lle tan' },
+      { en:'mirror',              cy:'drych' },
+      { en:'picture',             cy:'llun' },
+      { en:'window',              cy:'ffenest' },
+      { en:'door',                cy:'drws' },
+      { en:'wall',                cy:'wal' },
+      { en:'ceiling',             cy:'nenfwd' },
+      { en:'floor',               cy:'llawr' },
+      { en:'clock',               cy:'cloc' },
+      { en:'vase',                cy:'fas' },
+      { en:'plant',               cy:'planhigyn' },
+      { en:'candle',              cy:'cannwyll' },
+      { en:'shelf',               cy:'silff' },
+      { en:'speakers',            cy:'seinyddion' },
+      { en:'games console',       cy:'consol gemau' },
+      { en:'wifi router',         cy:'llwybrydd wifi' },
+      { en:'magazine',            cy:'cylchgrawn' },
+      { en:'newspaper',           cy:'papur newydd' },
+      { en:'light',               cy:'golau' },
+      { en:'radiator',            cy:'rheiddiadur' },
+    ],
+  },
+  {
+    name: 'Bedroom', cy: 'Ystafell Wely', icon: '🛏️',
+    words: [
+      { en:'bed',                 cy:'gwely' },
+      { en:'double bed',          cy:'gwely dwbl' },
+      { en:'single bed',          cy:'gwely sengl' },
+      { en:'mattress',            cy:'matras' },
+      { en:'pillow',              cy:'gobennydd' },
+      { en:'pillowcase',          cy:'cas gobennydd' },
+      { en:'duvet',               cy:'dwfe' },
+      { en:'bed sheet',           cy:'cynfas' },
+      { en:'blanket',             cy:'blanced' },
+      { en:'wardrobe',            cy:'wardrob' },
+      { en:'chest of drawers',    cy:'cist ddroriau' },
+      { en:'bedside table',       cy:'bwrdd wrth y gwely' },
+      { en:'alarm clock',         cy:'cloc larwm' },
+      { en:'mirror',              cy:'drych' },
+      { en:'dressing table',      cy:'bwrdd gwisgo' },
+      { en:'curtains',            cy:'llenni' },
+      { en:'blinds',              cy:'bleindiau' },
+      { en:'coat hanger',         cy:'cambren' },
+      { en:'carpet',              cy:'carped' },
+      { en:'lamp',                cy:'lamp' },
+      { en:'phone charger',       cy:'gwefydd ffon' },
+      { en:'teddy bear',          cy:'tedi ber' },
+      { en:'pyjamas',             cy:'pyjamas' },
+      { en:'dressing gown',       cy:'gon nos' },
+      { en:'slippers',            cy:'sliperi' },
+      { en:'photo frame',         cy:'fram llun' },
+      { en:'hairbrush',           cy:'brws gwallt' },
+      { en:'jewellery box',       cy:'blwch gemwaith' },
+      { en:'radiator',            cy:'rheiddiadur' },
+      { en:'window',              cy:'ffenest' },
+      { en:'door',                cy:'drws' },
+    ],
+  },
+  {
+    name: 'Bathroom', cy: 'Ystafell Ymolchi', icon: '🚿',
+    words: [
+      { en:'bath',                cy:'bath' },
+      { en:'shower',              cy:'cawod' },
+      { en:'toilet',              cy:'toiled' },
+      { en:'sink',                cy:'sinc' },
+      { en:'tap',                 cy:'tap' },
+      { en:'mirror',              cy:'drych' },
+      { en:'toothbrush',          cy:'brws dannedd' },
+      { en:'toothpaste',          cy:'past dannedd' },
+      { en:'shampoo',             cy:'siampo' },
+      { en:'conditioner',         cy:'cyflyrwr' },
+      { en:'soap',                cy:'sebon' },
+      { en:'towel',               cy:'tywel' },
+      { en:'bath mat',            cy:'mat bath' },
+      { en:'toilet roll',         cy:'rholyn toiled' },
+      { en:'toilet brush',        cy:'brws toiled' },
+      { en:'razor',               cy:'rasal' },
+      { en:'shaving foam',        cy:'ewyn eillio' },
+      { en:'deodorant',           cy:'diodrant' },
+      { en:'perfume',             cy:'persawr' },
+      { en:'face wash',           cy:'golchwr wyneb' },
+      { en:'moisturiser',         cy:'lleithydd' },
+      { en:'shower curtain',      cy:'llen gawod' },
+      { en:'scales',              cy:'cloriau' },
+      { en:'hair dryer',          cy:'sychwr gwallt' },
+      { en:'comb',                cy:'crib' },
+      { en:'hairbrush',           cy:'brws gwallt' },
+      { en:'nail clippers',       cy:'clipwyr ewinedd' },
+      { en:'flannel',             cy:'cadach' },
+      { en:'toilet seat',         cy:'sedd toiled' },
+      { en:'bath salts',          cy:'halwynau bath' },
+      { en:'medicine cabinet',    cy:'cabinet meddyginiaeth' },
+    ],
+  },
+  {
+    name: 'Hallway', cy: 'Cyntedd', icon: '🚪',
+    words: [
+      { en:'front door',          cy:'drws ffrynt' },
+      { en:'back door',           cy:'drws cefn' },
+      { en:'doorbell',            cy:'cloch y drws' },
+      { en:'coat hook',           cy:'bachyn cot' },
+      { en:'coat rack',           cy:'rac cotiau' },
+      { en:'umbrella',            cy:'ymbarEl' },
+      { en:'stairs',              cy:'grisiau' },
+      { en:'bannister',           cy:'canllaw' },
+      { en:'letterbox',           cy:'blwch llythyrau' },
+      { en:'doormat',             cy:'mat drws' },
+      { en:'mirror',              cy:'drych' },
+      { en:'key',                 cy:'allwedd' },
+      { en:'lock',                cy:'clo' },
+      { en:'shoe rack',           cy:'rac esgidiau' },
+      { en:'lamp',                cy:'lamp' },
+      { en:'rug',                 cy:'ryg' },
+      { en:'smoke alarm',         cy:'larwm mwg' },
+      { en:'storage cupboard',    cy:'cwpwrdd storio' },
+      { en:'radiator',            cy:'rheiddiadur' },
+      { en:'post',                cy:'post' },
+      { en:'light switch',        cy:'switsh golau' },
+      { en:'coat',                cy:'cot' },
+      { en:'boots',               cy:'esgidiau glaw' },
+      { en:'scarf',               cy:'sgarff' },
+      { en:'hat',                 cy:'het' },
+      { en:'gloves',              cy:'menig' },
+      { en:'bicycle',             cy:'beic' },
+      { en:'pram',                cy:'coets babi' },
+      { en:'ceiling',             cy:'nenfwd' },
+      { en:'floor',               cy:'llawr' },
+    ],
+  },
+  {
+    name: 'Garden', cy: 'Gardd', icon: '🌿',
+    words: [
+      { en:'lawn',                cy:'lawnt' },
+      { en:'grass',               cy:'glaswellt' },
+      { en:'flowers',             cy:'blodau' },
+      { en:'tree',                cy:'coeden' },
+      { en:'bush',                cy:'llwyn' },
+      { en:'fence',               cy:'ffens' },
+      { en:'gate',                cy:'gat' },
+      { en:'path',                cy:'llwybr' },
+      { en:'patio',               cy:'patio' },
+      { en:'shed',                cy:'sied' },
+      { en:'greenhouse',          cy:'ty gwydr' },
+      { en:'garden hose',         cy:'peipen dwr' },
+      { en:'watering can',        cy:'can dyfrio' },
+      { en:'lawnmower',           cy:'peiriant torri glaswellt' },
+      { en:'spade',               cy:'rhaw' },
+      { en:'garden fork',         cy:'fforc ardd' },
+      { en:'rake',                cy:'rhaca' },
+      { en:'trowel',              cy:'trywel' },
+      { en:'wheelbarrow',         cy:'berfa' },
+      { en:'compost bin',         cy:'bin compost' },
+      { en:'flower pot',          cy:'pot blodyn' },
+      { en:'garden chair',        cy:'cadair ardd' },
+      { en:'garden table',        cy:'bwrdd ardd' },
+      { en:'bird feeder',         cy:'bwydo adar' },
+      { en:'barbecue',            cy:'barbeciw' },
+      { en:'hedge',               cy:'gwrych' },
+      { en:'soil',                cy:'pridd' },
+      { en:'seeds',               cy:'hadau' },
+      { en:'vegetables',          cy:'llysiau' },
+      { en:'weed',                cy:'chwynnyn' },
+      { en:'pond',                cy:'pwll' },
+      { en:'washing line',        cy:'lein ddillad' },
+    ],
+  },
+  {
+    name: 'Dining Room', cy: 'Ystafell Fwyta', icon: '🍽️',
+    words: [
+      { en:'dining table',        cy:'bwrdd bwyta' },
+      { en:'dining chair',        cy:'cadair fwyta' },
+      { en:'tablecloth',          cy:'lliain bwrdd' },
+      { en:'place mat',           cy:'mat bwrdd' },
+      { en:'candles',             cy:'canhwyllau' },
+      { en:'candlestick',         cy:'canwyllbren' },
+      { en:'sideboard',           cy:'seidbord' },
+      { en:'china cabinet',       cy:'cwpwrdd tsieina' },
+      { en:'wine glass',          cy:'gwydr gwin' },
+      { en:'serving bowl',        cy:'powlen weini' },
+      { en:'serving dish',        cy:'dysgl weini' },
+      { en:'salt shaker',         cy:'pot halen' },
+      { en:'pepper pot',          cy:'pot pupur' },
+      { en:'napkin',              cy:'napcyn' },
+      { en:'dinner set',          cy:'set ginio' },
+      { en:'cutlery',             cy:'cyllyll a ffyrc' },
+      { en:'jug',                 cy:'jwg' },
+      { en:'butter dish',         cy:'dysgl fenyn' },
+      { en:'bread basket',        cy:'basged bara' },
+      { en:'fruit bowl',          cy:'powlen ffrwythau' },
+      { en:'decanter',            cy:'decanter' },
+      { en:'coaster',             cy:'coaster' },
+      { en:'highchair',           cy:'cadair uchel' },
+      { en:'picture',             cy:'llun' },
+      { en:'clock',               cy:'cloc' },
+      { en:'plant',               cy:'planhigyn' },
+      { en:'curtains',            cy:'llenni' },
+      { en:'window',              cy:'ffenest' },
+      { en:'radiator',            cy:'rheiddiadur' },
+      { en:'light',               cy:'golau' },
+    ],
+  },
+  {
+    name: 'Study', cy: 'Stydi', icon: '💻',
+    words: [
+      { en:'desk',                cy:'desg' },
+      { en:'office chair',        cy:'cadair swyddfa' },
+      { en:'computer',            cy:'cyfrifiadur' },
+      { en:'laptop',              cy:'gliniadur' },
+      { en:'monitor',             cy:'sgrin' },
+      { en:'keyboard',            cy:'bysellfwrdd' },
+      { en:'mouse',               cy:'llygoden' },
+      { en:'printer',             cy:'argraffydd' },
+      { en:'bookshelf',           cy:'silff lyfrau' },
+      { en:'filing cabinet',      cy:'cabinet ffeilio' },
+      { en:'pen',                 cy:'beiro' },
+      { en:'pencil',              cy:'pensil' },
+      { en:'notebook',            cy:'llyfr nodiadau' },
+      { en:'stapler',             cy:'stapler' },
+      { en:'scissors',            cy:'siswrn' },
+      { en:'ruler',               cy:'pren mesur' },
+      { en:'calculator',          cy:'cyfrifiannell' },
+      { en:'drawer',              cy:'dror' },
+      { en:'lamp',                cy:'lamp' },
+      { en:'calendar',            cy:'calendr' },
+      { en:'whiteboard',          cy:'bwrdd gwyn' },
+      { en:'paper',               cy:'papur' },
+      { en:'folder',              cy:'ffolder' },
+      { en:'highlighter',         cy:'highlighter' },
+      { en:'notice board',        cy:'bwrdd hysbysebion' },
+      { en:'telephone',           cy:'ffon' },
+      { en:'headphones',          cy:'clustffonau' },
+      { en:'waste paper bin',     cy:'bin papur' },
+      { en:'tape',                cy:'tap gludio' },
+      { en:'rubber',              cy:'rwber' },
+    ],
+  },
+]
+
 // Welsh mutation reference table
 const MUTATION_TABLE: {
   initial: string
@@ -244,7 +544,7 @@ const LAST_KEY   = 'flowstate_welsh_last'
 const CUSTOM_KEY = 'flowstate_welsh_custom'
 const TOTAL      = 10
 
-type Tab = 'quiz' | 'mutations' | 'mywords' | 'todos'
+type Tab = 'quiz' | 'mutations' | 'rooms' | 'mywords' | 'todos'
 type TodoTask = { id: string; title: string }
 type Direction = 'en-cy' | 'cy-en'
 type Q = { word: string; answer: string; direction: Direction }
@@ -256,7 +556,8 @@ function todayStr() {
 }
 
 function buildQuestions(extra: CustomWord[] = []): Q[] {
-  const pool = [...VOCAB, ...extra]
+  const roomWords = ROOMS.flatMap(r => r.words)
+  const pool = [...VOCAB, ...roomWords, ...extra]
   const count = Math.min(TOTAL, pool.length)
   const shuffled = [...pool].sort(() => Math.random()-0.5).slice(0, count)
   return shuffled.map(v => {
@@ -442,7 +743,7 @@ export default function WelshPage() {
 
           {/* Tabs */}
           <div style={{ display:'flex', gap:'0', overflowX:'auto' }}>
-            {(['quiz','mutations','mywords','todos'] as Tab[]).map(t => (
+            {(['quiz','mutations','rooms','mywords','todos'] as Tab[]).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 style={{
                   padding:'0.6rem 1.1rem', background:'none', border:'none',
@@ -454,6 +755,7 @@ export default function WelshPage() {
                 }}>
                 {t === 'mywords' ? 'My Words' + (customWords.length > 0 ? ' ('+customWords.length+')' : '')
                   : t === 'mutations' ? 'Mutations'
+                  : t === 'rooms' ? 'Yn y Ty'
                   : t === 'todos' ? 'Todos'
                   : 'Quiz'}
               </button>
@@ -688,6 +990,46 @@ export default function WelshPage() {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ---- ROOMS TAB ---- */}
+        {tab === 'rooms' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <div style={{ textAlign:'center', marginBottom:'2rem' }}>
+              <h1 style={{ fontSize:'1.4rem', fontWeight:900, margin:'0 0 0.3rem', letterSpacing:'-0.02em' }}>Yn y Ty</h1>
+              <p style={{ fontSize:'0.82rem', color:C.sec, margin:0 }}>In the House &mdash; {ROOMS.reduce((n,r)=>n+r.words.length,0)} words across {ROOMS.length} rooms. All included in your quiz.</p>
+            </div>
+
+            {ROOMS.map(room => (
+              <div key={room.name} style={{ marginBottom:'2rem' }}>
+                {/* Room header */}
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem', paddingBottom:'0.5rem', borderBottom:'1px solid '+C.border }}>
+                  <span style={{ fontSize:'1.25rem' }}>{room.icon}</span>
+                  <div>
+                    <span style={{ fontWeight:800, fontSize:'0.95rem', color:C.text }}>{room.name}</span>
+                    <span style={{ fontSize:'0.75rem', color:C.purple, fontWeight:700, marginLeft:'0.6rem' }}>{room.cy}</span>
+                  </div>
+                  <span style={{ marginLeft:'auto', fontSize:'0.68rem', color:C.muted }}>{room.words.length} words</span>
+                </div>
+
+                {/* Word grid */}
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.3rem' }}>
+                  {room.words.map((w, i) => (
+                    <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0.45rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem' }}>
+                      <span style={{ fontSize:'0.8rem', color:C.sec }}>{w.en}</span>
+                      <span style={{ fontSize:'0.8rem', fontWeight:700, color:C.purple }}>{w.cy}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div style={{ textAlign:'center', paddingTop:'1rem', borderTop:'1px solid '+C.border }}>
+              <button onClick={() => { restart(); setTab('quiz') }} style={{ display:'inline-flex', alignItems:'center', gap:'0.5rem', padding:'0.875rem 2rem', background:'linear-gradient(135deg,'+C.purple+',#6d28d9)', border:'none', borderRadius:'9999px', color:'#fff', fontWeight:800, fontSize:'0.9rem', cursor:'pointer', fontFamily:'inherit' }}>
+                Quiz me on all of these &#8594;
+              </button>
+            </div>
           </div>
         )}
 

@@ -369,6 +369,10 @@ export default function Home() {
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(249,115,22,0.07)', border:'1px solid rgba(249,115,22,0.22)', borderRadius:'0.75rem', color:'#f97316', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
               <X size={14}/>X / Social
             </button>
+            <button onClick={() => router.push('/nsdr')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.07)', border:'1px solid rgba(139,92,246,0.22)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              <Moon size={14}/>NSDR
+            </button>
           </div>
         </div>
       </div>
