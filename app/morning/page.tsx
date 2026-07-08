@@ -17,6 +17,24 @@ const CAT_COLORS: Record<string,string> = {
   Movement: C.cyan, Health: C.green, Fuel: C.amber, Mind: C.purple,
 }
 
+const MORNING_TIPS = [
+  { icon:'&#128640;', tip:'Take action within 5 seconds. If you have the impulse, count 5-4-3-2-1 and move. Your brain kills ideas after 5 seconds of hesitation.' },
+  { icon:'&#128203;', tip:'Write tomorrow\'s 3 priorities tonight. Decisions made by a rested brain remove all morning friction. Takes 3 minutes.' },
+  { icon:'&#128337;', tip:'Replace "work on X" with "write 3 paragraphs in the next 25 minutes." Time-boxing converts intention into action 73% more often.' },
+  { icon:'&#128064;', tip:'Close every tab before switching tasks. Context switching costs 23 minutes of focus recovery per interruption.' },
+  { icon:'&#128170;', tip:'Habit stacking: "After I [existing habit], I will [new habit]." The trigger already exists — no willpower needed.' },
+  { icon:'&#9749;', tip:'Make the next action frictionless. Reduce activation energy to near zero for the behaviours you want most.' },
+  { icon:'&#128200;', tip:'Write the outcome, not the action. "Get sign-off from John on Phase 2" beats "email John about project".' },
+  { icon:'&#128336;', tip:'Guard the first 90 minutes. Your brain peaks in this window. No meetings, no email, no Slack — just deep work.' },
+  { icon:'&#128169;', tip:'Eat the frog first. Do your hardest task before anything else. Elite performers act first, not last.' },
+  { icon:'&#127968;', tip:'Better sleep = measurable performance gains. Dark room, consistent time, cooler temperature. British Cycling hired a sleep coach for this.' },
+  { icon:'&#128293;', tip:'Win the morning by completing the first item in your routine before checking your phone. Context is set in the first 10 minutes.' },
+  { icon:'&#127775;', tip:'Reply to 3 posts in your niche this morning before you create anything. Distribution compounds before content does.' },
+]
+
+const _doy = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000)
+const DAILY_TIP = MORNING_TIPS[_doy % MORNING_TIPS.length]
+
 const DONE_QUOTES = [
   { q:'How you start your day is how you live your day.', a:'Louise Hay' },
   { q:'Win the morning, win the day.', a:'Tim Ferriss' },
@@ -367,7 +385,18 @@ export default function MorningPage() {
 
             {/* Date + progress */}
             <p style={{ fontSize:'0.9rem', color:C.sec, margin:'0 0 0.25rem' }}>{dateLabel}</p>
-            <p style={{ fontSize:'0.75rem', color:C.muted, margin:'0 0 2.5rem' }}>{doneCount} of {totalCount} complete</p>
+            <p style={{ fontSize:'0.75rem', color:C.muted, margin:'0 0 1.5rem' }}>{doneCount} of {totalCount} complete</p>
+
+            {/* 1% daily tip */}
+            <div style={{ maxWidth:'24rem', width:'100%', marginBottom:'1.75rem' }}>
+              <div style={{ display:'flex', alignItems:'flex-start', gap:'0.6rem', padding:'0.7rem 1rem', background:'rgba(255,184,0,0.05)', border:'1px solid rgba(255,184,0,0.18)', borderRadius:'0.875rem', backdropFilter:'blur(8px)', textAlign:'left' }}>
+                <span style={{ fontSize:'0.85rem', flexShrink:0, marginTop:'1px' }} dangerouslySetInnerHTML={{ __html: DAILY_TIP.icon }}/>
+                <div>
+                  <p style={{ fontSize:'0.58rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.amber, margin:'0 0 0.2rem' }}>1% today</p>
+                  <p style={{ fontSize:'0.74rem', color:C.sec, margin:0, lineHeight:1.55 }}>{DAILY_TIP.tip}</p>
+                </div>
+              </div>
+            </div>
 
             {/* Task card */}
             {current ? (
