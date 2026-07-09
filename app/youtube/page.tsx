@@ -34,6 +34,18 @@ const HEALTH_ITEMS = [
   { id:'audit',     label:'Audit the channel regularly as a product', note:'Ask: who is this for and why &mdash; not just: what content can I make' },
 ]
 
+const SHORTS_CHECKLIST = [
+  { id:'sh-hook',     label:'First second: text on screen + 2 sounds + circle highlight on subject', note:'The only moment you have to stop the scroll &mdash; miss this and the short fails' },
+  { id:'sh-length',   label:'Script is 60&ndash;80 words max', note:'One topic, one punchline, one twist. No padding whatsoever.' },
+  { id:'sh-edit',     label:'New visual cut every 2 seconds minimum', note:'No static shots. If it stops moving, they stop watching.' },
+  { id:'sh-captions', label:'Full captions burned in for every word', note:'85% of Shorts are watched with sound off &mdash; captions are not optional' },
+  { id:'sh-sfx',      label:'Sound effects on key moments (pop, whoosh, ding)', note:'Build a dedicated sound effects folder &mdash; reuse across every short' },
+  { id:'sh-loop',     label:'End frame connects back to start (plays on a loop)', note:'A loopable short increases watch time &mdash; first and last frames should match' },
+  { id:'sh-cover',    label:'Cover frame is strong before posting', note:'The still frame the algorithm shows before anyone presses play' },
+  { id:'sh-watch',    label:'Watch it as a viewer at 1x &mdash; does it hold every second?', note:'If you want to skip, they will swipe. Re-edit that moment.' },
+]
+const LS_SHORTS = 'flowstate_yt_shorts'
+
 // ---- Production SOPs ----
 type SOP = { id: string; icon: string; title: string; tagline: string; steps: string[] }
 
@@ -237,12 +249,17 @@ export default function YouTubePage() {
   const [creation, setCreation] = useState<Set<string>>(new Set(INITIAL_CREATION))
   const [health, setHealth] = useState<Set<string>>(new Set())
   const [mounted, setMounted] = useState(false)
-  const [activeTab, setActiveTab] = useState<'checklists'|'sops'>('checklists')
+  const [activeTab, setActiveTab] = useState<'checklists'|'shorts'|'sops'>('checklists')
+  const [shorts, setShorts] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY)
       if (raw) setCreation(new Set(JSON.parse(raw) as string[]))
+    } catch {}
+    try {
+      const rs = localStorage.getItem(LS_SHORTS)
+      if (rs) setShorts(new Set(JSON.parse(rs) as string[]))
     } catch {}
     setMounted(true)
   }, [])
@@ -260,6 +277,15 @@ export default function YouTubePage() {
     setHealth(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleShorts(id: string) {
+    setShorts(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      try { localStorage.setItem(LS_SHORTS, JSON.stringify([...next])) } catch {}
       return next
     })
   }
@@ -293,15 +319,15 @@ export default function YouTubePage() {
           <p style={{ fontSize:'0.875rem', color:C.sec, margin:'0.25rem 0 1rem' }}>{t('checklists')} &amp; {t('productionSOPs')}</p>
         </div>
         <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', gap:'0.25rem' }}>
-          {(['checklists','sops'] as const).map(tab => (
+          {(['checklists','shorts','sops'] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)} style={{
               padding:'0.7rem 1.25rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit',
               fontSize:'0.82rem', fontWeight: activeTab === tab ? 700 : 500,
-              color: activeTab === tab ? (tab === 'sops' ? C.amber : C.red) : C.muted,
-              borderBottom: activeTab === tab ? '2px solid '+(tab === 'sops' ? C.amber : C.red) : '2px solid transparent',
+              color: activeTab === tab ? (tab === 'sops' ? C.amber : tab === 'shorts' ? C.green : C.red) : C.muted,
+              borderBottom: activeTab === tab ? '2px solid '+(tab === 'sops' ? C.amber : tab === 'shorts' ? C.green : C.red) : '2px solid transparent',
               marginBottom:'-1px', transition:'all 0.15s', textTransform:'capitalize',
             }}>
-              {tab === 'sops' ? t('productionSOPs') : t('checklists')}
+              {tab === 'sops' ? t('productionSOPs') : tab === 'shorts' ? 'Shorts SOP' : t('checklists')}
             </button>
           ))}
         </div>
@@ -370,6 +396,138 @@ export default function YouTubePage() {
                 <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.55 }}>Run the health check once a month after reviewing your analytics. It should take under 20 minutes.</p>
               </div>
             </section>
+          </div>
+        )}
+
+        {activeTab === 'shorts' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both', display:'flex', flexDirection:'column', gap:'2rem' }}>
+
+            {/* Upload Timing */}
+            <section>
+              <div style={{ marginBottom:'1rem' }}>
+                <h2 style={{ fontSize:'1.05rem', fontWeight:800, margin:'0 0 0.15rem' }}>Upload Timing</h2>
+                <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>When to post &mdash; the algorithm gate</p>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.625rem' }}>
+                {([
+                  { icon:'&#128337;', title:'Wait for the previous short to drop below 100 views/hour for 12 hours &mdash; or flatline completely', note:'Uploading too early splits the algorithm&apos;s focus. Let one short die before feeding it another.' },
+                  { icon:'&#128198;', title:'New channel: 7 days of watching before your first upload', note:'Seed the algorithm with your niche. Watch competitors and top-performing shorts in your space first.' },
+                  { icon:'&#128200;', title:'3&ndash;5 Shorts per week. Do not flood.', note:'Volume is good but flooding the algorithm hurts distribution. Consistency beats bursts.' },
+                  { icon:'&#9201;', title:'Expect a test phase then a 7&ndash;30 day flat period before a short goes viral', note:'If it is flat it is not dead. Give it time. Do not delete.' },
+                ] as {icon:string;title:string;note:string}[]).map((item, i) => (
+                  <div key={i} style={{ display:'flex', gap:'0.875rem', padding:'0.875rem 1rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.875rem' }}>
+                    <span style={{ fontSize:'1.1rem', flexShrink:0 }} dangerouslySetInnerHTML={{ __html: item.icon }} />
+                    <div>
+                      <p style={{ fontSize:'0.83rem', fontWeight:600, color:C.text, margin:'0 0 0.2rem' }} dangerouslySetInnerHTML={{ __html: item.title }} />
+                      <p style={{ fontSize:'0.72rem', color:C.muted, margin:0, lineHeight:1.5 }} dangerouslySetInnerHTML={{ __html: item.note }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Hook Formula */}
+            <section>
+              <div style={{ marginBottom:'1rem' }}>
+                <h2 style={{ fontSize:'1.05rem', fontWeight:800, margin:'0 0 0.15rem' }}>First-Second Formula</h2>
+                <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>The hook is everything</p>
+              </div>
+              <div style={{ padding:'1rem 1.125rem', background:'rgba(0,212,255,0.04)', border:'1px solid rgba(0,212,255,0.15)', borderRadius:'0.875rem', marginBottom:'0.625rem' }}>
+                <p style={{ fontSize:'0.8rem', color:C.cyan, fontWeight:700, margin:'0 0 0.75rem' }}>Within the first second:</p>
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+                  {['Text on screen', '2 sounds (pop + whoosh, or similar)', 'Circle highlight drawn on the subject'].map((s, i) => (
+                    <p key={i} style={{ fontSize:'0.8rem', color:C.text, margin:0, display:'flex', gap:'0.5rem' }}>
+                      <span style={{ color:C.cyan, fontWeight:700, flexShrink:0 }}>{i+1}.</span> {s}
+                    </p>
+                  ))}
+                </div>
+              </div>
+              <div style={{ padding:'1rem 1.125rem', background:'rgba(255,184,0,0.04)', border:'1px solid rgba(255,184,0,0.15)', borderRadius:'0.875rem' }}>
+                <p style={{ fontSize:'0.75rem', fontWeight:700, color:C.amber, textTransform:'uppercase', letterSpacing:'0.08em', margin:'0 0 0.4rem' }}>Hook Formula</p>
+                <p style={{ fontSize:'0.82rem', color:C.text, margin:'0 0 0.3rem' }}>Statement or joke + call to action</p>
+                <p style={{ fontSize:'0.72rem', color:C.muted, margin:0, lineHeight:1.5 }}>&ldquo;This economist predicted 2008 &mdash; comment below what you think happens next.&rdquo;</p>
+              </div>
+            </section>
+
+            {/* Pre-Publish Checklist */}
+            <section>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
+                <div>
+                  <h2 style={{ fontSize:'1.05rem', fontWeight:800, margin:'0 0 0.15rem' }}>Pre-Publish Checklist</h2>
+                  <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>Run before every short goes live</p>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+                  {shorts.size > 0 && (
+                    <button onClick={() => { setShorts(new Set()); try { localStorage.removeItem(LS_SHORTS) } catch {} }} style={{ display:'flex', alignItems:'center', gap:'0.3rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', padding:'0.3rem 0.6rem' }}>
+                      <RotateCcw size={11} /> Reset
+                    </button>
+                  )}
+                  <div style={{ textAlign:'right' }}>
+                    <span style={{ fontSize:'1.3rem', fontWeight:900, color:C.green }}>{Math.round(shorts.size/SHORTS_CHECKLIST.length*100)}%</span>
+                    <p style={{ fontSize:'0.65rem', color:C.muted, margin:0 }}>{shorts.size}/{SHORTS_CHECKLIST.length}</p>
+                  </div>
+                </div>
+              </div>
+              <div style={{ height:'3px', background:'#2a2a3a', borderRadius:'2px', marginBottom:'1.25rem', overflow:'hidden' }}>
+                <div style={{ height:'100%', borderRadius:'2px', transition:'width 0.4s ease', background:'linear-gradient(90deg,'+C.green+',#00cc6a)', width:Math.round(shorts.size/SHORTS_CHECKLIST.length*100)+'%' }} />
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+                {SHORTS_CHECKLIST.map(item => (
+                  <CheckItem key={item.id} id={item.id} label={item.label} note={item.note} checked={shorts.has(item.id)} onToggle={toggleShorts} />
+                ))}
+              </div>
+            </section>
+
+            {/* Metrics */}
+            <section>
+              <div style={{ marginBottom:'1rem' }}>
+                <h2 style={{ fontSize:'1.05rem', fontWeight:800, margin:'0 0 0.15rem' }}>Reading Your Metrics</h2>
+                <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>What the numbers actually mean</p>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:'0.625rem', marginBottom:'0.625rem' }}>
+                {([
+                  { metric:'108% view rate', verdict:'Very high', color:C.green, note:'People looping the short. Best algorithm signal possible.' },
+                  { metric:'55% swipe-through', verdict:'Very low', color:C.red, note:'Hook failed. More than half left in the first second. Fix the first-second formula.' },
+                  { metric:'View rate &gt; 80%', verdict:'Good', color:C.green, note:'Algorithm will push it further. Keep going.' },
+                  { metric:'Swipe-through &gt; 30%', verdict:'Problem', color:C.amber, note:'Change the text, sounds, or opening visual before reposting.' },
+                ] as {metric:string;verdict:string;color:string;note:string}[]).map((m, i) => (
+                  <div key={i} style={{ padding:'0.875rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.875rem' }}>
+                    <p style={{ fontSize:'0.7rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.07em', margin:'0 0 0.2rem' }} dangerouslySetInnerHTML={{ __html: m.metric }} />
+                    <p style={{ fontSize:'0.9rem', fontWeight:800, color:m.color, margin:'0 0 0.35rem' }}>{m.verdict}</p>
+                    <p style={{ fontSize:'0.7rem', color:C.muted, margin:0, lineHeight:1.5 }}>{m.note}</p>
+                  </div>
+                ))}
+              </div>
+              <div style={{ padding:'0.875rem 1rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.875rem' }}>
+                <p style={{ fontSize:'0.78rem', fontWeight:600, color:C.text, margin:'0 0 0.3rem' }}>If a short fails:</p>
+                <p style={{ fontSize:'0.72rem', color:C.muted, margin:0, lineHeight:1.5 }}>Report it to YouTube (3-dot menu &rarr; &ldquo;Report a problem&rdquo;) then repost with a new hook 4 days later.</p>
+              </div>
+            </section>
+
+            {/* SoundMoney Short Ideas */}
+            <section>
+              <div style={{ marginBottom:'1rem' }}>
+                <h2 style={{ fontSize:'1.05rem', fontWeight:800, margin:'0 0 0.15rem' }}>SoundMoney Short Ideas</h2>
+                <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>Validated formats for your niche</p>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+                {([
+                  { title:'PETER SCHIFF &mdash; HIS RESPONSE SHOCKED HIM', note:'Named subject + reaction hook. High click pull &mdash; audience already knows the name.' },
+                  { title:'WHEN ECONOMISTS GET IT WRONG', note:'Series format &mdash; repeat monthly. Each episode = a new prediction failure. Builds returning viewers.' },
+                  { title:'THE STAT THEY DON&rsquo;T WANT YOU TO KNOW', note:'Classic contrarian hook. Works on any economic data point. Infinitely repeatable.' },
+                  { title:'WHY [THING] COSTS MORE THAN YOUR HOUSE', note:'Absurd comparison format. High curiosity gap. Endless supply of finance topics.' },
+                ] as {title:string;note:string}[]).map((idea, i) => (
+                  <div key={i} style={{ display:'flex', gap:'0.875rem', padding:'0.875rem 1rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.875rem' }}>
+                    <span style={{ fontSize:'0.65rem', fontWeight:900, color:C.cyan, marginTop:'3px', flexShrink:0 }}>{'#'+(i+1)}</span>
+                    <div>
+                      <p style={{ fontSize:'0.82rem', fontWeight:700, color:C.amber, margin:'0 0 0.2rem', letterSpacing:'0.02em' }} dangerouslySetInnerHTML={{ __html: idea.title }} />
+                      <p style={{ fontSize:'0.72rem', color:C.muted, margin:0, lineHeight:1.5 }} dangerouslySetInnerHTML={{ __html: idea.note }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
           </div>
         )}
 
