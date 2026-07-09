@@ -30,6 +30,12 @@ const MORNING_TIPS = [
   { icon:'&#127968;', tip:'Better sleep = measurable performance gains. Dark room, consistent time, cooler temperature. British Cycling hired a sleep coach for this.' },
   { icon:'&#128293;', tip:'Win the morning by completing the first item in your routine before checking your phone. Context is set in the first 10 minutes.' },
   { icon:'&#127775;', tip:'Reply to 3 posts in your niche this morning before you create anything. Distribution compounds before content does.' },
+  { icon:'&#9889;', tip:'Take action. Not tomorrow, not when you feel ready &#8212; now. Your brain kills the impulse after 5 seconds. Move before it does.' },
+  { icon:'&#127381;', tip:'Only do something you want after doing something you need. Watch YouTube after finishing the task. Use desire as reward, not escape.' },
+  { icon:'&#129504;', tip:'Process visualisation works because your brain cannot distinguish between vivid imagined action and real action. Imagining the STEPS &#8212; not the outcome &#8212; builds the same neural pathways as doing it. 5 minutes of this every morning is active rehearsal, not wishful thinking.' },
+
+  { icon:'&#127919;', tip:'You attract everything you want. What you consistently focus on, prepare for, and believe in tends to materialise. Clarity precedes it.' },
+  { icon:'&#128197;', tip:'5 months of discipline can change your life. Less time than most people spend waiting to feel motivated.' },
 ]
 
 const _doy = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000)
@@ -41,6 +47,7 @@ const DONE_QUOTES = [
   { q:'The secret of your future is hidden in your daily routine.', a:'Mike Murdock' },
   { q:'Motivation gets you started. Habit keeps you going.', a:'Jim Rohn' },
   { q:'Discipline is the bridge between goals and accomplishment.', a:'Jim Rohn' },
+  { q:'If you stare into the abyss long enough you start to see light instead of darkness.', a:'Betting my life on it.' },
 ]
 
 // Particle config: rx/ry = relative position (0-1), s = radius, phase/speed for orbit

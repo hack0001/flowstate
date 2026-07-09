@@ -34,6 +34,7 @@ const ROHN = [
   "You cannot change your destination overnight, but you can change your direction overnight.",
   "Work harder on yourself than you do on your job.",
   "Income seldom exceeds personal development.",
+  "Only do something you want after doing something you need.",
   "Don't join an easy crowd. You won't grow. Go where it's right, not where it's easy.",
   "If you really want to do something, you'll find a way. If you don't, you'll find an excuse.",
   "Success is not to be pursued. It is to be attracted by the person you become.",
@@ -91,6 +92,10 @@ export default function FocusPage() {
   const focusStartRef = useRef<number>(Date.now())
   const [showCheck, setShowCheck] = useState(true)
   const [checkItems, setCheckItems] = useState<Set<string>>(new Set())
+  const [isDistracted, setIsDistracted] = useState(false)
+  const [distractedMins, setDistractedMins] = useState(0)
+  const distractedMsRef = useRef(0)
+  const distractedSinceRef = useRef<number | null>(null)
 
   const allTasks: Task[] = stages.flatMap(s => s.tasks ?? [])
   const task = allTasks[taskIdx] ?? null
@@ -145,15 +150,34 @@ export default function FocusPage() {
     return () => { if (sprintRef.current) clearInterval(sprintRef.current) }
   }, [sprintActive])
 
-  // Track focus minutes — increments every 60s, saves to localStorage in FoodProgress
+  // Track focus minutes — increments every 30s
   useEffect(() => {
     focusStartRef.current = Date.now()
     const id = setInterval(() => {
       const elapsed = Math.floor((Date.now() - focusStartRef.current) / 60000)
       setFocusMins(elapsed)
-    }, 30000) // check every 30s
+      // Also update distracted tally if currently distracted
+      if (distractedSinceRef.current !== null) {
+        const current = distractedMsRef.current + (Date.now() - distractedSinceRef.current)
+        setDistractedMins(Math.floor(current / 60000))
+      }
+    }, 30000)
     return () => clearInterval(id)
   }, [])
+
+  function toggleDistraction() {
+    if (!isDistracted) {
+      distractedSinceRef.current = Date.now()
+      setIsDistracted(true)
+    } else {
+      if (distractedSinceRef.current !== null) {
+        distractedMsRef.current += Date.now() - distractedSinceRef.current
+        distractedSinceRef.current = null
+      }
+      setDistractedMins(Math.floor(distractedMsRef.current / 60000))
+      setIsDistracted(false)
+    }
+  }
 
   function startSprint() {
     setSprintSecs(300)
@@ -380,8 +404,35 @@ export default function FocusPage() {
         />
       )}
 
+      {/* -- 20-minute focus rule + distraction tracker -- */}
+      <div style={{ padding: '0.5rem 2rem 0', flexShrink: 0 }}>
+        <div style={{ maxWidth: '540px', margin: '0 auto', display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.45rem 0.875rem', background: isDistracted ? 'rgba(255,68,102,0.12)' : 'rgba(255,68,102,0.06)', border: '1px solid rgba(255,68,102,0.25)', borderRadius: '9999px' }}>
+            <span style={{ fontSize: '0.7rem', color: '#ff4466' }}>&#9889;</span>
+            <p style={{ fontSize: '0.7rem', color: '#ff4466', margin: 0, fontWeight: 600 }}>
+              {isDistracted
+                ? <><strong>Distracted</strong> &mdash; stop, breathe, come back</>
+                : <>Every time you lose focus it takes <strong>20 minutes</strong> to regain.</>}
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+            {focusMins > 0 && (
+              <span style={{ fontSize: '0.65rem', color: distractedMins > 0 ? C.sec : C.muted, fontFamily: 'ui-monospace,monospace', whiteSpace: 'nowrap' }}>
+                &#9679; {focusMins - distractedMins}m focus{distractedMins > 0 ? ` / ${distractedMins}m lost` : ''}
+              </span>
+            )}
+            <button
+              onClick={toggleDistraction}
+              style={{ padding: '0.3rem 0.7rem', background: isDistracted ? 'linear-gradient(135deg,'+C.green+',#00cc6a)' : 'rgba(255,68,102,0.12)', border: isDistracted ? 'none' : '1px solid rgba(255,68,102,0.35)', borderRadius: '9999px', color: isDistracted ? '#000' : '#ff4466', fontWeight: 700, fontSize: '0.68rem', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+            >
+              {isDistracted ? '▶ Back in focus' : 'Lost focus'}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* -- Jim Rohn affirmation -- */}
-      <div style={{ textAlign: 'center', padding: '1.5rem 2rem 0.25rem', flexShrink: 0 }}>
+      <div style={{ textAlign: 'center', padding: '0.875rem 2rem 0.25rem', flexShrink: 0 }}>
         <p key={affirmKey} style={{ fontSize: '0.8rem', color: C.sec, fontStyle: 'italic', maxWidth: '540px', margin: '0 auto', lineHeight: 1.65, animation: 'fadeUp 0.7s ease forwards' }}>
           &ldquo;{ROHN[rohnIdx]}&rdquo;
           <span style={{ display: 'block', fontSize: '0.63rem', color: C.muted, marginTop: '0.3rem', fontStyle: 'normal', letterSpacing: '0.05em' }}>&mdash; Jim Rohn</span>

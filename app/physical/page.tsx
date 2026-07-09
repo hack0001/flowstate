@@ -249,6 +249,26 @@ export default function PhysicalPage() {
           </div>
         </div>
 
+        {/* Ankle flexibility reference */}
+        <div style={{ marginBottom:'2.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem' }}>
+          <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.25rem' }}>Ankle Flexibility</p>
+          <p style={{ fontSize:'0.78rem', color:C.muted, margin:'0 0 1.125rem' }}>Daily &#8212; 3 minutes, any time. Built into morning routine.</p>
+          <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+            {[
+              { move:'Ankle circles', detail:'10 slow circles clockwise + 10 anticlockwise, each foot. Sit on floor or chair, lift foot and draw full circles. Lubricates the joint.', color:C.amber },
+              { move:'Wall ankle leans', detail:'Stand facing a wall, toes 5cm away. Lean knee forward over toes as far as possible without heel lifting. Hold 2 sec. x10 each foot. Builds dorsiflexion &#8212; the single most important ankle movement for squatting.', color:C.cyan },
+              { move:'Foot alphabet', detail:'Sitting with leg extended, trace A&#8211;Z with your foot using the biggest letters you can make. Works the full range of ankle motion. Each foot.', color:C.green },
+              { move:'Deep squat hold', detail:'Already in morning routine &#8212; 2 minutes. The deepest ankle flexibility work. If heels rise, hold a doorframe for stability and gradually work toward flat-footed.', color:C.purple },
+            ].map((item, i) => (
+              <div key={i} style={{ padding:'0.75rem 1rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.75rem', borderLeft:'3px solid '+item.color }}>
+                <span style={{ fontSize:'0.82rem', fontWeight:700, color:item.color }}>{item.move}</span>
+                <p style={{ fontSize:'0.75rem', color:C.sec, margin:'0.2rem 0 0', lineHeight:1.6 }} dangerouslySetInnerHTML={{ __html: item.detail }}/>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.875rem 0 0', fontStyle:'italic' }}>Ankle dorsiflexion drives everything &#8212; squat depth, walking gait, knee tracking. 3 minutes daily compounds fast.</p>
+        </div>
+
         {/* Movement / Jumping */}
         <div style={{ marginBottom:'2.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem' }}>
           <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.sec, margin:'0 0 1rem' }}>Movement &#8212; Jump Rope &amp; Rebounding</p>
@@ -276,6 +296,72 @@ export default function PhysicalPage() {
             ))}
           </div>
           <p style={{ fontSize:'0.73rem', color:C.muted, margin:'0.875rem 0 0', fontStyle:'italic' }}>Atomic habit rule: start with 1 minute, every gym day. Build from there. Consistency over intensity.</p>
+        </div>
+
+        {/* Flexibility circuit */}
+        <div style={{ marginBottom:'2.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem' }}>
+          <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.25rem' }}>Flexibility Circuit</p>
+          <p style={{ fontSize:'0.78rem', color:C.muted, margin:'0 0 1.125rem' }}>Daily or post-training &#8212; ~10 minutes. Work in order, hold each position.</p>
+
+          {/* Why it matters */}
+          <div style={{ padding:'0.875rem 1rem', background:'rgba(139,92,246,0.05)', border:'1px solid rgba(139,92,246,0.18)', borderRadius:'0.75rem', marginBottom:'1.125rem' }}>
+            <p style={{ fontSize:'0.75rem', fontWeight:700, color:C.purple, margin:'0 0 0.3rem' }}>Why flexibility training matters</p>
+            <p style={{ fontSize:'0.75rem', color:C.sec, margin:0, lineHeight:1.65 }}>
+              Muscles contract and shorten with use. Without deliberate lengthening work, joint range of motion decreases over years &#8212; limiting squat depth, posture, and athletic output. Flexibility work also lowers injury risk by ensuring the muscle can absorb load through its full range, not just the shortened position you happen to use at a desk. These five stretches target the most commonly restricted areas in men: calf/soleus, groin, and hip flexors.
+            </p>
+          </div>
+
+          <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+            {[
+              {
+                name:'Straight-leg calf stretch',
+                target:'Gastrocnemius',
+                hold:'30 sec each leg',
+                color:C.amber,
+                how:'Stand facing a wall. Place one foot back, heel flat on floor, leg straight. Lean into the wall until you feel a strong pull through the calf. Keep the heel down. The further back the foot, the less intense &#8212; find the edge of discomfort.',
+              },
+              {
+                name:'Bent-knee calf stretch',
+                target:'Soleus (deep calf)',
+                hold:'30 sec each leg',
+                color:C.orange,
+                how:'Same wall position, but bend the back knee slightly (10&#8211;20&#176;). This drops the load from the gastrocnemius to the soleus &#8212; the deeper muscle that most people never stretch. You will feel it lower and deeper than the straight-leg version.',
+              },
+              {
+                name:'Horse stance',
+                target:'Inner groin, hip adductors',
+                hold:'60&#8211;90 sec',
+                color:C.cyan,
+                how:'Stand with feet wide (wider than shoulder-width), toes angled out at 45&#176;. Sink your hips straight down as low as possible. Keep your back upright. Place hands on knees and gently press outward to increase the stretch. This is the most direct path to hip width and groin opening.',
+              },
+              {
+                name:'Butterfly stretch',
+                target:'Inner groin, hip rotators',
+                hold:'60 sec &#8212; breathe into it',
+                color:C.green,
+                how:'Sit on the floor, bring the soles of your feet together and pull them toward your groin. Sit tall &#8212; do not round the lower back. Gently press knees toward the floor with your elbows. On each exhale, let gravity do the work. Do not force it. The stretch deepens with breath, not pressure.',
+              },
+              {
+                name:'Pancake stretch',
+                target:'Hamstrings, inner thighs, lower back',
+                hold:'60&#8211;90 sec',
+                color:C.purple,
+                how:'Sit with legs extended as wide as possible (a V shape on the floor). Sit tall with a straight back. Hinge forward from the hips &#8212; not by rounding the spine &#8212; and walk your hands out in front of you. The goal is to get your chest toward the floor. This is a long-term project: it will be tight for months. Hold where you can breathe.',
+              },
+            ].map((item, i) => (
+              <div key={i} style={{ padding:'0.875rem 1rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.875rem', borderLeft:'3px solid '+item.color }}>
+                <div style={{ display:'flex', alignItems:'baseline', gap:'0.75rem', marginBottom:'0.3rem', flexWrap:'wrap' }}>
+                  <span style={{ fontSize:'0.85rem', fontWeight:800, color:item.color }}>{item.name}</span>
+                  <span style={{ fontSize:'0.68rem', color:C.muted, fontStyle:'italic' }}>{item.target}</span>
+                  <span style={{ marginLeft:'auto', fontSize:'0.72rem', fontWeight:700, color:C.text, flexShrink:0 }}>{item.hold}</span>
+                </div>
+                <p style={{ fontSize:'0.77rem', color:C.sec, margin:0, lineHeight:1.65 }} dangerouslySetInnerHTML={{ __html: item.how }}/>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.875rem 0 0', fontStyle:'italic', lineHeight:1.6 }}>
+            Consistency beats intensity. A gentle daily hold is more effective than an occasional aggressive stretch. Flexibility responds to frequency, not force.
+          </p>
         </div>
 
         {/* Hair + face ritual */}
