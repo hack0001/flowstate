@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X } from 'lucide-react'
+import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity } from 'lucide-react'
 import { getPrioritySession, getSessions, setPrioritySession } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
 import type { WorkflowSession } from '@/types'
@@ -372,6 +372,10 @@ export default function Home() {
             <button onClick={() => router.push('/nsdr')}
               style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.07)', border:'1px solid rgba(139,92,246,0.22)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
               <Moon size={14}/>NSDR
+            </button>
+            <button onClick={() => router.push('/physical')}
+              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,255,136,0.06)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'0.75rem', color:'#00ff88', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
+              <Activity size={14}/>Physical
             </button>
           </div>
         </div>
