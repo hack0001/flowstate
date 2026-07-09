@@ -1,7 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Zap, Copy, Check, ExternalLink, ChevronDown } from 'lucide-react'
+import { ChevronLeft, Zap, Copy, Check, ExternalLink, ChevronDown, CheckCircle2, Circle, Calendar } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -86,10 +86,92 @@ Style: confident, intellectually sharp, occasionally provocative. Think: the eco
 
 CRITICAL: Return ONLY a valid JSON array. No markdown, no backticks, no preamble. Each object must have exactly: {"tweet":"...","hook_type":"...","why_it_works":"..."}`
 
+const TODAY_KEY = () => 'flowstate_x_workflow_' + new Date().toISOString().slice(0,10)
+
+type TaskId = string
+const WORKFLOW: {
+  period: string; time: string; color: string;
+  tasks: { id:TaskId; must:boolean; label:string; detail:string; format?:string; tip:string }[]
+}[] = [
+  {
+    period: 'Morning', time: '15 min', color: C.amber,
+    tasks: [
+      {
+        id:'m1', must:true,
+        label:'Reply to 10 posts in your niche',
+        detail:'Find posts from big Austrian econ, gold, Bitcoin, or finance accounts. Add a sharp, genuine insight — not "great post". Your reply gets shown to their audience.',
+        tip:'Search: "inflation" "Federal Reserve" "gold" "bitcoin" "fiat" on X. Reply to posts with high engagement from the last 2-4 hours.',
+      },
+      {
+        id:'m2', must:true,
+        label:'Post 1 Quote Tweet with Austrian take',
+        detail:'Find one trending post in economics or finance, quote it with 2-3 lines of SoundMoney commentary. This is Aleiah\'s highest-reach format — she got 200K+ views from quote tweets.',
+        format:'quote-tweet',
+        tip:'Use the Quote Tweet generator. Pick a topic close to the trending post, generate 5 options, pick the sharpest one.',
+      },
+    ],
+  },
+  {
+    period: 'Midday', time: '10 min', color: C.cyan,
+    tasks: [
+      {
+        id:'d1', must:true,
+        label:'Post 1 scheduled content tweet',
+        detail:'This is your daily "column" — the consistent content post that builds your authority over time. Use the generator to create it, or post one you batch-generated earlier in the week.',
+        format:'stat-hook',
+        tip:'Best formats for SoundMoney: Stat Hook (shocking number + insight) or Hot Take (counterintuitive Austrian claim). Rotate formats weekly.',
+      },
+    ],
+  },
+  {
+    period: 'Evening', time: '5 min', color: C.purple,
+    tasks: [
+      {
+        id:'e1', must:true,
+        label:'Reply to every comment from today\'s posts',
+        detail:'Reply within the first 4 hours of posting if possible — YouTube signals early engagement. Reply to every comment, even just to ask a follow-up question.',
+        tip:'A simple "What do you think causes this?" or "Have you noticed this in your own spending?" turns a one-way post into a thread.',
+      },
+      {
+        id:'e2', must:false,
+        label:'Note what got traction today',
+        detail:'Any post that got above-average engagement? Note the topic and format. This is your content intelligence — the algorithm is telling you what resonates.',
+        tip:'After 2 weeks you\'ll see clear patterns. Double down on what works.',
+      },
+    ],
+  },
+  {
+    period: 'Weekly', time: '20 min (batch)', color: C.green,
+    tasks: [
+      {
+        id:'w1', must:true,
+        label:'Batch-generate 7 posts for the week',
+        detail:'Sunday evening: generate a week\'s worth of content in one session. Schedule them in Buffer or Typefully at your channel\'s peak time (check X Analytics). This frees you to focus on replies and quote tweets daily.',
+        tip:'Generate 3 Stat Hooks, 2 Hot Takes, 1 Thread, 1 Results Post. Schedule Mon-Sat at 9am, 12pm, or 6pm — test which time your audience engages most.',
+      },
+      {
+        id:'w2', must:true,
+        label:'Post one "show the loss" or authenticity post',
+        detail:'Accounts that only post wins get unfollowed. One video that flopped, one prediction that was wrong, one thing you\'re still figuring out. This is the highest-trust content on X.',
+        format:'hot-take',
+        tip:'E.g. "This video got 180 views. The hook was too academic. Here\'s what I\'d change." Specific + honest = high engagement.',
+      },
+      {
+        id:'w3', must:false,
+        label:'Record one raw video clip (30-60 sec)',
+        detail:'X pushes short talking-head video aggressively — more than any other format. Phone camera, 1 take, one Austrian economics take on something in the news this week.',
+        format:'video-hook',
+        tip:'Use the Video Script generator to get your hook + 3 talking points, then record off the cuff. Don\'t polish it.',
+      },
+    ],
+  },
+]
+
 export default function XPage() {
   const router = useRouter()
+  const [tab, setTab]         = useState<'generate'|'workflow'>('workflow')
   const [format, setFormat]   = useState('results-post')
-  const [topic, setTopic]     = useState('ai-tools')
+  const [topic, setTopic]     = useState('inflation')
   const [tone, setTone]       = useState('authentic')
   const [custom, setCustom]   = useState('')
   const [count, setCount]     = useState(5)
@@ -100,6 +182,26 @@ export default function XPage() {
   const [copied, setCopied]   = useState<Record<number,boolean>>({})
   const [error, setError]     = useState('')
   const [showHooks, setShowHooks] = useState(false)
+  const [done, setDone]       = useState<Record<TaskId,boolean>>({})
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(TODAY_KEY())
+      if (stored) setDone(JSON.parse(stored))
+    } catch {}
+  }, [])
+
+  function toggleTask(id: TaskId) {
+    setDone(prev => {
+      const next = { ...prev, [id]: !prev[id] }
+      try { localStorage.setItem(TODAY_KEY(), JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
+
+  const mustTasks    = WORKFLOW.flatMap(p => p.tasks.filter(t => t.must))
+  const doneToday    = mustTasks.filter(t => done[t.id]).length
+  const allMustDone  = doneToday === mustTasks.length
 
   const topicLabel  = TOPICS.find(t => t.value === topic)?.label  || topic
   const formatLabel = FORMATS.find(f => f.id === format)?.label   || format
@@ -158,11 +260,17 @@ export default function XPage() {
           <button onClick={() => router.push('/')} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', alignItems:'center', gap:'6px', fontSize:'0.8rem', fontFamily:'inherit', padding:0 }}>
             <ChevronLeft size={15}/> Home
           </button>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
-            <span style={{ fontSize:'1.15rem', fontWeight:900, color:C.text, letterSpacing:'-0.02em' }}>X Tweet Engine</span>
-          </div>
-          <div style={{ marginLeft:'auto', fontSize:'0.7rem', color:C.muted }}>
-            Aleiah Lock playbook
+          <span style={{ fontSize:'1.15rem', fontWeight:900, color:C.text, letterSpacing:'-0.02em' }}>X Tweet Engine</span>
+          <div style={{ display:'flex', gap:'0.3rem', marginLeft:'auto' }}>
+            <button onClick={() => setTab('workflow')} style={{ padding:'0.35rem 0.85rem', background:tab==='workflow' ? 'rgba(255,184,0,0.12)' : 'none', border:tab==='workflow' ? '1px solid rgba(255,184,0,0.3)' : '1px solid transparent', borderRadius:'9999px', color:tab==='workflow' ? C.amber : C.muted, fontWeight:700, fontSize:'0.73rem', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'0.35rem' }}>
+              <Calendar size={12}/>Daily Workflow
+              {allMustDone
+                ? <CheckCircle2 size={12} color={C.green}/>
+                : <span style={{ background:C.amber, borderRadius:'9999px', width:'7px', height:'7px', display:'inline-block' }}/>}
+            </button>
+            <button onClick={() => setTab('generate')} style={{ padding:'0.35rem 0.85rem', background:tab==='generate' ? 'rgba(249,115,22,0.12)' : 'none', border:tab==='generate' ? '1px solid rgba(249,115,22,0.3)' : '1px solid transparent', borderRadius:'9999px', color:tab==='generate' ? C.orange : C.muted, fontWeight:700, fontSize:'0.73rem', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'0.35rem' }}>
+              <Zap size={12}/>Generate
+            </button>
           </div>
         </div>
       </div>
@@ -194,6 +302,7 @@ export default function XPage() {
 
       <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.5rem 2rem' }}>
 
+        {tab === 'generate' && (<>
         {/* Format picker */}
         <div style={{ marginBottom:'1.25rem' }}>
           <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.1em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.6rem' }}>Format</p>
@@ -331,6 +440,93 @@ export default function XPage() {
             <div style={{ fontSize:'2.25rem', marginBottom:'0.75rem', opacity:0.5 }}>&#120143;</div>
             <p style={{ fontSize:'0.9rem', fontWeight:700, color:C.sec, marginBottom:'0.35rem' }}>Ready to spread sound money ideas</p>
             <p style={{ fontSize:'0.8rem', lineHeight:1.7, maxWidth:'280px', margin:'0 auto' }}>Pick a format, choose your topic, then generate Austrian economics content that stops the scroll.</p>
+          </div>
+        )}
+        </>)}
+
+        {tab === 'workflow' && (
+          <div>
+            {/* Daily progress bar */}
+            <div style={{ marginBottom:'1.5rem', padding:'1rem 1.25rem', background:allMustDone ? 'rgba(0,255,136,0.05)' : 'rgba(255,184,0,0.05)', border:'1px solid '+(allMustDone ? 'rgba(0,255,136,0.2)' : 'rgba(255,184,0,0.15)'), borderRadius:'1rem' }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.5rem' }}>
+                <span style={{ fontSize:'0.73rem', fontWeight:800, color:allMustDone ? C.green : C.amber }}>
+                  {allMustDone ? 'All must-dos complete ✓' : `Must-dos: ${doneToday} / ${mustTasks.length} done today`}
+                </span>
+                <span style={{ fontSize:'0.67rem', color:C.muted }}>Resets at midnight</span>
+              </div>
+              <div style={{ height:'5px', background:C.border, borderRadius:'9999px', overflow:'hidden' }}>
+                <div style={{ height:'100%', width:`${mustTasks.length ? (doneToday/mustTasks.length)*100 : 0}%`, background:allMustDone ? C.green : C.amber, borderRadius:'9999px', transition:'width 0.3s' }}/>
+              </div>
+            </div>
+
+            {/* Workflow periods */}
+            {WORKFLOW.map(period => (
+              <div key={period.period} style={{ marginBottom:'1.5rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', marginBottom:'0.75rem' }}>
+                  <div style={{ width:'3px', height:'28px', background:period.color, borderRadius:'9999px' }}/>
+                  <div>
+                    <span style={{ fontSize:'0.9rem', fontWeight:900, color:period.color }}>{period.period}</span>
+                    <span style={{ fontSize:'0.72rem', color:C.muted, marginLeft:'0.5rem' }}>{period.time}</span>
+                  </div>
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.625rem' }}>
+                  {period.tasks.map(task => (
+                    <div key={task.id} style={{ background:C.card, border:`1px solid ${done[task.id] ? period.color+'33' : task.must ? period.color+'22' : C.border}`, borderRadius:'0.875rem', padding:'0.875rem 1rem', opacity:done[task.id] ? 0.65 : 1, transition:'opacity 0.2s' }}>
+                      <div style={{ display:'flex', gap:'0.75rem', alignItems:'flex-start' }}>
+                        <button onClick={() => toggleTask(task.id)} style={{ background:'none', border:'none', padding:0, cursor:'pointer', flexShrink:0, marginTop:'1px' }}>
+                          {done[task.id]
+                            ? <CheckCircle2 size={18} color={period.color}/>
+                            : <Circle size={18} color={task.must ? period.color : C.border}/>}
+                        </button>
+                        <div style={{ flex:1 }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.3rem', flexWrap:'wrap' }}>
+                            <span style={{ fontSize:'0.84rem', fontWeight:700, color:done[task.id] ? C.muted : C.text, textDecoration:done[task.id] ? 'line-through' : 'none' }}>{task.label}</span>
+                            {task.must && <span style={{ fontSize:'0.6rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', background:period.color+'18', color:period.color, border:`1px solid ${period.color}33`, borderRadius:'9999px', padding:'0.1rem 0.45rem' }}>must</span>}
+                          </div>
+                          <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 0.4rem', lineHeight:1.6 }}>{task.detail}</p>
+                          <p style={{ fontSize:'0.72rem', color:period.color, margin:0, lineHeight:1.5, fontStyle:'italic', opacity:0.75 }}>&#128161; {task.tip}</p>
+                          {task.format && !done[task.id] && (
+                            <button
+                              onClick={() => { setFormat(task.format as string); setTab('generate') }}
+                              style={{ marginTop:'0.625rem', display:'inline-flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.7rem', background:'rgba(249,115,22,0.1)', border:'1px solid rgba(249,115,22,0.3)', borderRadius:'0.5rem', color:C.orange, fontWeight:700, fontSize:'0.72rem', cursor:'pointer', fontFamily:'inherit' }}
+                            >
+                              <Zap size={11}/> Open in generator
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {/* Scheduling advice */}
+            <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.25rem 1.5rem', marginTop:'0.5rem' }}>
+              <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.sec, margin:'0 0 1rem' }}>Should I schedule tweets?</p>
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.875rem' }}>
+                <div style={{ display:'flex', gap:'0.875rem', alignItems:'flex-start' }}>
+                  <span style={{ fontSize:'1rem', flexShrink:0, marginTop:'2px' }}>&#9989;</span>
+                  <div>
+                    <p style={{ fontSize:'0.82rem', fontWeight:700, color:C.green, margin:'0 0 0.2rem' }}>Yes &#8212; for your daily content posts</p>
+                    <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.6 }}>Batch-generate 7 posts on Sunday evening using the generator, then schedule them in <strong style={{ color:C.text }}>Buffer</strong>, <strong style={{ color:C.text }}>Typefully</strong>, or <strong style={{ color:C.text }}>Hypefury</strong>. This frees your daily 30 minutes for the high-leverage reactive work &#8212; replies and quote tweets &#8212; that requires you to be live.</p>
+                  </div>
+                </div>
+                <div style={{ display:'flex', gap:'0.875rem', alignItems:'flex-start' }}>
+                  <span style={{ fontSize:'1rem', flexShrink:0, marginTop:'2px' }}>&#10060;</span>
+                  <div>
+                    <p style={{ fontSize:'0.82rem', fontWeight:700, color:C.red, margin:'0 0 0.2rem' }}>No &#8212; for replies and quote tweets</p>
+                    <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.6 }}>These must be live and reactive. Replies to trending posts and quote tweets of viral content only work in the moment. Scheduling them kills the relevance that makes them perform.</p>
+                  </div>
+                </div>
+                <div style={{ padding:'0.875rem 1rem', background:'rgba(0,212,255,0.05)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem' }}>
+                  <p style={{ fontSize:'0.78rem', color:C.cyan, fontWeight:700, margin:'0 0 0.25rem' }}>The weekly rhythm</p>
+                  <p style={{ fontSize:'0.77rem', color:C.sec, margin:0, lineHeight:1.65 }}>
+                    Sunday 7pm: use the generator to batch 7 posts, schedule Mon&#8211;Sat &#8594; Morning: 15 min replies + 1 quote tweet &#8594; Midday: check scheduled post went out &#8594; Evening: reply to all comments. Check X Analytics weekly to find your best posting time.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -187,7 +187,7 @@ export default function NSDRPage() {
               { step:'2', text:'Find somewhere to lie flat — floor, sofa, bed', color:C.purple },
               { step:'3', text:'Press play on the video above, start the timer, close your eyes', color:C.amber },
               { step:'4', text:'Follow the audio. Do not try to sleep. Stay conscious but completely still.', color:C.green },
-              { step:'5', text:'After 20 minutes, sit up slowly. Give yourself 2 minutes before going back to work.', color:C.orange },
+              { step:'5', text:'After 20 minutes, sit up slowly. Give yourself 2 minutes before going back to work.', color:C.green },
             ].map((item, i) => (
               <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:'0.875rem' }}>
                 <span style={{ width:'24px', height:'24px', borderRadius:'50%', background:item.color+'18', border:'1px solid '+item.color+'44', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.68rem', fontWeight:900, color:item.color, flexShrink:0 }}>{item.step}</span>

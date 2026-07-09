@@ -170,7 +170,7 @@ export default function FocusPage() {
   const sprintSecsDisp = String(sprintSecs % 60).padStart(2, '0')
   const sprintProg = 1 - sprintSecs / 300
 
-  function toggleYT(track: 1|2|3|4) {
+  function toggleYT(track: 1|2|3|4|5) {
     setYtTrack(prev => prev === track ? 0 : track)
   }
 
