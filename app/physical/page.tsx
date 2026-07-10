@@ -364,6 +364,57 @@ export default function PhysicalPage() {
           </p>
         </div>
 
+        {/* Lower back */}
+        <div style={{ marginBottom:'2.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem' }}>
+          <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.25rem' }}>Lower Back</p>
+          <p style={{ fontSize:'0.78rem', color:C.muted, margin:'0 0 1.125rem' }}>2&ndash;3 times per week &bull; Training days or standalone &bull; 3 sets each</p>
+
+          <div style={{ padding:'0.875rem 1rem', background:'rgba(249,115,22,0.05)', border:'1px solid rgba(249,115,22,0.18)', borderRadius:'0.75rem', marginBottom:'1.125rem' }}>
+            <p style={{ fontSize:'0.75rem', fontWeight:700, color:C.orange, margin:'0 0 0.3rem' }}>Why lower back work matters</p>
+            <p style={{ fontSize:'0.75rem', color:C.sec, margin:0, lineHeight:1.65 }}>
+              The lower back (erector spinae and multifidus) is the anchor for almost every movement &#8212; squats, deadlifts, carrying, sitting, standing. Weakness here shows up as pain and poor posture. These three exercises build it directly through its full range without loading the spine. Do them consistently and lower back discomfort drops fast.
+            </p>
+          </div>
+
+          <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+            {[
+              {
+                name:'Lower back raises',
+                target:'Erector spinae, multifidus',
+                reps:'3 &#215; 15&ndash;20',
+                color:C.orange,
+                how:'Lie face down on the floor, hands clasped behind your head or at your sides. Squeeze your glutes and lift your chest and upper body off the floor. Hold at the top for 1 second. Lower slowly. The lift comes from the lower back &#8212; do not yank with the neck or jerk up. Full range: from fully flat to as high as your back allows.',
+              },
+              {
+                name:'Reverse lower back raises',
+                target:'Lower lumbar, glutes, hamstrings',
+                reps:'3 &#215; 10&ndash;15',
+                color:C.amber,
+                how:'Lie face down on a bench or table with your hips at the edge and legs hanging down. Hold the surface firmly. Keeping legs straight, raise both legs up until they are parallel with your back. Squeeze at the top, lower slowly. No bench: lie prone on the floor, arms extended forward, and lift both legs simultaneously off the floor. The reverse direction of the back raise &#8212; hits the lower lumbar from the other angle.',
+              },
+              {
+                name:'Split squats',
+                target:'Quads, glutes, hip flexors, spinal stabilisers',
+                reps:'3 &#215; 8 each side',
+                color:C.green,
+                how:'Step one foot well forward, one foot back. Lower the rear knee toward the floor keeping the front shin roughly vertical. The lower back must stay upright and tall &#8212; if it rounds you have gone too deep. The split stance forces the core and lower back to stabilise through the movement, making it as much a back exercise as a leg one. Add dumbbells once bodyweight is comfortable. Also in the afternoon knee routine.',
+              },
+            ].map((item, i) => (
+              <div key={i} style={{ padding:'0.875rem 1rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.875rem', borderLeft:'3px solid '+item.color }}>
+                <div style={{ display:'flex', alignItems:'baseline', gap:'0.75rem', marginBottom:'0.3rem', flexWrap:'wrap' }}>
+                  <span style={{ fontSize:'0.85rem', fontWeight:800, color:item.color }}>{item.name}</span>
+                  <span style={{ fontSize:'0.68rem', color:C.muted, fontStyle:'italic' }}>{item.target}</span>
+                  <span style={{ marginLeft:'auto', fontSize:'0.72rem', fontWeight:700, color:C.text, flexShrink:0 }} dangerouslySetInnerHTML={{ __html: item.reps }}/>
+                </div>
+                <p style={{ fontSize:'0.77rem', color:C.sec, margin:0, lineHeight:1.65 }} dangerouslySetInnerHTML={{ __html: item.how }}/>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.875rem 0 0', fontStyle:'italic', lineHeight:1.6 }}>
+            Start light, go slow, full range of motion. Lower back muscles respond better to higher reps and controlled tempo than to loading heavy. Pain-free and consistent beats heavy and sporadic.
+          </p>
+        </div>
+
         {/* Hair + face ritual */}
         <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem' }}>
           <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', marginBottom:'1rem' }}>
