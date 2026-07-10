@@ -148,7 +148,8 @@ export default function CalendarPage() {
   const calCells: { day: number; cur: boolean }[] = []
   for (let i = firstDay - 1; i >= 0; i--) calCells.push({ day: daysInPrev - i, cur: false })
   for (let i = 1; i <= daysInMonth; i++) calCells.push({ day: i, cur: true })
-  while (calCells.length < 42) calCells.push({ day: calCells.length - daysInMonth - firstDay + 2, cur: false })
+  let nextMonthDay = 1
+  while (calCells.length < 42) calCells.push({ day: nextMonthDay++, cur: false })
   const weekDates = Array.from({ length: 7 }, (_, i) => toDateStr(addDays(weekStart, i)))
 
   const fetchWeek = useCallback(async () => {
