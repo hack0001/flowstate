@@ -51,6 +51,16 @@ type SOP = { id: string; icon: string; title: string; tagline: string; steps: st
 
 const SOPS: SOP[] = [
   {
+    id:'00', icon:'&#128293;', title:'Channel Warm-Up',
+    tagline:'Never upload to a cold account. Spend 5 days building a real human profile first.',
+    steps:[
+      '<strong>Days 1&ndash;3 (repeat daily):</strong> Watch 30 minutes of content in your niche, like a handful of videos per session, leave 2&ndash;3 genuine comments, and subscribe to 3&ndash;5 channels in your niche.',
+      '<strong>Why this works:</strong> YouTube&apos;s algorithm is learning what this account cares about before you upload anything. You are building the profile of a real, engaged human. Most people create an account and upload 10 minutes later &mdash; the algorithm has no context and flags it as potential spam. This removes that risk.',
+      '<strong>Day 4:</strong> Upload your banner and logo, set your channel name, and write the channel description. The channel should look like a real, intentional presence before a single video appears on it.',
+      '<strong>Day 5:</strong> Upload your first video. You are now uploading into a warmed account with niche context &mdash; not a blank slate the algorithm is suspicious of.',
+    ],
+  },
+  {
     id:'01', icon:'&#128161;', title:'Idea & Validation',
     tagline:'Commit only to topics that have demand, a clear angle, and meme/story potential.',
     steps:[
