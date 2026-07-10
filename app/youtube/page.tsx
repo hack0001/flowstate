@@ -27,6 +27,7 @@ const INITIAL_CREATION = new Set(['desc', 'about', 'community', 'comments'])
 const LS_KEY = 'flowstate_yt_creation'
 
 const HEALTH_ITEMS = [
+  { id:'avpv',      label:'Check &ldquo;Average views per viewer&rdquo; in YouTube Studio', note:'Advanced Mode &rarr; Metrics. Above 1 means people are watching multiple videos &mdash; your channel universe is working. Below 1 means viewers are not returning. The most important channel health metric.' },
   { id:'peak',      label:'Publish at peak times', note:'YouTube Analytics &rarr; Audience tab &mdash; confirm you are hitting peak active hours and adjust schedule if not' },
   { id:'playlists', label:'Review playlist structure monthly', note:'Add new videos to the right playlists as the catalogue grows' },
   { id:'tags',      label:'Update tags on older videos periodically', note:'Move to more specific long-tail phrases as you learn what your audience searches' },
@@ -58,6 +59,7 @@ const SOPS: SOP[] = [
       '<strong>Why this works:</strong> YouTube&apos;s algorithm is learning what this account cares about before you upload anything. You are building the profile of a real, engaged human. Most people create an account and upload 10 minutes later &mdash; the algorithm has no context and flags it as potential spam. This removes that risk.',
       '<strong>Day 4:</strong> Upload your banner and logo, set your channel name, and write the channel description. The channel should look like a real, intentional presence before a single video appears on it.',
       '<strong>Day 5:</strong> Upload your first video. You are now uploading into a warmed account with niche context &mdash; not a blank slate the algorithm is suspicious of.',
+      '<strong>Make the first video count:</strong> The algorithm gives new channels a genuine push on early uploads &mdash; your first video gets a real shot at reaching people outside your subscribers. Publishing without planning used to be fine when channels needed 25&ndash;50 videos to find their niche. That is no longer true. Wasting the first upload on an unplanned video is the single biggest mistake a new channel makes. Run the full production SOP before Day 5.',
     ],
   },
   {
@@ -66,6 +68,7 @@ const SOPS: SOP[] = [
     steps:[
       'Brain-dump 3&ndash;5 ideas &mdash; economics in the news, trending Reddit threads (r/economics, r/wallstreetbets), Financial Times headlines',
       'Search YouTube for each idea. Watch the top 3 results. Ask: what&apos;s missing? Too dry? Too shallow? No humour? That&apos;s your opening.',
+      '<strong>Outlier video analysis:</strong> On the top channels in your niche, sort by Most Popular. Find the videos that massively outperformed that channel&apos;s average view count. Those outliers reveal what the algorithm is hungry for right now &mdash; breakout potential, not just steady demand. These are your best topic signals.',
       'Find your angle &mdash; historical parallel, contrarian take, or absurd analogy. Formula: <em>big topic + unexpected frame</em>',
       'Write the one-line pitch: &ldquo;This video explains X by showing Y.&rdquo; If you can&apos;t do it in one line, it&apos;s probably two videos.',
       'Confirm format: long-form deep-dive or Short hook/punchline?',
@@ -88,16 +91,21 @@ const SOPS: SOP[] = [
   },
   {
     id:'03', icon:'&#128221;', title:'Scripting',
-    tagline:'Write tight, write fast, write funny. The script is your production blueprint.',
+    tagline:'Plan before you write. The script is your production blueprint.',
     steps:[
+      '<strong>Step 1 &mdash; Common Goal:</strong> Before a single word of script, write down what the viewer actually wants &mdash; not what the video is about, but what they are trying to feel or achieve. (e.g. &ldquo;feel informed and not fooled by mainstream financial news&rdquo;)',
+      '<strong>Step 2 &mdash; Deeper Problem:</strong> Beneath that goal, what is the real underlying frustration? (e.g. &ldquo;they feel lied to and confused by noise from institutions they can&apos;t trust&rdquo;) &mdash; this is the emotional hook the whole video is built on.',
+      '<strong>Step 3 &mdash; Audience Avatar:</strong> Write down one specific person in detail &mdash; age, what they already know, what they are struggling with right now. Every line of script is written for that one person.',
+      '<strong>Step 4 &mdash; Outline, then AI roast:</strong> Build the story architecture before writing any script. Once the outline is done, paste it into ChatGPT and ask: &ldquo;Roast this &mdash; what did I miss? What is boring? What should I add, remove, or change? What about a different plot twist?&rdquo; Go back and forth 2&ndash;3 times. Then close the AI and write the script yourself.',
+      '<strong>The Trojan Horse rule:</strong> Nobody wants pure knowledge. The economics insight must be delivered inside a story. The script, editing, and animations are all the horse &mdash; the information is hidden inside. Without the horse, nobody watches to the end.',
+      '<strong>Story arc (use as a lens, not a formula):</strong> Every video benefits from a journey: a character with a problem &rarr; a discovery or turning point &rarr; barriers and tension &rarr; resolution. For SoundMoney: the viewer is the character, the financial system is the world, the discovery is the insight mainstream media missed, and the resolution is clarity. Not a rigid structure &mdash; just ask yourself whether each video has a journey or just information.',
       '<strong>The format rhythm (Fireship-style):</strong> Intense info &rarr; brief absurd joke &rarr; back to info. Vary constantly. Never let the viewer predict the next beat.',
-      'Write the hook first &mdash; first 15 seconds for long form, first 3 for Short. Open with the wildest stat, a bold claim, or a question that makes stopping feel impossible',
-      'Build a 5&ndash;8 section outline. Each section = one idea + one beat + one joke or moment',
-      'Write full script word-for-word &mdash; write how you <em>speak</em>, not how you write. Read every line aloud as you go.',
+      'Write the hook first &mdash; first 15 seconds for long form, first 3 for Short. Open with the wildest stat, a bold claim, or a question that makes stopping feel impossible.',
+      'Build a 5&ndash;8 section outline. Each section = one idea + one beat + one joke or moment.',
+      'Write full script word-for-word &mdash; write how you <em>speak</em>, not how you write. Set a timer and write fast on the first draft &mdash; fix grammar later. Read every line aloud as you go.',
+      '<strong>Script colour-coding:</strong> Once drafted, highlight in 4 types throughout the doc: spoken VO (default/white), <strong style="color:#00d4ff">[B-ROLL: description]</strong> in blue, <strong style="color:#00ff88">[MEME: description]</strong> in green, <strong style="color:#ffb800">[SFX: sound cue]</strong> in amber. This removes guesswork on the timeline and makes the edit significantly faster.',
       'For Shorts: 60&ndash;80 words max. One topic, one punchline, one twist. No padding.',
-      'Mark <strong>[MEME]</strong> tags wherever a meme will sit &mdash; every 60&ndash;90 seconds on long form',
-      'Mark <strong>[B-ROLL: description]</strong> for every visual moment. Be specific: <code>[B-ROLL: stock market ticker going red]</code>',
-      'Write the CTA conversationally &mdash; not like an ad. <em>&ldquo;If that surprised you, wait for the next one&rdquo;</em>',
+      'Write the CTA conversationally &mdash; not like an ad. <em>&ldquo;If that surprised you, wait for the next one.&rdquo;</em>',
       'Read the full script aloud and time it. If you&apos;re bored reading it, the viewer is bored watching it. Cut.',
     ],
   },
@@ -109,7 +117,9 @@ const SOPS: SOP[] = [
       '<strong>B-roll (free):</strong> Pexels, Pixabay, Coverr, Archive.org (great for historical footage) &mdash; save to <code>/assets/broll/</code>',
       '<strong>B-roll (paid):</strong> Storyblocks, Envato Elements',
       '<strong>Charts &amp; data visuals:</strong> Datawrapper and Flourish are fast and free &mdash; export as MP4 with build animation, save to <code>/assets/charts/</code>',
-      'Organise before recording: <code>/memes/</code> <code>/broll/</code> <code>/charts/</code> <code>/audio/</code> <code>/vo/</code>',
+      '<strong>Background music:</strong> Epidemic Sound (primary &mdash; royalty-free, YouTube-safe, large catalogue; download stems to isolate drums or bass separately). Artlist as backup.',
+      '<strong>Sound effects:</strong> Epidemic Sound SFX library (same subscription), Freesound.org for specific one-offs, Zapsplat for category packs &mdash; save all to <code>/assets/sfx/</code>. Build a personal SFX folder and reuse across every video.',
+      'Organise before recording: <code>/memes/</code> <code>/broll/</code> <code>/charts/</code> <code>/audio/</code> <code>/sfx/</code> <code>/vo/</code>',
       'For Shorts: 3&ndash;5 punchy clips max, each under 3 seconds',
       'Tidy projects save hours in the edit &mdash; never skip the folder structure',
     ],
@@ -135,6 +145,7 @@ const SOPS: SOP[] = [
       '<strong>Golden rules:</strong> VO goes on first. Everything hangs off it. The viewer should never see a blank or static shot.',
       'Memes land on the punchline, not before it. Timing is everything.',
       'New visual every 2&ndash;4 seconds on long form. Every 1&ndash;2 on Shorts.',
+      '<strong>Cutting balance:</strong> Cut every second where nothing interesting is happening &mdash; but do not cut so aggressively that you kill the story. Retention pace must serve the narrative, not fight it. If a moment needs a beat to land, keep it. Over-cutting long form is as bad as under-cutting.',
       'Watch your edit at 2x speed. If it&apos;s boring at 2x, it&apos;s boring at 1x.',
       'Import and label all assets in bins: VO / BROLL / MEMES / MUSIC / GRAPHICS',
       'Lay the complete VO on the timeline. Don&apos;t start placing visuals until the VO is final.',
@@ -143,9 +154,11 @@ const SOPS: SOP[] = [
       'Add memes at every [MEME] marker. Time the visual to arrive exactly as the joke word lands.',
       'Add on-screen text captions for key stats and memorable lines &mdash; bold, high-contrast, large.',
       'For Shorts: burn in full captions for every word &mdash; 85% of Shorts are watched with sound off.',
-      'Add background music &mdash; low under talking, rises on key moments. Music should <em>feel</em>, not be heard.',
-      'Add sound effects on meme pops, chart animations, and key stat reveals.',
-      'Colour grade: run a simple LUT across all b-roll to unify clips from different sources.',
+      'Add background music &mdash; low under talking, rises on key moments. Music should <em>feel</em>, not be heard. Lower than feels natural.',
+      '<strong>Sound design pass (dedicated):</strong> Mute all other tracks and do sound effects with only the VO playing &mdash; you need to hear exactly what you are adding. Combine multiple SFX together on the same moment rather than using single sounds in isolation. Keep all SFX levels lower than feels natural &mdash; they should enhance, not become noticeable.',
+      'Add sound effects on meme pops, chart animations, key stat reveals, and scene transitions.',
+      'Colour grade: Lumetri on each clip individually to match exposure and tone, then run a LUT across all b-roll to unify clips from different sources.',
+      'Keep experimenting each video &mdash; try one new technique per upload. Channels that repeat the same edit style stop growing.',
       'Watch full edit at 1x as a viewer. Note every moment where your eyes drift. Cut it.',
       'Export long form: 1080p or 4K, 30fps, H.264. Short: 1080&times;1920 vertical, 30fps, H.264.',
     ],
@@ -154,13 +167,16 @@ const SOPS: SOP[] = [
     id:'07', icon:'&#128444;', title:'Thumbnail & SEO',
     tagline:'Win the click before they watch. The thumbnail IS the brand identity.',
     steps:[
-      '<strong>Thumbnail:</strong> Bold graphic, minimal text (max 5 words), high contrast &mdash; check at 120px wide (mobile grid)',
-      'No face &mdash; use charts, money visuals, bold typography, or dramatic imagery',
+      '<strong>Thumbnail + title create a journey together:</strong> They are not two separate tasks. Someone sees the thumbnail first, the title completes the thought. Both must pull in the same direction toward curiosity.',
+      '<strong>4 thumbnail types &mdash; always combine at least 2:</strong> (1) Subject next to something bigger &mdash; creates scale and context. (2) Comparison &mdash; before/after, cheap vs expensive, old vs new. (3) Blur or obscure the main result &mdash; force the click to reveal it. (4) Big number or stat &mdash; creates instant curiosity. Single-formula thumbnails are average. Stack them.',
+      '<strong>Thumbnail:</strong> Bold graphic, minimal text (max 5 words), high contrast &mdash; check at 120px wide (mobile grid). High-quality source images matter more than most creators admit.',
+      'No face &mdash; use charts, money visuals, bold typography, or dramatic imagery.',
+      'Consistent visual brand: same fonts, same colour palette, same layout style across every thumbnail so the audience recognises SoundMoney in the feed without reading the channel name.',
       'A/B test: can someone identify the topic in 2 seconds without reading the title?',
-      '<strong>Title formula:</strong> [Wild Stat or Claim] + [The Surprising Reason] &mdash; write 3 options, pick the strongest curiosity gap',
-      '<strong>Description:</strong> First 2 lines are indexed by Google &mdash; hook sentence + primary keyword before &ldquo;show more&rdquo;',
-      'Add timestamps as chapters (every 2&ndash;3 minutes) + links: sources, socials, related videos',
-      '<strong>Tags:</strong> 3 broad topic tags, 5 specific niche tags, 5 long-tail question-style tags &mdash; research with TubeBuddy or vidIQ',
+      '<strong>Title formula:</strong> [Wild Stat or Claim] + [The Surprising Reason] &mdash; write 3 options, pick the strongest curiosity gap.',
+      '<strong>Description:</strong> First 2 lines are indexed by Google &mdash; hook sentence + primary keyword before &ldquo;show more&rdquo;.',
+      'Add timestamps as chapters (every 2&ndash;3 minutes) + links: sources, socials, related videos.',
+      '<strong>Tags:</strong> 3 broad topic tags, 5 specific niche tags, 5 long-tail question-style tags &mdash; research with TubeBuddy or vidIQ.',
     ],
   },
   {
@@ -188,9 +204,11 @@ const SOPS: SOP[] = [
       'Reddit: r/economics, r/personalfinance, r/investing &mdash; add a sentence of value first, then the link',
       'Reply to every comment in the first 90 minutes &mdash; YouTube rewards early engagement signals',
       'Pin a comment with a provocative question to spark debate',
-      'Check analytics at 48 hrs: CTR, average view duration, impressions, traffic source',
+      '<strong>Universe building:</strong> In the description and pinned comment, reference at least one other SoundMoney video that connects to this topic. Add an info card at the relevant moment in the edit. Every video reinforces the universe &mdash; viewers who stay in it push &ldquo;average views per viewer&rdquo; above 1.',
+      'Check analytics at 48 hrs: CTR, average view duration, impressions, traffic source.',
       'CTR under 4% = thumbnail/title problem. Retention drop in first 30 sec = hook problem.',
-      'Log the video in the Content Tracker. Write one improvement note for the next video.',
+      '<strong>One-improvement rule:</strong> Pick the single weakest element from this video. Write it down. That is the only thing to fix next time. Trying to improve everything at once fixes nothing.',
+      'Log the video in the Content Tracker.',
     ],
   },
 ]
@@ -411,6 +429,34 @@ export default function YouTubePage() {
 
         {activeTab === 'shorts' && (
           <div style={{ animation:'fadeInUp 0.3s ease both', display:'flex', flexDirection:'column', gap:'2rem' }}>
+
+            {/* Brand Setup */}
+            <section>
+              <div style={{ marginBottom:'1rem' }}>
+                <h2 style={{ fontSize:'1.05rem', fontWeight:800, margin:'0 0 0.15rem' }}>Brand Setup &mdash; Do This First</h2>
+                <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>Before your first Short goes live</p>
+              </div>
+              <div style={{ padding:'0.875rem 1rem', background:'rgba(0,255,136,0.04)', border:'1px solid rgba(0,255,136,0.15)', borderRadius:'0.875rem', marginBottom:'0.625rem' }}>
+                <p style={{ fontSize:'0.78rem', color:C.green, fontWeight:700, margin:'0 0 0.5rem' }}>Treat the channel as a brand from day one.</p>
+                <p style={{ fontSize:'0.75rem', color:C.sec, margin:0, lineHeight:1.6 }}>Decide your fonts, colours, logo, and banner before posting anything. Posting without this means building an audience on a channel that doesn&apos;t look like a real brand &mdash; and it shows.</p>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+                {([
+                  { icon:'&#127912;', title:'Pick one colour palette and one font pairing &mdash; use them on every Short, every time', note:'Consistency is what makes your content recognisable in the feed before anyone reads your name.' },
+                  { icon:'&#128444;', title:'Design a logo and channel banner before uploading anything', note:'Use Midjourney if you are not a designer &mdash; prompt: flat logo, [your niche], minimal, dark background. Export clean PNG.' },
+                  { icon:'&#127919;', title:'Lock in your niche before posting &mdash; do not post across multiple topics', note:'Posting randomly across topics is a failure mode regardless of quality. The algorithm needs a clear signal about what your channel is.' },
+                  { icon:'&#128196;', title:'Write the channel description and add 10&ndash;15 keywords in YouTube Studio before your first upload', note:'Settings &rarr; Basic Info. Seeds the algorithm with context before it has any watch data to work with.' },
+                ] as {icon:string;title:string;note:string}[]).map((item, i) => (
+                  <div key={i} style={{ display:'flex', gap:'0.875rem', padding:'0.875rem 1rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.875rem' }}>
+                    <span style={{ fontSize:'1.1rem', flexShrink:0 }} dangerouslySetInnerHTML={{ __html: item.icon }} />
+                    <div>
+                      <p style={{ fontSize:'0.83rem', fontWeight:600, color:C.text, margin:'0 0 0.2rem' }}>{item.title}</p>
+                      <p style={{ fontSize:'0.72rem', color:C.muted, margin:0, lineHeight:1.5 }}>{item.note}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
 
             {/* Upload Timing */}
             <section>
