@@ -162,6 +162,9 @@ export default function Home() {
   const [contentReady, setContentReady] = useState(false)
   const [showFocusCheck, setShowFocusCheck] = useState(false)
   const [showReminder, setShowReminder] = useState(false)
+  const [pageAlerts, setPageAlerts] = useState<Record<string, 'warn' | 'alert'>>({})
+
+  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','goals','youtube','links','etsy','niche-calendar','x','nsdr','physical','workflows']
 
   const today = toDateStr(new Date())
   const quote = QUOTES[new Date().getDate() % QUOTES.length]
@@ -225,6 +228,27 @@ export default function Home() {
     const dismissed = (() => { try { return localStorage.getItem('flowstate_reminder_dismissed') === toDateStr(now) } catch { return false } })()
     setShowReminder(isWeekday && isAfternoon && !dismissed)
   }, [])
+
+  useEffect(() => {
+    try {
+      const now = Date.now()
+      const alerts: Record<string, 'warn' | 'alert'> = {}
+      for (const route of TRACKED_ROUTES) {
+        const raw = localStorage.getItem('flowstate_last_visit_' + route)
+        if (!raw) { alerts[route] = 'alert'; continue }
+        const age = now - parseInt(raw, 10)
+        if (age > 48 * 3600 * 1000) alerts[route] = 'alert'
+        else if (age > 24 * 3600 * 1000) alerts[route] = 'warn'
+      }
+      setPageAlerts(alerts)
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function navTo(route: string) {
+    try { localStorage.setItem('flowstate_last_visit_' + route, Date.now().toString()) } catch {}
+    router.push('/' + route)
+  }
 
   function handleFocusClick() {
     // Show the pre-flight check before starting focus
@@ -301,82 +325,36 @@ export default function Home() {
             <button onClick={toggle} title={lang === 'en' ? 'Switch to Welsh' : 'Newid i Saesneg'} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background: lang === 'cy' ? 'rgba(0,192,75,0.12)' : 'rgba(255,255,255,0.04)', border:'1px solid '+(lang === 'cy' ? 'rgba(0,192,75,0.3)' : C.border), borderRadius:'0.75rem', color: lang === 'cy' ? '#00c04b' : C.muted, cursor:'pointer', fontSize:'0.75rem', fontWeight:700, fontFamily:'inherit', letterSpacing:'0.05em' }}>
               {lang === 'en' ? 'CY' : 'EN'}
             </button>
-            <button onClick={() => router.push('/morning')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem', color:C.amber, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Sunrise size={14}/>{t('morning')}
-            </button>
-            <button onClick={() => router.push('/calendar')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <CalendarDays size={14}/>{t('calendar')}
-            </button>
-            <button onClick={() => router.push('/tracking')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.25)', borderRadius:'0.75rem', color:C.purple, cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <BarChart2 size={14}/>{t('tracking')}
-            </button>
-            <button onClick={() => router.push('/evening')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.18)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Moon size={14}/>{t('evening')}
-            </button>
-            <button onClick={() => router.push('/welsh')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,192,75,0.07)', border:'1px solid rgba(0,192,75,0.25)', borderRadius:'0.75rem', color:'#00c04b', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              &#127988;&#917607;&#917602;&#917623;&#917612;&#917619;&#917631; Welsh
-            </button>
-            <button onClick={() => router.push('/vault')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.18)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <BookOpen size={14}/>Vault
-            </button>
-            <button onClick={() => router.push('/content')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(255,107,53,0.07)', border:'1px solid rgba(255,107,53,0.2)', borderRadius:'0.75rem', color:'#ff6b35', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Film size={14}/>Content
-            </button>
-            <button onClick={() => router.push('/projects')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem', color:'#00d4ff', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <FolderOpen size={14}/>{t('projects')}
-            </button>
-            <button onClick={() => router.push('/tasks')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,255,136,0.06)', border:'1px solid rgba(0,255,136,0.18)', borderRadius:'0.75rem', color:'#00ff88', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <CheckSquare size={14}/>{t('tasks')}
-            </button>
-            <button onClick={() => router.push('/personal')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.18)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <User size={14}/>{t('personal')}
-            </button>
-            <button onClick={() => router.push('/goals')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,255,136,0.06)', border:'1px solid rgba(0,255,136,0.18)', borderRadius:'0.75rem', color:'#00ff88', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Target size={14}/>{t('goals')}
-            </button>
-            <button onClick={() => router.push('/youtube')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(255,68,102,0.07)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'0.75rem', color:'#ff4466', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Tv size={14}/>{t('youtube')}
-            </button>
-            <button onClick={() => router.push('/links')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.75rem', color:'#00d4ff', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Link2 size={14}/>{t('links')}
-            </button>
-            <button onClick={() => router.push('/etsy')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(249,115,22,0.07)', border:'1px solid rgba(249,115,22,0.22)', borderRadius:'0.75rem', color:'#f97316', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <ShoppingBag size={14}/>{t('etsy')}
-            </button>
-            <button onClick={() => router.push('/niche-calendar')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(20,184,166,0.07)', border:'1px solid rgba(20,184,166,0.22)', borderRadius:'0.75rem', color:'#14b8a6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <CalendarDays size={14}/> Niche Cal
-            </button>
-            <button onClick={() => router.push('/workflows')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', cursor:'pointer', fontSize:'0.8rem', fontWeight:700, fontFamily:'inherit' }}>
-              <Plus size={14}/>{t('workflows')}
-            </button>
-            <button onClick={() => router.push('/x')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(249,115,22,0.07)', border:'1px solid rgba(249,115,22,0.22)', borderRadius:'0.75rem', color:'#f97316', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <X size={14}/>X / Social
-            </button>
-            <button onClick={() => router.push('/nsdr')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(139,92,246,0.07)', border:'1px solid rgba(139,92,246,0.22)', borderRadius:'0.75rem', color:'#8b5cf6', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Moon size={14}/>NSDR
-            </button>
-            <button onClick={() => router.push('/physical')}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:'rgba(0,255,136,0.06)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'0.75rem', color:'#00ff88', cursor:'pointer', fontSize:'0.8rem', fontWeight:600, fontFamily:'inherit' }}>
-              <Activity size={14}/>Physical
-            </button>
+            {([
+              { route:'morning', icon:<Sunrise size={14}/>, label:t('morning'), bg:'rgba(255,184,0,0.08)', border:'rgba(255,184,0,0.25)', color:C.amber },
+              { route:'calendar', icon:<CalendarDays size={14}/>, label:t('calendar'), bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:C.cyan },
+              { route:'tracking', icon:<BarChart2 size={14}/>, label:t('tracking'), bg:'rgba(139,92,246,0.08)', border:'rgba(139,92,246,0.25)', color:C.purple },
+              { route:'evening', icon:<Moon size={14}/>, label:t('evening'), bg:'rgba(139,92,246,0.06)', border:'rgba(139,92,246,0.18)', color:'#8b5cf6' },
+              { route:'welsh', icon:<span style={{ fontSize:'0.8rem' }}>&#127988;&#917607;&#917602;&#917623;&#917612;&#917619;&#917631;</span>, label:'Welsh', bg:'rgba(0,192,75,0.07)', border:'rgba(0,192,75,0.25)', color:'#00c04b' },
+              { route:'vault', icon:<BookOpen size={14}/>, label:'Vault', bg:'rgba(139,92,246,0.06)', border:'rgba(139,92,246,0.18)', color:'#8b5cf6' },
+              { route:'content', icon:<Film size={14}/>, label:'Content', bg:'rgba(255,107,53,0.07)', border:'rgba(255,107,53,0.2)', color:'#ff6b35' },
+              { route:'projects', icon:<FolderOpen size={14}/>, label:t('projects'), bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
+              { route:'tasks', icon:<CheckSquare size={14}/>, label:t('tasks'), bg:'rgba(0,255,136,0.06)', border:'rgba(0,255,136,0.18)', color:'#00ff88' },
+              { route:'personal', icon:<User size={14}/>, label:t('personal'), bg:'rgba(139,92,246,0.06)', border:'rgba(139,92,246,0.18)', color:'#8b5cf6' },
+              { route:'goals', icon:<Target size={14}/>, label:t('goals'), bg:'rgba(0,255,136,0.06)', border:'rgba(0,255,136,0.18)', color:'#00ff88' },
+              { route:'youtube', icon:<Tv size={14}/>, label:t('youtube'), bg:'rgba(255,68,102,0.07)', border:'rgba(255,68,102,0.2)', color:'#ff4466' },
+              { route:'links', icon:<Link2 size={14}/>, label:t('links'), bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
+              { route:'etsy', icon:<ShoppingBag size={14}/>, label:t('etsy'), bg:'rgba(249,115,22,0.07)', border:'rgba(249,115,22,0.22)', color:'#f97316' },
+              { route:'niche-calendar', icon:<CalendarDays size={14}/>, label:'Niche Cal', bg:'rgba(20,184,166,0.07)', border:'rgba(20,184,166,0.22)', color:'#14b8a6' },
+              { route:'workflows', icon:<Plus size={14}/>, label:t('workflows'), bg:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', color:'#000', bold:true },
+              { route:'x', icon:<X size={14}/>, label:'X / Social', bg:'rgba(249,115,22,0.07)', border:'rgba(249,115,22,0.22)', color:'#f97316' },
+              { route:'nsdr', icon:<Moon size={14}/>, label:'NSDR', bg:'rgba(139,92,246,0.07)', border:'rgba(139,92,246,0.22)', color:'#8b5cf6' },
+              { route:'physical', icon:<Activity size={14}/>, label:'Physical', bg:'rgba(0,255,136,0.06)', border:'rgba(0,255,136,0.2)', color:'#00ff88' },
+            ] as { route:string; icon:JSX.Element; label:string; bg:string; border:string; color:string; bold?:boolean }[]).map(({ route, icon, label, bg, border, color, bold }) => {
+              const alert = pageAlerts[route]
+              const dotColor = alert === 'alert' ? C.red : alert === 'warn' ? C.amber : null
+              return (
+                <button key={route} onClick={() => navTo(route)} style={{ position:'relative', display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:bg, border:border==='none'?'none':'1px solid '+border, borderRadius:'0.75rem', color, cursor:'pointer', fontSize:'0.8rem', fontWeight:bold?700:600, fontFamily:'inherit' }}>
+                  {dotColor && <span style={{ position:'absolute', top:'4px', right:'4px', width:'7px', height:'7px', borderRadius:'50%', background:dotColor, boxShadow:'0 0 4px '+dotColor }} />}
+                  {icon}{label}
+                </button>
+              )
+            })}
           </div>
         </div>
       </div>

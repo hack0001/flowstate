@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X, RefreshCw, Bell } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 const C = {
@@ -25,6 +25,21 @@ type WFSession = { id: string; title: string; workflow_type: { name: string; ico
 type OverdueMove = { id: string; title: string; task_type: string | null; fromDate: string; toDate: string; selected: boolean }
 type HabitBlock = { id: string; title: string; emoji: string; color: string; days: number[]; timeLabel: string }
 
+type ReminderRecurrence =
+  | { type: 'daily' }
+  | { type: 'weekday' }
+  | { type: 'weekly'; every: number }
+  | { type: 'monthly'; every: number }
+  | { type: 'yearly'; every: number }
+  | { type: 'custom'; every: number; unit: 'days' | 'weeks' | 'months' | 'years' }
+
+type Reminder = {
+  id: string; title: string; emoji: string; color: string
+  startDate: string; recurrence: ReminderRecurrence; timeLabel: string
+}
+
+const TYPE_LIMITS: Record<string, number> = { Flow: 2, Personal: 2, Admin: 2, 'Quick Task': 2 }
+
 function getMondayOfWeek(d: Date): Date {
   const day = d.getDay()
   const diff = day === 0 ? -6 : 1 - day
@@ -47,48 +62,110 @@ function fmtWeekRange(start: Date): string {
 function buildOrganisePlan(allTasks: Record<string, Task[]>, weekStart: Date): OrgMove[] {
   const moves: OrgMove[] = []
   const dates = Array.from({ length: 14 }, (_, i) => toDateStr(addDays(weekStart, i)))
-  const flowByDay: Record<string, Task[]> = {}
-  for (const date of dates) flowByDay[date] = (allTasks[date] ?? []).filter(t => t.task_type === 'Flow' && t.status !== 'Done')
-  for (let i = 0; i < dates.length; i++) {
-    const tasks = flowByDay[dates[i]]
-    if (tasks.length <= 2) continue
-    const overflow = tasks.splice(2)
-    for (const task of overflow) {
-      let moved = false
-      for (let j = i + 1; j < dates.length; j++) {
-        if (flowByDay[dates[j]].length < 2) {
-          const dest = dates[j]
-          if ((task.due_date ?? dates[i]) !== dest) moves.push({ id: task.id, from: task.due_date ?? dates[i], to: dest, title: task.title })
-          flowByDay[dest].push({ ...task, due_date: dest }); moved = true; break
+
+  // Build per-type per-day buckets
+  const byType: Record<string, Record<string, Task[]>> = {}
+  for (const type of Object.keys(TYPE_LIMITS)) {
+    byType[type] = {}
+    for (const date of dates) {
+      byType[type][date] = (allTasks[date] ?? []).filter(t => t.task_type === type && t.status !== 'Done')
+    }
+  }
+
+  for (const type of Object.keys(TYPE_LIMITS)) {
+    const limit = TYPE_LIMITS[type]
+    const bucket = byType[type]
+    for (let i = 0; i < dates.length; i++) {
+      const tasks = bucket[dates[i]]
+      if (tasks.length <= limit) continue
+      const overflow = tasks.splice(limit)
+      for (const task of overflow) {
+        let moved = false
+        for (let j = i + 1; j < dates.length; j++) {
+          if (bucket[dates[j]].length < limit) {
+            const dest = dates[j]
+            if ((task.due_date ?? dates[i]) !== dest) moves.push({ id: task.id, from: task.due_date ?? dates[i], to: dest, title: task.title })
+            bucket[dest].push({ ...task, due_date: dest }); moved = true; break
+          }
         }
-      }
-      if (!moved) {
-        const fallback = dates[dates.length - 1]
-        if ((task.due_date ?? dates[i]) !== fallback) moves.push({ id: task.id, from: task.due_date ?? dates[i], to: fallback, title: task.title })
-        flowByDay[fallback].push({ ...task, due_date: fallback })
+        if (!moved) {
+          const fallback = dates[dates.length - 1]
+          if ((task.due_date ?? dates[i]) !== fallback) moves.push({ id: task.id, from: task.due_date ?? dates[i], to: fallback, title: task.title })
+          bucket[fallback].push({ ...task, due_date: fallback })
+        }
       }
     }
   }
   return moves
 }
 
+function reminderOccursOn(r: Reminder, dateStr: string): boolean {
+  const date = new Date(dateStr + 'T12:00:00')
+  const start = new Date(r.startDate + 'T12:00:00')
+  if (date < start) return false
+  const diffDays = Math.round((date.getTime() - start.getTime()) / 86400000)
+  const rec = r.recurrence
+  switch (rec.type) {
+    case 'daily': return true
+    case 'weekday': { const d = date.getDay(); return d >= 1 && d <= 5 }
+    case 'weekly': return diffDays % (7 * rec.every) === 0
+    case 'monthly': {
+      if (date.getDate() !== start.getDate()) return false
+      const md = (date.getFullYear() - start.getFullYear()) * 12 + (date.getMonth() - start.getMonth())
+      return md % rec.every === 0
+    }
+    case 'yearly': {
+      if (date.getDate() !== start.getDate() || date.getMonth() !== start.getMonth()) return false
+      return (date.getFullYear() - start.getFullYear()) % rec.every === 0
+    }
+    case 'custom': {
+      const { every, unit } = rec
+      if (unit === 'days') return diffDays % every === 0
+      if (unit === 'weeks') return diffDays % (every * 7) === 0
+      if (unit === 'months') {
+        if (date.getDate() !== start.getDate()) return false
+        const md = (date.getFullYear() - start.getFullYear()) * 12 + (date.getMonth() - start.getMonth())
+        return md % every === 0
+      }
+      if (unit === 'years') {
+        if (date.getDate() !== start.getDate() || date.getMonth() !== start.getMonth()) return false
+        return (date.getFullYear() - start.getFullYear()) % every === 0
+      }
+      return false
+    }
+  }
+}
+
+function describeRecurrence(rec: ReminderRecurrence): string {
+  switch (rec.type) {
+    case 'daily': return 'Every day'
+    case 'weekday': return 'Every weekday'
+    case 'weekly': return rec.every === 1 ? 'Every week' : 'Every ' + rec.every + ' weeks'
+    case 'monthly': return rec.every === 1 ? 'Every month' : 'Every ' + rec.every + ' months'
+    case 'yearly': return rec.every === 1 ? 'Every year' : 'Every ' + rec.every + ' years'
+    case 'custom': return 'Every ' + rec.every + ' ' + rec.unit
+  }
+}
+
 function TaskCard({
-  task, onComplete, onDelete, onDragStart, onEdit,
+  task, onComplete, onDelete, onDragStart, onEdit, onReschedule,
 }: {
   task: Task
   onComplete: (id: string) => void
   onDelete: (id: string) => void
   onDragStart: (e: React.DragEvent, task: Task) => void
   onEdit: (task: Task) => void
+  onReschedule: (task: Task) => void
 }) {
   const [busy, setBusy] = useState(false)
+  const [rescheduling, setRescheduling] = useState(false)
   const typeColor = task.task_type === 'Flow' ? C.cyan : task.task_type === 'Personal' ? C.purple : task.task_type === 'Admin' ? C.muted : C.amber
   return (
     <div
       draggable
       onDragStart={e => { e.stopPropagation(); onDragStart(e, task) }}
       onClick={() => onEdit(task)}
-      style={{ display:'flex', alignItems:'flex-start', gap:'0.375rem', padding:'0.45rem 0.5rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', marginBottom:'0.3rem', opacity:busy?0.5:1, cursor:'pointer' }}>
+      style={{ display:'flex', alignItems:'flex-start', gap:'0.375rem', padding:'0.45rem 0.5rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', marginBottom:'0.3rem', opacity:(busy||rescheduling)?0.5:1, cursor:'pointer' }}>
       <button onClick={e => { e.stopPropagation(); setBusy(true); onComplete(task.id) }}
         style={{ width:'14px', height:'14px', borderRadius:'50%', border:'2px solid '+C.border, background:'transparent', cursor:'pointer', flexShrink:0, marginTop:'2px', padding:0 }} />
       <div style={{ flex:1, minWidth:0 }}>
@@ -101,6 +178,7 @@ function TaskCard({
           {task.urgency === 'Urgent' && <span style={{ fontSize:'0.55rem', color:C.red, border:'1px solid '+C.red, borderRadius:'0.2rem', padding:'0 0.2rem', lineHeight:1.5, opacity:0.85 }}>Urgent</span>}
         </div>
       </div>
+      <button onClick={e => { e.stopPropagation(); setRescheduling(true); onReschedule(task) }} title="Reschedule to later" style={{ background:'none', border:'none', color:C.amber, cursor:'pointer', padding:'1px', flexShrink:0 }}><RefreshCw size={10} /></button>
       <button onClick={e => { e.stopPropagation(); setBusy(true); onDelete(task.id) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'1px', flexShrink:0 }}><Trash2 size={10} /></button>
     </div>
   )
@@ -158,6 +236,12 @@ export default function CalendarPage() {
   const [showHabitModal, setShowHabitModal] = useState(false)
   const [editingHabit, setEditingHabit] = useState<HabitBlock | null>(null)
   const [habitDraft, setHabitDraft] = useState<{ title:string; emoji:string; color:string; days:number[]; timeLabel:string }>({ title:'', emoji:'', color:C.cyan, days:[], timeLabel:'' })
+  // Reminders
+  const [calTab, setCalTab] = useState<'calendar' | 'reminders'>('calendar')
+  const [reminders, setReminders] = useState<Reminder[]>([])
+  const [showReminderModal, setShowReminderModal] = useState(false)
+  const [editingReminder, setEditingReminder] = useState<Reminder | null>(null)
+  const [reminderDraft, setReminderDraft] = useState<{ title:string; emoji:string; color:string; startDate:string; recurrence:ReminderRecurrence; timeLabel:string }>({ title:'', emoji:'', color:C.green, startDate:todayStr, recurrence:{ type:'daily' }, timeLabel:'' })
 
   const calYear = calDate.getFullYear()
   const calMonth = calDate.getMonth()
@@ -212,6 +296,13 @@ export default function CalendarPage() {
     try {
       const raw = localStorage.getItem('flowstate_cal_habits')
       if (raw) setHabits(JSON.parse(raw) as HabitBlock[])
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('flowstate_reminders')
+      if (raw) setReminders(JSON.parse(raw) as Reminder[])
     } catch {}
   }, [])
 
@@ -296,8 +387,14 @@ export default function CalendarPage() {
         .lt('due_date', todayStr).neq('archived', true).neq('status', 'Done')
         .order('due_date', { ascending: true })
 
-      const todayOverflow = (weekTasks[todayStr] ?? [])
-        .filter(t => t.task_type === 'Flow').slice(2)
+      // Today's overflow per type
+      const todayTasks = weekTasks[todayStr] ?? []
+      const todayOverflow: Task[] = []
+      for (const type of Object.keys(TYPE_LIMITS)) {
+        const limit = TYPE_LIMITS[type]
+        const typed = todayTasks.filter(t => t.task_type === type)
+        if (typed.length > limit) todayOverflow.push(...typed.slice(limit))
+      }
 
       const futureEnd = toDateStr(addDays(today, 28))
       const { data: futureTasks } = await supabase
@@ -305,32 +402,33 @@ export default function CalendarPage() {
         .gte('due_date', todayStr).lte('due_date', futureEnd)
         .neq('archived', true).neq('status', 'Done')
 
-      const flowSlots: Record<string, number> = {}
+      // Per-type slot counters
+      const typeSlots: Record<string, Record<string, number>> = {}
+      for (const type of Object.keys(TYPE_LIMITS)) typeSlots[type] = {}
       for (const t of (futureTasks ?? [])) {
-        if (t.task_type === 'Flow' && t.due_date)
-          flowSlots[t.due_date] = (flowSlots[t.due_date] ?? 0) + 1
+        if (t.task_type && t.due_date && typeSlots[t.task_type])
+          typeSlots[t.task_type][t.due_date] = (typeSlots[t.task_type][t.due_date] ?? 0) + 1
       }
 
       const allToMove: Task[] = [...((overdueTasks ?? []) as Task[]), ...todayOverflow]
       const moves: OverdueMove[] = []
 
       for (const task of allToMove) {
-        if (task.task_type === 'Flow') {
-          let placed = false
-          for (let i = 0; i < 28; i++) {
-            const d = toDateStr(addDays(today, i))
-            if ((flowSlots[d] ?? 0) < 2) {
-              flowSlots[d] = (flowSlots[d] ?? 0) + 1
-              moves.push({ id: task.id, title: task.title, task_type: task.task_type, fromDate: task.due_date ?? todayStr, toDate: d, selected: true })
-              placed = true; break
-            }
+        const type = task.task_type ?? 'Flow'
+        const limit = TYPE_LIMITS[type] ?? 2
+        const slots = typeSlots[type] ?? {}
+        let placed = false
+        for (let i = 0; i < 28; i++) {
+          const d = toDateStr(addDays(today, i))
+          if ((slots[d] ?? 0) < limit) {
+            slots[d] = (slots[d] ?? 0) + 1
+            moves.push({ id: task.id, title: task.title, task_type: task.task_type, fromDate: task.due_date ?? todayStr, toDate: d, selected: true })
+            placed = true; break
           }
-          if (!placed) {
-            const fallback = toDateStr(addDays(today, 28))
-            moves.push({ id: task.id, title: task.title, task_type: task.task_type, fromDate: task.due_date ?? todayStr, toDate: fallback, selected: true })
-          }
-        } else {
-          moves.push({ id: task.id, title: task.title, task_type: task.task_type, fromDate: task.due_date ?? todayStr, toDate: toDateStr(addDays(today, 1)), selected: true })
+        }
+        if (!placed) {
+          const fallback = toDateStr(addDays(today, 28))
+          moves.push({ id: task.id, title: task.title, task_type: task.task_type, fromDate: task.due_date ?? todayStr, toDate: fallback, selected: true })
         }
       }
       setOverduePlan(moves)
@@ -421,8 +519,83 @@ export default function CalendarPage() {
       localStorage.setItem('flowstate_cal_habits', JSON.stringify(next))
       return next
     })
-    setShowHabitModal(false)
-    setEditingHabit(null)
+  }
+
+  function openReminderForm(r: Reminder | null) {
+    setEditingReminder(r)
+    setReminderDraft(r
+      ? { title:r.title, emoji:r.emoji, color:r.color, startDate:r.startDate, recurrence:{ ...r.recurrence } as ReminderRecurrence, timeLabel:r.timeLabel }
+      : { title:'', emoji:'', color:C.green, startDate:todayStr, recurrence:{ type:'daily' }, timeLabel:'' }
+    )
+    setShowReminderModal(true)
+  }
+
+  function saveReminder() {
+    if (!reminderDraft.title.trim()) return
+    const r: Reminder = {
+      id: editingReminder?.id ?? Date.now().toString(),
+      title: reminderDraft.title.trim(), emoji: reminderDraft.emoji,
+      color: reminderDraft.color, startDate: reminderDraft.startDate,
+      recurrence: reminderDraft.recurrence, timeLabel: reminderDraft.timeLabel,
+    }
+    setReminders(prev => {
+      const next = editingReminder ? prev.map(x => x.id === r.id ? r : x) : [...prev, r]
+      localStorage.setItem('flowstate_reminders', JSON.stringify(next))
+      return next
+    })
+    setShowReminderModal(false)
+    setEditingReminder(null)
+  }
+
+  function deleteReminder(id: string) {
+    setReminders(prev => {
+      const next = prev.filter(r => r.id !== id)
+      localStorage.setItem('flowstate_reminders', JSON.stringify(next))
+      return next
+    })
+    setShowReminderModal(false)
+    setEditingReminder(null)
+  }
+
+  async function handleReschedule(task: Task, currentDate: string) {
+    const type = task.task_type ?? 'Flow'
+    const limit = TYPE_LIMITS[type] ?? 2
+    const futureEnd = toDateStr(addDays(today, 21))
+    try {
+      const { data } = await supabase
+        .from('master_tasks').select('due_date,task_type')
+        .gte('due_date', currentDate).lte('due_date', futureEnd)
+        .neq('archived', true).neq('status', 'Done')
+      const slots: Record<string, number> = {}
+      for (const t of (data ?? [])) {
+        if (t.task_type === type && t.due_date)
+          slots[t.due_date] = (slots[t.due_date] ?? 0) + 1
+      }
+      // Find first date AFTER currentDate with capacity
+      for (let i = 1; i <= 21; i++) {
+        const d = toDateStr(addDays(today, i))
+        if (d <= currentDate) continue
+        if ((slots[d] ?? 0) < limit) {
+          await supabase.from('master_tasks').update({ due_date: d }).eq('id', task.id)
+          setWeekTasks(prev => {
+            const next = { ...prev }
+            if (next[currentDate]) next[currentDate] = next[currentDate].filter(t => t.id !== task.id)
+            if (next[d] !== undefined) next[d] = [...(next[d] ?? []), { ...task, due_date: d }]
+            return next
+          })
+          return
+        }
+      }
+      // Fallback — 21 days out
+      const fallback = toDateStr(addDays(today, 21))
+      await supabase.from('master_tasks').update({ due_date: fallback }).eq('id', task.id)
+      setWeekTasks(prev => {
+        const next = { ...prev }
+        if (next[currentDate]) next[currentDate] = next[currentDate].filter(t => t.id !== task.id)
+        if (next[fallback] !== undefined) next[fallback] = [...(next[fallback] ?? []), { ...task, due_date: fallback }]
+        return next
+      })
+    } catch {}
   }
 
   return (
@@ -450,6 +623,15 @@ export default function CalendarPage() {
             <Zap size={12} />Organise Week
           </button>
         </div>
+      </div>
+
+      {/* Tab bar */}
+      <div style={{ display:'flex', gap:'0', borderBottom:'1px solid '+C.border, flexShrink:0 }}>
+        {(['calendar','reminders'] as const).map(tab => (
+          <button key={tab} onClick={() => setCalTab(tab)} style={{ padding:'0.55rem 1.25rem', background:'none', border:'none', borderBottom: calTab===tab ? '2px solid '+C.cyan : '2px solid transparent', color: calTab===tab ? C.cyan : C.muted, fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700, cursor:'pointer', textTransform:'capitalize', letterSpacing:'0.04em', transition:'all 0.15s', marginBottom:'-1px' }}>
+            {tab === 'reminders' ? <span style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}><Bell size={12} />Reminders{reminders.length > 0 && <span style={{ background:C.green+'33', color:C.green, fontSize:'0.6rem', fontWeight:900, borderRadius:'9999px', padding:'0 0.35rem', lineHeight:1.6 }}>{reminders.length}</span>}</span> : tab.charAt(0).toUpperCase()+tab.slice(1)}
+          </button>
+        ))}
       </div>
 
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
@@ -515,6 +697,27 @@ export default function CalendarPage() {
             )}
           </div>
 
+          <div style={{ marginTop:'1.25rem' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.5rem' }}>
+              <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:0 }}>Reminders</p>
+              <button onClick={() => openReminderForm(null)} style={{ fontSize:'0.65rem', color:C.green, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', fontWeight:700 }}>+ Add</button>
+            </div>
+            {reminders.length === 0 ? (
+              <p style={{ fontSize:'0.68rem', color:C.muted, lineHeight:1.5, margin:0 }}>No reminders. Add recurring reminders like Bills, Reviews, or Calls.</p>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.25rem' }}>
+                {reminders.map(r => (
+                  <button key={r.id} onClick={() => openReminderForm(r)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.3rem 0.4rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.375rem', cursor:'pointer', fontFamily:'inherit', textAlign:'left' }}>
+                    <Bell size={8} color={r.color} />
+                    {r.emoji && <span style={{ fontSize:'0.8rem', lineHeight:1 }}>{r.emoji}</span>}
+                    <span style={{ fontSize:'0.7rem', color:C.sec, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</span>
+                    <span style={{ fontSize:'0.55rem', color:C.muted, flexShrink:0 }}>{describeRecurrence(r.recurrence).split(' ').slice(0,2).join(' ')}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {wfSessions.length > 0 && (
             <div style={{ marginTop:'1.25rem' }}>
               <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>Workflows</p>
@@ -543,8 +746,81 @@ export default function CalendarPage() {
           )}
         </div>
 
+        {/* Reminders table */}
+        {calTab === 'reminders' && (
+          <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'auto', padding:'1.5rem' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1.25rem' }}>
+              <div>
+                <h2 style={{ margin:0, fontSize:'1.1rem', fontWeight:800, color:C.text }}>All Reminders</h2>
+                <p style={{ margin:'0.2rem 0 0', fontSize:'0.75rem', color:C.muted }}>{reminders.length} reminder{reminders.length !== 1 ? 's' : ''} active</p>
+              </div>
+              <button onClick={() => openReminderForm(null)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:'0.75rem', color:C.green, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
+                <Bell size={13} />New Reminder
+              </button>
+            </div>
+            {reminders.length === 0 ? (
+              <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:'0.75rem', opacity:0.5 }}>
+                <Bell size={40} color={C.muted} />
+                <p style={{ color:C.muted, fontSize:'0.9rem', margin:0 }}>No reminders yet</p>
+                <button onClick={() => openReminderForm(null)} style={{ padding:'0.5rem 1.25rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Create your first reminder</button>
+              </div>
+            ) : (
+              <div style={{ overflowX:'auto' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.8rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom:'1px solid '+C.border }}>
+                      {['','Title','Recurrence','Start Date','Time','Next occurrence',''].map((h,i) => (
+                        <th key={i} style={{ textAlign:'left', padding:'0.5rem 0.75rem', fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, whiteSpace:'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reminders.map(r => {
+                      // Find next occurrence in next 365 days
+                      let nextDate = ''
+                      for (let i = 0; i <= 365; i++) {
+                        const d = toDateStr(addDays(today, i))
+                        if (reminderOccursOn(r, d)) { nextDate = d; break }
+                      }
+                      const fmtD = (s: string) => s ? new Date(s+'T12:00:00').toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short', year:'numeric' }) : '—'
+                      const nextDiff = nextDate ? Math.round((new Date(nextDate+'T12:00:00').getTime() - today.getTime()) / 86400000) : null
+                      const nextLabel = nextDiff === 0 ? 'Today' : nextDiff === 1 ? 'Tomorrow' : nextDiff !== null ? 'in ' + nextDiff + 'd' : '—'
+                      return (
+                        <tr key={r.id} style={{ borderBottom:'1px solid '+C.border+'66', cursor:'pointer', transition:'background 0.1s' }}
+                          onClick={() => openReminderForm(r)}
+                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.card}
+                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                          <td style={{ padding:'0.625rem 0.75rem', width:'32px' }}>
+                            <div style={{ width:'10px', height:'10px', borderRadius:'50%', background:r.color }} />
+                          </td>
+                          <td style={{ padding:'0.625rem 0.75rem' }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                              {r.emoji && <span style={{ fontSize:'1rem' }}>{r.emoji}</span>}
+                              <span style={{ fontWeight:700, color:C.text }}>{r.title}</span>
+                            </div>
+                          </td>
+                          <td style={{ padding:'0.625rem 0.75rem', color:r.color, fontWeight:600 }}>{describeRecurrence(r.recurrence)}</td>
+                          <td style={{ padding:'0.625rem 0.75rem', color:C.sec }}>{fmtD(r.startDate)}</td>
+                          <td style={{ padding:'0.625rem 0.75rem', color:C.muted }}>{r.timeLabel || '—'}</td>
+                          <td style={{ padding:'0.625rem 0.75rem' }}>
+                            <span style={{ color: nextDiff === 0 ? C.green : nextDiff === 1 ? C.cyan : C.sec, fontWeight:600 }}>{nextLabel}</span>
+                            {nextDate && nextDate !== toDateStr(today) && <span style={{ fontSize:'0.7rem', color:C.muted, marginLeft:'0.4rem' }}>{fmtD(nextDate)}</span>}
+                          </td>
+                          <td style={{ padding:'0.625rem 0.5rem' }}>
+                            <button onClick={e => { e.stopPropagation(); deleteReminder(r.id) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'2px', display:'flex', alignItems:'center' }}><Trash2 size={13} /></button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Week grid */}
-        <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        {calTab === 'calendar' && <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
           <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', borderBottom:'1px solid '+C.border, flexShrink:0 }}>
             <button onClick={() => setWeekStart(w => getMondayOfWeek(addDays(w, -7)))} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronLeft size={16} /></button>
             <span style={{ fontWeight:700, fontSize:'0.9rem', color:C.text, flex:1 }}>{fmtWeekRange(weekStart)}</span>
@@ -584,6 +860,19 @@ export default function CalendarPage() {
                     {schedulingId && <div style={{ fontSize:'0.55rem', color:C.cyan, marginTop:'0.15rem', fontWeight:700 }}>+ add here</div>}
                   </div>
 
+                  {reminders.filter(r => reminderOccursOn(r, date)).length > 0 && (
+                    <div style={{ marginBottom:'0.4rem', display:'flex', flexDirection:'column', gap:'0.18rem' }}>
+                      {reminders.filter(r => reminderOccursOn(r, date)).map(r => (
+                        <div key={r.id} onClick={() => openReminderForm(r)} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.18rem 0.35rem', borderRadius:'0.3rem', background:r.color+'18', border:'1px solid '+r.color+'45', cursor:'pointer' }}>
+                          <Bell size={8} color={r.color} style={{ flexShrink:0 }} />
+                          {r.emoji && <span style={{ fontSize:'0.72rem', lineHeight:1, flexShrink:0 }}>{r.emoji}</span>}
+                          <span style={{ fontSize:'0.6rem', fontWeight:600, color:r.color, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</span>
+                          {r.timeLabel && <span style={{ fontSize:'0.52rem', color:r.color, opacity:0.7, flexShrink:0 }}>{r.timeLabel}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {habits.filter(h => h.days.includes(dow)).length > 0 && (
                     <div style={{ marginBottom:'0.5rem', display:'flex', flexDirection:'column', gap:'0.2rem' }}>
                       {habits.filter(h => h.days.includes(dow)).map(h => (
@@ -602,7 +891,7 @@ export default function CalendarPage() {
                       <span style={{ fontSize:'0.58rem', fontWeight:700, color:hasOverflow?C.red:flowTasks.length===2?C.amber:C.muted }}>{Math.min(flowTasks.length,2)}/2{hasOverflow?' !':''}</span>
                     </div>
                     {flowTasks.slice(0,2).map(t => (
-                      <TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} onEdit={openEdit} />
+                      <TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} onEdit={openEdit} onReschedule={t => handleReschedule(t, date)} />
                     ))}
                     {flowTasks.length === 0 && (
                       <div style={{ height:'36px', border:'1px dashed rgba(0,212,255,0.2)', borderRadius:'0.5rem', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -615,13 +904,13 @@ export default function CalendarPage() {
                   {otherTasks.length > 0 && (
                     <div style={{ marginBottom:'0.625rem' }}>
                       <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.amber, margin:'0 0 0.3rem' }}>Tasks</p>
-                      {otherTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} onEdit={openEdit} />))}
+                      {otherTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} onEdit={openEdit} onReschedule={t => handleReschedule(t, date)} />))}
                     </div>
                   )}
 
                   <div style={{ borderTop:'1px solid rgba(139,92,246,0.2)', paddingTop:'0.5rem', marginTop:'auto' }}>
                     <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.purple, margin:'0 0 0.3rem' }}>Evening</p>
-                    {personalTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} onEdit={openEdit} />))}
+                    {personalTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} onEdit={openEdit} onReschedule={t => handleReschedule(t, date)} />))}
                     {personalTasks.length === 0 && (
                       <div style={{ height:'32px', border:'1px dashed rgba(139,92,246,0.2)', borderRadius:'0.5rem', display:'flex', alignItems:'center', justifyContent:'center' }}>
                         <span style={{ fontSize:'0.6rem', color:C.muted }}>personal tasks</span>
@@ -640,7 +929,7 @@ export default function CalendarPage() {
               )
             })}
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* Organise modal */}
@@ -864,6 +1153,138 @@ export default function CalendarPage() {
                 <button onClick={() => { setShowHabitModal(false); setEditingHabit(null) }} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Cancel</button>
                 <button onClick={saveHabit} disabled={!habitDraft.title.trim() || habitDraft.days.length === 0}
                   style={{ padding:'0.5rem 1.25rem', background:habitDraft.color, border:'none', borderRadius:'0.625rem', color:'#000', fontWeight:700, cursor:(!habitDraft.title.trim()||habitDraft.days.length===0)?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', opacity:(!habitDraft.title.trim()||habitDraft.days.length===0)?0.5:1 }}>
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reminder form modal */}
+      {showReminderModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.87)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:80 }}>
+          <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem', width:'90%', maxWidth:'28rem', maxHeight:'90vh', overflowY:'auto', position:'relative' }}>
+            <button onClick={() => { setShowReminderModal(false); setEditingReminder(null) }} style={{ position:'absolute', top:'1rem', right:'1rem', background:'none', border:'none', color:C.muted, cursor:'pointer' }}><X size={16} /></button>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'1.25rem' }}>
+              <Bell size={16} color={reminderDraft.color} />
+              <h2 style={{ margin:0, fontSize:'1rem', fontWeight:800, color:C.text }}>{editingReminder ? 'Edit Reminder' : 'New Reminder'}</h2>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+              {/* Title + Emoji */}
+              <div style={{ display:'flex', gap:'0.5rem' }}>
+                <div style={{ flex:1 }}>
+                  <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Title</label>
+                  <input autoFocus value={reminderDraft.title} onChange={e => setReminderDraft(d => ({ ...d, title: e.target.value }))}
+                    onKeyDown={e => e.key === 'Enter' && saveReminder()}
+                    placeholder="e.g. Pay bills, Review goals"
+                    style={{ width:'100%', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.875rem', padding:'0.5rem 0.75rem', outline:'none', boxSizing:'border-box' }} />
+                </div>
+                <div style={{ width:'64px' }}>
+                  <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Icon</label>
+                  <input value={reminderDraft.emoji} onChange={e => setReminderDraft(d => ({ ...d, emoji: e.target.value }))} placeholder="&#128276;" maxLength={2}
+                    style={{ width:'100%', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'1.1rem', padding:'0.45rem 0.5rem', outline:'none', textAlign:'center', boxSizing:'border-box' }} />
+                </div>
+              </div>
+              {/* Colour */}
+              <div>
+                <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.35rem' }}>Colour</label>
+                <div style={{ display:'flex', gap:'0.5rem' }}>
+                  {[C.cyan, C.green, C.amber, C.purple, C.red, '#14b8a6', '#f97316'].map(col => (
+                    <button key={col} onClick={() => setReminderDraft(d => ({ ...d, color: col }))} style={{ width:'26px', height:'26px', borderRadius:'50%', background:col, border: reminderDraft.color===col ? '3px solid #fff' : '3px solid transparent', cursor:'pointer', padding:0, outline:'none' }} />
+                  ))}
+                </div>
+              </div>
+              {/* Recurrence */}
+              <div>
+                <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.35rem' }}>Repeat</label>
+                <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap', marginBottom:'0.5rem' }}>
+                  {(['daily','weekday','weekly','monthly','yearly','custom'] as ReminderRecurrence['type'][]).map(t => {
+                    const active = reminderDraft.recurrence.type === t
+                    const defaultRec: ReminderRecurrence = t === 'daily' ? { type:'daily' } : t === 'weekday' ? { type:'weekday' } : t === 'weekly' ? { type:'weekly', every:1 } : t === 'monthly' ? { type:'monthly', every:1 } : t === 'yearly' ? { type:'yearly', every:1 } : { type:'custom', every:1, unit:'days' }
+                    return (
+                      <button key={t} onClick={() => setReminderDraft(d => ({ ...d, recurrence: active ? d.recurrence : defaultRec }))}
+                        style={{ fontSize:'0.72rem', padding:'0.3rem 0.6rem', borderRadius:'0.375rem', border:'1px solid '+(active?reminderDraft.color:C.border), background:active?reminderDraft.color+'22':'transparent', color:active?reminderDraft.color:C.sec, cursor:'pointer', fontFamily:'inherit', fontWeight:active?700:400, textTransform:'capitalize' }}>
+                        {t}
+                      </button>
+                    )
+                  })}
+                </div>
+                {/* Sub-options for recurrence types with "every N" */}
+                {(reminderDraft.recurrence.type === 'weekly' || reminderDraft.recurrence.type === 'monthly' || reminderDraft.recurrence.type === 'yearly') && (
+                  <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginTop:'0.25rem' }}>
+                    <span style={{ fontSize:'0.75rem', color:C.sec }}>Every</span>
+                    <input type="number" min={1} max={99}
+                      value={(reminderDraft.recurrence as { type:string; every:number }).every}
+                      onChange={e => {
+                        const every = Math.max(1, parseInt(e.target.value) || 1)
+                        setReminderDraft(d => ({ ...d, recurrence: { ...d.recurrence, every } as ReminderRecurrence }))
+                      }}
+                      style={{ width:'56px', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.375rem', color:C.text, fontFamily:'inherit', fontSize:'0.875rem', padding:'0.3rem 0.5rem', outline:'none', textAlign:'center' }} />
+                    <span style={{ fontSize:'0.75rem', color:C.sec }}>
+                      {reminderDraft.recurrence.type === 'weekly' ? 'week(s)' : reminderDraft.recurrence.type === 'monthly' ? 'month(s)' : 'year(s)'}
+                    </span>
+                  </div>
+                )}
+                {reminderDraft.recurrence.type === 'custom' && (
+                  <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginTop:'0.25rem', flexWrap:'wrap' }}>
+                    <span style={{ fontSize:'0.75rem', color:C.sec }}>Every</span>
+                    <input type="number" min={1} max={999}
+                      value={(reminderDraft.recurrence as { type:string; every:number; unit:string }).every}
+                      onChange={e => {
+                        const every = Math.max(1, parseInt(e.target.value) || 1)
+                        setReminderDraft(d => ({ ...d, recurrence: { ...d.recurrence, every } as ReminderRecurrence }))
+                      }}
+                      style={{ width:'64px', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.375rem', color:C.text, fontFamily:'inherit', fontSize:'0.875rem', padding:'0.3rem 0.5rem', outline:'none', textAlign:'center' }} />
+                    <div style={{ display:'flex', gap:'0.25rem' }}>
+                      {(['days','weeks','months','years'] as const).map(u => {
+                        const active = (reminderDraft.recurrence as { type:string; every:number; unit:string }).unit === u
+                        return (
+                          <button key={u} onClick={() => setReminderDraft(d => ({ ...d, recurrence: { ...d.recurrence, unit: u } as ReminderRecurrence }))}
+                            style={{ fontSize:'0.68rem', padding:'0.25rem 0.45rem', borderRadius:'0.3rem', border:'1px solid '+(active?reminderDraft.color:C.border), background:active?reminderDraft.color+'22':'transparent', color:active?reminderDraft.color:C.sec, cursor:'pointer', fontFamily:'inherit' }}>
+                            {u}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {/* Start date + Time */}
+              <div style={{ display:'flex', gap:'0.75rem' }}>
+                <div style={{ flex:1 }}>
+                  <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Start date</label>
+                  <input type="date" value={reminderDraft.startDate} onChange={e => setReminderDraft(d => ({ ...d, startDate: e.target.value }))}
+                    style={{ width:'100%', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', colorScheme:'dark', boxSizing:'border-box' }} />
+                </div>
+                <div style={{ width:'110px' }}>
+                  <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Time (optional)</label>
+                  <input value={reminderDraft.timeLabel} onChange={e => setReminderDraft(d => ({ ...d, timeLabel: e.target.value }))} placeholder="e.g. 9am"
+                    style={{ width:'100%', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', boxSizing:'border-box' }} />
+                </div>
+              </div>
+              {/* Preview */}
+              {reminderDraft.title.trim() && (
+                <div style={{ padding:'0.6rem 0.75rem', background:reminderDraft.color+'12', border:'1px solid '+reminderDraft.color+'35', borderRadius:'0.5rem', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                  <Bell size={12} color={reminderDraft.color} />
+                  {reminderDraft.emoji && <span style={{ fontSize:'0.9rem' }}>{reminderDraft.emoji}</span>}
+                  <div>
+                    <p style={{ margin:0, fontSize:'0.8rem', fontWeight:700, color:reminderDraft.color }}>{reminderDraft.title}</p>
+                    <p style={{ margin:0, fontSize:'0.68rem', color:C.muted }}>{describeRecurrence(reminderDraft.recurrence)}{reminderDraft.timeLabel ? ' · ' + reminderDraft.timeLabel : ''}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{ display:'flex', gap:'0.5rem', justifyContent:'space-between', marginTop:'1.5rem' }}>
+              <div>
+                {editingReminder && (
+                  <button onClick={() => deleteReminder(editingReminder.id)} style={{ padding:'0.5rem 0.875rem', background:'transparent', border:'1px solid rgba(255,68,68,0.3)', borderRadius:'0.625rem', color:C.red, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Delete</button>
+                )}
+              </div>
+              <div style={{ display:'flex', gap:'0.5rem' }}>
+                <button onClick={() => { setShowReminderModal(false); setEditingReminder(null) }} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Cancel</button>
+                <button onClick={saveReminder} disabled={!reminderDraft.title.trim()}
+                  style={{ padding:'0.5rem 1.25rem', background:reminderDraft.color, border:'none', borderRadius:'0.625rem', color:'#000', fontWeight:700, cursor:!reminderDraft.title.trim()?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', opacity:!reminderDraft.title.trim()?0.5:1 }}>
                   Save
                 </button>
               </div>
