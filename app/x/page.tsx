@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Zap, Copy, Check, ExternalLink, ChevronDown, CheckCircle2, Circle, Calendar } from 'lucide-react'
+import { ChevronLeft, Zap, Copy, Check, ExternalLink, ChevronDown, CheckCircle2, Circle, Calendar, Trash2, Plus, Search, TrendingUp } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -87,6 +87,76 @@ Style: confident, intellectually sharp, occasionally provocative. Think: the eco
 CRITICAL: Return ONLY a valid JSON array. No markdown, no backticks, no preamble. Each object must have exactly: {"tweet":"...","hook_type":"...","why_it_works":"..."}`
 
 const TODAY_KEY = () => 'flowstate_x_workflow_' + new Date().toISOString().slice(0,10)
+const MODELS_KEY = 'flowstate_tweet_models'
+
+type TweetModel = {
+  id: string
+  tweetText: string
+  authorHandle: string
+  authorName: string
+  tweetUrl: string
+  likes: number
+  retweets: number
+  followerEstimate: number
+  engagementRatio: number
+  category: string
+  hookPattern: string
+  formatType: string
+  whyItWorked: string
+  soundMoneyAlternative: string
+  addedAt: string
+  source: 'seed' | 'manual' | 'generated'
+}
+
+const CATEGORIES = [
+  { value:'all',         label:'All' },
+  { value:'inflation',   label:'Inflation' },
+  { value:'fed',         label:'Fed / CB' },
+  { value:'bitcoin',     label:'Bitcoin' },
+  { value:'gold',        label:'Gold' },
+  { value:'sound-money', label:'Sound Money' },
+  { value:'cantillon',   label:'Cantillon' },
+  { value:'wealth-gap',  label:'Wealth Gap' },
+  { value:'savings',     label:'Savings' },
+]
+
+const TWITTER_SEARCHES = [
+  { label:'Inflation viral',  url:'https://x.com/search?q=%28inflation+OR+%22purchasing+power%22+OR+%22cost+of+living%22%29+min_faves%3A5000&f=top' },
+  { label:'Fed / Banking',    url:'https://x.com/search?q=%28%22Federal+Reserve%22+OR+%22central+bank%22+OR+%22money+printer%22%29+min_faves%3A5000&f=top' },
+  { label:'Bitcoin / Gold',   url:'https://x.com/search?q=%28bitcoin+OR+gold+OR+%22sound+money%22+OR+%22hard+money%22%29+min_faves%3A5000&f=top' },
+  { label:'Austrian Econ',    url:'https://x.com/search?q=%28%22Cantillon%22+OR+%22Austrian+economics%22+OR+%22fiat+money%22+OR+%22Mises%22%29+min_faves%3A1000&f=top' },
+  { label:'Finance hot takes',url:'https://x.com/search?q=%28finance+OR+economics+OR+%22interest+rates%22%29+min_faves%3A10000&f=top' },
+]
+
+const SEED_MODELS: TweetModel[] = [
+  {
+    id:'seed-1', source:'seed' as const, tweetUrl:'', addedAt:'2024-01-01',
+    authorHandle:'@monetaryfacts', authorName:'Monetary Facts',
+    tweetText:'The Fed has printed more money since 2020 than in its entire prior history.\n\nYour savings didn\'t get bigger.\n\nThe pile of dollars just got taller.',
+    likes:24800, retweets:4100, followerEstimate:18000, engagementRatio:16.1,
+    category:'fed', hookPattern:'Stat Hook', formatType:'standalone',
+    whyItWorked:'Opens with a verified shocking stat, then delivers the personal punchline. "Pile of dollars getting taller" makes abstract monetary policy viscerally felt. Triggers strong shares from people who feel their savings being eroded.',
+    soundMoneyAlternative:'Gold supply has grown ~1.5% per year for centuries.\nBitcoin: 21 million, forever.\nDollar supply: +40% in 2 years.\n\nOne of these is money. The others are promises.',
+  },
+  {
+    id:'seed-2', source:'seed' as const, tweetUrl:'', addedAt:'2024-01-01',
+    authorHandle:'@wagereality', authorName:'Wage Reality',
+    tweetText:'$50k salary in 2000 with 3% raises every year = $90k today.\n\n$50k lifestyle in 2000 costs $95k today.\n\nYou got raises every year and still fell behind.\n\nThis is inflation.',
+    likes:41200, retweets:9800, followerEstimate:22000, engagementRatio:23.2,
+    category:'inflation', hookPattern:'Shocking Comparison', formatType:'standalone',
+    whyItWorked:'Uses simple verifiable math to name a feeling millions have but haven\'t quantified: working harder just to fall behind. The contrast between nominal salary growth and real cost growth is devastating. Extremely high shareability because it validates a lived experience.',
+    soundMoneyAlternative:'$10,000 in gold in 2000 = ~$65,000 purchasing power today.\n$10,000 in dollars in 2000 = $5,500 purchasing power today.\n\nSound money preserves your labor. Fiat money quietly steals it.',
+  },
+  {
+    id:'seed-3', source:'seed' as const, tweetUrl:'', addedAt:'2024-01-01',
+    authorHandle:'@hardmoneyclub', authorName:'Hard Money Club',
+    tweetText:'Reminder: the dollar has lost 97% of its purchasing power since 1913.\n\nThat\'s not bad luck.\n\nThat\'s the Federal Reserve doing exactly what it was designed to do.',
+    likes:18900, retweets:5600, followerEstimate:7800, engagementRatio:31.4,
+    category:'sound-money', hookPattern:'Hard Truth', formatType:'standalone',
+    whyItWorked:'"Reminder" creates parasocial intimacy -- like you\'re letting followers in on something they should already know. The final line reframes Fed failure as Fed success at its real purpose, which is deeply provocative. Triggers strong agree/disagree reactions, both driving engagement.',
+    soundMoneyAlternative:'Reminder: Bitcoin\'s purchasing power has increased every 4-year period in its history.\n\nThe dollar loses value by design.\nBitcoin gains value by design.\n\nOnly one of these is honest money.',
+  },
+]
 
 type TaskId = string
 const WORKFLOW: {
@@ -169,7 +239,7 @@ const WORKFLOW: {
 
 export default function XPage() {
   const router = useRouter()
-  const [tab, setTab]         = useState<'generate'|'workflow'>('workflow')
+  const [tab, setTab]         = useState<'generate'|'workflow'|'outliers'>('workflow')
   const [format, setFormat]   = useState('results-post')
   const [topic, setTopic]     = useState('inflation')
   const [tone, setTone]       = useState('authentic')
@@ -184,11 +254,41 @@ export default function XPage() {
   const [showHooks, setShowHooks] = useState(false)
   const [done, setDone]       = useState<Record<TaskId,boolean>>({})
 
+  // Outliers state
+  const [models, setModels]           = useState<TweetModel[]>([])
+  const [modelCat, setModelCat]       = useState('all')
+  const [expandedModel, setExpandedModel] = useState<string|null>(null)
+  const [generating, setGenerating]   = useState(false)
+  const [analysing, setAnalysing]     = useState(false)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [addUrl, setAddUrl]           = useState('')
+  const [addText, setAddText]         = useState('')
+  const [addAuthor, setAddAuthor]     = useState('')
+  const [addLikes, setAddLikes]       = useState(0)
+  const [addRetweets, setAddRetweets] = useState(0)
+  const [addFollowers, setAddFollowers] = useState(0)
+  const [addCat, setAddCat]           = useState('inflation')
+  const [addAnalysis, setAddAnalysis] = useState<{hookPattern:string;formatType:string;whyItWorked:string;soundMoneyAlternative:string}|null>(null)
+
   useEffect(() => {
     try {
       const stored = localStorage.getItem(TODAY_KEY())
       if (stored) setDone(JSON.parse(stored))
     } catch {}
+  }, [])
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(MODELS_KEY)
+      if (raw) {
+        setModels(JSON.parse(raw) as TweetModel[])
+      } else {
+        setModels(SEED_MODELS)
+        localStorage.setItem(MODELS_KEY, JSON.stringify(SEED_MODELS))
+      }
+    } catch {
+      setModels(SEED_MODELS)
+    }
   }, [])
 
   function toggleTask(id: TaskId) {
@@ -198,6 +298,108 @@ export default function XPage() {
       return next
     })
   }
+
+  // ── Outlier model helpers ────────────────────────────────────────────────────
+  function saveModels(next: TweetModel[]) {
+    setModels(next)
+    try { localStorage.setItem(MODELS_KEY, JSON.stringify(next)) } catch {}
+  }
+
+  function deleteModel(id: string) {
+    saveModels(models.filter(m => m.id !== id))
+    if (expandedModel === id) setExpandedModel(null)
+  }
+
+  function useHook(model: TweetModel) {
+    setCustom(model.soundMoneyAlternative)
+    setTab('generate')
+  }
+
+  function closeAddModal() {
+    setShowAddModal(false)
+    setAddUrl(''); setAddText(''); setAddAuthor('')
+    setAddLikes(0); setAddRetweets(0); setAddFollowers(0)
+    setAddCat('inflation'); setAddAnalysis(null)
+    setAnalysing(false)
+  }
+
+  async function fetchOEmbed() {
+    if (!addUrl) return
+    setAnalysing(true)
+    try {
+      const res = await fetch('/api/x/research', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ action:'oembed', tweetUrl:addUrl }),
+      })
+      const data = await res.json()
+      if (data.text) setAddText(data.text)
+      if (data.authorHandle) setAddAuthor(data.authorHandle)
+    } catch {}
+    finally { setAnalysing(false) }
+  }
+
+  async function analyzeUrl() {
+    if (!addText) return
+    setAnalysing(true)
+    try {
+      const ratio = addFollowers > 0 ? (addLikes + addRetweets) / addFollowers : 0
+      const res = await fetch('/api/x/research', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ action:'analyze', tweetText:addText, authorHandle:addAuthor, likes:addLikes, retweets:addRetweets, followerEstimate:addFollowers, engagementRatio:ratio, category:addCat }),
+      })
+      const data = await res.json()
+      const raw = data?.content?.[0]?.text ?? ''
+      const clean = raw.replace(/```json|```/g,'').trim()
+      setAddAnalysis(JSON.parse(clean))
+    } catch (e) {
+      console.error('Analyze failed', e)
+    } finally {
+      setAnalysing(false)
+    }
+  }
+
+  function saveModel() {
+    if (!addText || !addAnalysis) return
+    const ratio = addFollowers > 0 ? (addLikes + addRetweets) / addFollowers : 0
+    const model: TweetModel = {
+      id: 'manual-' + Date.now(),
+      tweetText:addText, authorHandle:addAuthor, authorName:addAuthor, tweetUrl:addUrl,
+      likes:addLikes, retweets:addRetweets, followerEstimate:addFollowers, engagementRatio:ratio,
+      category:addCat, hookPattern:addAnalysis.hookPattern, formatType:addAnalysis.formatType,
+      whyItWorked:addAnalysis.whyItWorked, soundMoneyAlternative:addAnalysis.soundMoneyAlternative,
+      addedAt:new Date().toISOString().slice(0,10), source:'manual',
+    }
+    saveModels([...models, model])
+    closeAddModal()
+  }
+
+  async function generateExamples() {
+    setGenerating(true)
+    try {
+      const cat = modelCat === 'all' ? 'inflation,bitcoin,fed,sound-money,cantillon,wealth-gap' : modelCat
+      const res = await fetch('/api/x/research', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ action:'generate', category:cat }),
+      })
+      const data = await res.json()
+      const raw = data?.content?.[0]?.text ?? ''
+      const clean = raw.replace(/```json|```/g,'').trim()
+      const examples = (JSON.parse(clean) as Array<Omit<TweetModel,'id'|'tweetUrl'|'addedAt'|'source'>>).map((e, i) => ({
+        ...e,
+        id: 'gen-' + Date.now() + '-' + i,
+        tweetUrl: '',
+        addedAt: new Date().toISOString().slice(0,10),
+        source: 'generated' as const,
+      }))
+      saveModels([...models, ...examples])
+    } catch (e) {
+      console.error('Generate failed', e)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const filteredModels = modelCat === 'all' ? models : models.filter(m => m.category === modelCat)
 
   const mustTasks    = WORKFLOW.flatMap(p => p.tasks.filter(t => t.must))
   const doneToday    = mustTasks.filter(t => done[t.id]).length
@@ -270,6 +472,10 @@ export default function XPage() {
             </button>
             <button onClick={() => setTab('generate')} style={{ padding:'0.35rem 0.85rem', background:tab==='generate' ? 'rgba(249,115,22,0.12)' : 'none', border:tab==='generate' ? '1px solid rgba(249,115,22,0.3)' : '1px solid transparent', borderRadius:'9999px', color:tab==='generate' ? C.orange : C.muted, fontWeight:700, fontSize:'0.73rem', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'0.35rem' }}>
               <Zap size={12}/>Generate
+            </button>
+            <button onClick={() => setTab('outliers')} style={{ padding:'0.35rem 0.85rem', background:tab==='outliers' ? 'rgba(0,212,255,0.12)' : 'none', border:tab==='outliers' ? '1px solid rgba(0,212,255,0.3)' : '1px solid transparent', borderRadius:'9999px', color:tab==='outliers' ? C.cyan : C.muted, fontWeight:700, fontSize:'0.73rem', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'0.35rem' }}>
+              <TrendingUp size={12}/>Tweet Models
+              {models.length > 0 && <span style={{ background:C.cyan+'22', border:'1px solid '+C.cyan+'44', borderRadius:'9999px', padding:'0 0.35rem', fontSize:'0.62rem', fontWeight:900, color:C.cyan }}>{models.length}</span>}
             </button>
           </div>
         </div>
@@ -529,7 +735,282 @@ export default function XPage() {
             </div>
           </div>
         )}
+
+        {tab === 'outliers' && (
+          <div>
+
+            {/* Category filters + action buttons */}
+            <div style={{ display:'flex', alignItems:'center', gap:'0.45rem', marginBottom:'1.25rem', flexWrap:'wrap' }}>
+              {CATEGORIES.map(cat => (
+                <button key={cat.value} onClick={() => setModelCat(cat.value)}
+                  style={{ padding:'0.28rem 0.7rem',
+                    background: modelCat===cat.value ? 'rgba(0,212,255,0.12)' : 'none',
+                    border: modelCat===cat.value ? '1px solid rgba(0,212,255,0.3)' : '1px solid '+C.border,
+                    borderRadius:'9999px', color: modelCat===cat.value ? C.cyan : C.sec,
+                    fontWeight:700, fontSize:'0.71rem', cursor:'pointer', fontFamily:'inherit',
+                    display:'flex', alignItems:'center', gap:'0.25rem' }}>
+                  {cat.label}
+                  {cat.value !== 'all' && models.filter(m => m.category === cat.value).length > 0 && (
+                    <span style={{ fontSize:'0.61rem', color:C.muted, fontWeight:400 }}>
+                      ({models.filter(m => m.category === cat.value).length})
+                    </span>
+                  )}
+                </button>
+              ))}
+              <div style={{ marginLeft:'auto', display:'flex', gap:'0.45rem', flexShrink:0 }}>
+                <button onClick={() => setShowAddModal(true)}
+                  style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.35rem 0.8rem',
+                    background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem',
+                    color:C.text, fontWeight:700, fontSize:'0.72rem', cursor:'pointer', fontFamily:'inherit' }}>
+                  <Plus size={12}/> Add URL
+                </button>
+                <button onClick={generateExamples} disabled={generating}
+                  style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.35rem 0.8rem',
+                    background: generating ? C.card : 'rgba(0,212,255,0.1)',
+                    border: '1px solid '+(generating ? C.border : 'rgba(0,212,255,0.3)'),
+                    borderRadius:'0.5rem', color: generating ? C.muted : C.cyan,
+                    fontWeight:700, fontSize:'0.72rem', cursor: generating ? 'not-allowed' : 'pointer',
+                    fontFamily:'inherit' }}>
+                  {generating
+                    ? <span style={{ display:'inline-block', width:'11px', height:'11px', border:'2px solid '+C.muted, borderTopColor:C.cyan, borderRadius:'50%', animation:'xspin 0.8s linear infinite' }}/>
+                    : <TrendingUp size={12}/>}
+                  {generating ? 'Generating...' : 'Generate Examples'}
+                </button>
+              </div>
+            </div>
+
+            {/* Find live on X */}
+            <div style={{ background:'rgba(29,161,242,0.04)', border:'1px solid rgba(29,161,242,0.15)', borderRadius:'0.875rem', padding:'0.875rem 1.1rem', marginBottom:'1.25rem' }}>
+              <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.1em', textTransform:'uppercase', color:'#1da1f2', margin:'0 0 0.55rem', display:'flex', alignItems:'center', gap:'0.35rem' }}>
+                <Search size={11}/> Find live outliers on X &#8212; open these searches, look for tweets where likes + retweets &#8805; 5&#215; followers
+              </p>
+              <div style={{ display:'flex', gap:'0.35rem', flexWrap:'wrap', marginBottom:'0.5rem' }}>
+                {TWITTER_SEARCHES.map(s => (
+                  <a key={s.label} href={s.url} target="_blank" rel="noopener"
+                    style={{ display:'inline-flex', alignItems:'center', gap:'0.22rem', padding:'0.25rem 0.65rem',
+                      background:'rgba(29,161,242,0.1)', border:'1px solid rgba(29,161,242,0.2)',
+                      borderRadius:'9999px', color:'#1da1f2', fontSize:'0.69rem', fontWeight:700, textDecoration:'none' }}>
+                    {s.label} <ExternalLink size={8}/>
+                  </a>
+                ))}
+              </div>
+              <p style={{ fontSize:'0.67rem', color:C.muted, margin:0, lineHeight:1.5 }}>
+                Found one? Copy the URL and click &#8220;Add URL&#8221; above. Claude will fetch the text, analyze the hook, and write a Sound Money alternative.
+              </p>
+            </div>
+
+            {/* Models */}
+            {filteredModels.length === 0 ? (
+              <div style={{ textAlign:'center', padding:'3rem 1rem' }}>
+                <div style={{ fontSize:'2rem', marginBottom:'0.75rem', opacity:0.4 }}>&#128202;</div>
+                <p style={{ fontSize:'0.88rem', fontWeight:700, color:C.sec, marginBottom:'0.35rem' }}>No models in this category yet</p>
+                <p style={{ fontSize:'0.78rem', color:C.muted, lineHeight:1.7, maxWidth:'300px', margin:'0 auto' }}>
+                  Click &#8220;Generate Examples&#8221; for instant AI patterns, or find outlier tweets on X and add them via URL.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.7rem' }}>
+                {filteredModels.map(m => {
+                  const isExp = expandedModel === m.id
+                  const ratio = m.engagementRatio
+                  const ratioColor = ratio >= 20 ? C.red : ratio >= 10 ? C.amber : C.green
+                  return (
+                    <div key={m.id} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', overflow:'hidden' }}>
+                      {/* Summary row */}
+                      <div style={{ padding:'0.875rem 1.1rem', display:'flex', gap:'0.75rem', alignItems:'flex-start' }}>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.3rem', flexWrap:'wrap' }}>
+                            <span style={{ fontSize:'0.71rem', fontWeight:700, color:C.sec }}>{m.authorHandle || m.authorName}</span>
+                            <span style={{ fontSize:'0.62rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'9999px', padding:'0.05rem 0.4rem', color:C.muted }}>{m.category}</span>
+                            <span style={{ fontSize:'0.69rem', fontWeight:900, color:ratioColor, background:ratioColor+'12', border:'1px solid '+ratioColor+'30', borderRadius:'9999px', padding:'0.05rem 0.45rem' }}>
+                              {ratio.toFixed(1)}x
+                            </span>
+                            {m.source === 'generated' && <span style={{ fontSize:'0.6rem', color:C.purple, opacity:0.8 }}>AI</span>}
+                            {m.source === 'seed' && <span style={{ fontSize:'0.6rem', color:C.muted, opacity:0.6 }}>example</span>}
+                          </div>
+                          <p style={{ fontSize:'0.82rem', color:C.text, margin:'0 0 0.35rem', lineHeight:1.55, whiteSpace:'pre-line' }}>
+                            {isExp ? m.tweetText : (m.tweetText.length > 160 ? m.tweetText.slice(0,160)+'...' : m.tweetText)}
+                          </p>
+                          <div style={{ display:'flex', alignItems:'center', gap:'0.875rem', flexWrap:'wrap' }}>
+                            <span style={{ fontSize:'0.69rem', color:C.sec }}>
+                              {m.likes.toLocaleString()} likes &bull; {m.retweets.toLocaleString()} RT &bull; ~{m.followerEstimate.toLocaleString()} followers
+                            </span>
+                            {m.hookPattern && (
+                              <span style={{ fontSize:'0.62rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'9999px', padding:'0.04rem 0.4rem', color:C.muted }}>{m.hookPattern}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ display:'flex', gap:'0.3rem', alignItems:'center', flexShrink:0 }}>
+                          <button onClick={() => setExpandedModel(isExp ? null : m.id)}
+                            style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem', display:'flex' }}>
+                            <ChevronDown size={15} style={{ transform:isExp ? 'rotate(180deg)' : 'none', transition:'transform 0.15s' }}/>
+                          </button>
+                          <button onClick={() => deleteModel(m.id)}
+                            style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem', display:'flex' }}>
+                            <Trash2 size={13}/>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Expanded section */}
+                      {isExp && (
+                        <div style={{ borderTop:'1px solid '+C.border }}>
+                          {m.whyItWorked && (
+                            <div style={{ padding:'0.75rem 1.1rem', borderBottom:'1px solid '+C.border }}>
+                              <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color:C.amber, margin:'0 0 0.3rem' }}>Why it worked</p>
+                              <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.6 }}>{m.whyItWorked}</p>
+                            </div>
+                          )}
+                          <div style={{ padding:'0.875rem 1.1rem', background:'rgba(0,212,255,0.025)' }}>
+                            <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color:C.cyan, margin:'0 0 0.4rem' }}>Sound Money Alternative</p>
+                            <p style={{ fontSize:'0.84rem', color:C.text, margin:'0 0 0.875rem', lineHeight:1.65, fontStyle:'italic', whiteSpace:'pre-line' }}>
+                              &#8220;{m.soundMoneyAlternative}&#8221;
+                            </p>
+                            <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap' }}>
+                              <button onClick={() => useHook(m)}
+                                style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', padding:'0.38rem 0.875rem',
+                                  background:'rgba(0,212,255,0.12)', border:'1px solid rgba(0,212,255,0.3)',
+                                  borderRadius:'0.5rem', color:C.cyan, fontWeight:700, fontSize:'0.73rem',
+                                  cursor:'pointer', fontFamily:'inherit' }}>
+                                <Zap size={12}/> Use this hook &#8594;
+                              </button>
+                              {m.tweetUrl && (
+                                <a href={m.tweetUrl} target="_blank" rel="noopener"
+                                  style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', padding:'0.38rem 0.75rem',
+                                    background:'none', border:'1px solid '+C.border, borderRadius:'0.5rem',
+                                    color:C.muted, fontSize:'0.73rem', fontWeight:600, textDecoration:'none' }}>
+                                  View original <ExternalLink size={10}/>
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* ── Add from URL modal ───────────────────────────────────────────────── */}
+      {showAddModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.78)', zIndex:90, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
+          <div style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'1.25rem', padding:'1.5rem', width:'100%', maxWidth:'500px', maxHeight:'90vh', overflowY:'auto' }}>
+
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1.25rem' }}>
+              <span style={{ fontSize:'0.95rem', fontWeight:900, color:C.text }}>Add Tweet Model</span>
+              <button onClick={closeAddModal} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', fontSize:'1.1rem', lineHeight:1, fontFamily:'inherit' }}>&#10005;</button>
+            </div>
+
+            {/* URL row */}
+            <div style={{ marginBottom:'0.875rem' }}>
+              <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.1em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.4rem' }}>
+                Tweet URL <span style={{ fontWeight:400, color:C.muted }}>(optional &#8212; auto-fills text below)</span>
+              </p>
+              <div style={{ display:'flex', gap:'0.5rem' }}>
+                <input type="text" value={addUrl} onChange={e => setAddUrl(e.target.value)}
+                  placeholder="https://x.com/..."
+                  style={{ flex:1, padding:'0.55rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none' }}/>
+                <button onClick={fetchOEmbed} disabled={!addUrl || analysing}
+                  style={{ padding:'0.55rem 0.9rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.25)', borderRadius:'0.625rem', color:C.cyan, fontWeight:700, fontSize:'0.73rem', cursor:(!addUrl||analysing)?'not-allowed':'pointer', fontFamily:'inherit', flexShrink:0, opacity:(!addUrl||analysing)?0.5:1 }}>
+                  Fetch
+                </button>
+              </div>
+            </div>
+
+            {/* Tweet text */}
+            <div style={{ marginBottom:'0.875rem' }}>
+              <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.1em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.4rem' }}>Tweet text</p>
+              <textarea value={addText} onChange={e => setAddText(e.target.value)}
+                placeholder="Paste tweet text here (or auto-fill via Fetch above)..."
+                rows={4}
+                style={{ width:'100%', padding:'0.6rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none', resize:'vertical', boxSizing:'border-box' }}/>
+            </div>
+
+            {/* Stats */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'0.5rem', marginBottom:'0.875rem' }}>
+              <div>
+                <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.1em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.35rem' }}>Likes</p>
+                <input type="number" value={addLikes} onChange={e => setAddLikes(Number(e.target.value))}
+                  style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none', boxSizing:'border-box' }}/>
+              </div>
+              <div>
+                <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.1em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.35rem' }}>Retweets</p>
+                <input type="number" value={addRetweets} onChange={e => setAddRetweets(Number(e.target.value))}
+                  style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none', boxSizing:'border-box' }}/>
+              </div>
+              <div>
+                <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.1em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.35rem' }}>Est. Followers</p>
+                <input type="number" value={addFollowers} onChange={e => setAddFollowers(Number(e.target.value))}
+                  style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none', boxSizing:'border-box' }}/>
+              </div>
+            </div>
+
+            {/* Ratio preview */}
+            {addFollowers > 0 && (addLikes + addRetweets) > 0 && (
+              <div style={{ marginBottom:'0.875rem', padding:'0.55rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', display:'flex', alignItems:'center', gap:'0.75rem' }}>
+                <span style={{ fontSize:'0.72rem', color:C.sec }}>Engagement ratio:</span>
+                <span style={{ fontWeight:900, fontSize:'0.88rem', color: ((addLikes+addRetweets)/addFollowers) >= 5 ? C.green : C.amber }}>
+                  {((addLikes + addRetweets) / addFollowers).toFixed(1)}x
+                </span>
+                {((addLikes+addRetweets)/addFollowers) < 5 && (
+                  <span style={{ fontSize:'0.67rem', color:C.amber }}>below 5x threshold</span>
+                )}
+              </div>
+            )}
+
+            {/* Category */}
+            <div style={{ marginBottom:'1.1rem' }}>
+              <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.1em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.4rem' }}>Category</p>
+              <select value={addCat} onChange={e => setAddCat(e.target.value)}
+                style={{ width:'100%', padding:'0.55rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none' }}>
+                {CATEGORIES.filter(c => c.value !== 'all').map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+
+            {/* Analysis result */}
+            {addAnalysis && (
+              <div style={{ background:'rgba(0,212,255,0.04)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1rem' }}>
+                <p style={{ fontSize:'0.62rem', fontWeight:800, color:C.cyan, margin:'0 0 0.3rem', letterSpacing:'0.08em', textTransform:'uppercase' }}>Sound Money Alternative</p>
+                <p style={{ fontSize:'0.82rem', color:C.text, margin:'0 0 0.4rem', lineHeight:1.55, fontStyle:'italic', whiteSpace:'pre-line' }}>&#8220;{addAnalysis.soundMoneyAlternative}&#8221;</p>
+                <p style={{ fontSize:'0.7rem', color:C.sec, margin:'0 0 0.2rem', lineHeight:1.5 }}>
+                  <span style={{ fontWeight:700, color:C.amber }}>Hook:</span> {addAnalysis.hookPattern}
+                </p>
+                <p style={{ fontSize:'0.7rem', color:C.sec, margin:0, lineHeight:1.5 }}>{addAnalysis.whyItWorked}</p>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div style={{ display:'flex', gap:'0.625rem' }}>
+              {!addAnalysis ? (
+                <button onClick={analyzeUrl} disabled={!addText || analysing}
+                  style={{ flex:1, padding:'0.65rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.4rem',
+                    background: (!addText||analysing) ? C.card : 'linear-gradient(135deg,'+C.cyan+','+C.purple+')',
+                    border:'1px solid '+((!addText||analysing) ? C.border : 'transparent'),
+                    borderRadius:'0.75rem', color:(!addText||analysing) ? C.muted : '#fff',
+                    fontWeight:800, fontSize:'0.88rem', cursor:(!addText||analysing) ? 'not-allowed' : 'pointer',
+                    fontFamily:'inherit', opacity:(!addText||analysing) ? 0.6 : 1 }}>
+                  {analysing
+                    ? <><span style={{ display:'inline-block', width:'13px', height:'13px', border:'2px solid rgba(255,255,255,0.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'xspin 0.8s linear infinite' }}/> Analyzing...</>
+                    : 'Analyze with AI'}
+                </button>
+              ) : (
+                <button onClick={saveModel}
+                  style={{ flex:1, padding:'0.65rem', background:'linear-gradient(135deg,'+C.green+','+C.cyan+')', border:'none', borderRadius:'0.75rem', color:'#000', fontWeight:800, fontSize:'0.88rem', cursor:'pointer', fontFamily:'inherit' }}>
+                  Save to Library
+                </button>
+              )}
+              <button onClick={closeAddModal}
+                style={{ padding:'0.65rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, fontWeight:700, fontSize:'0.82rem', cursor:'pointer', fontFamily:'inherit' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`@keyframes xspin { to { transform:rotate(360deg) } }`}</style>
     </main>
