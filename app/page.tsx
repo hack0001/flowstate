@@ -162,7 +162,7 @@ export default function Home() {
   const [contentReady, setContentReady] = useState(false)
   const [showFocusCheck, setShowFocusCheck] = useState(false)
   const [showReminder, setShowReminder] = useState(false)
-  const [pageAlerts, setPageAlerts] = useState<Record<string, 'warn' | 'alert'>>({})
+  const [pageAlerts, setPageAlerts] = useState<Record<string, 'green' | 'orange' | 'red'>>({})
 
   const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','goals','youtube','links','etsy','niche-calendar','x','nsdr','physical','workflows','instagram']
 
@@ -232,13 +232,15 @@ export default function Home() {
   useEffect(() => {
     try {
       const now = Date.now()
-      const alerts: Record<string, 'warn' | 'alert'> = {}
+      const alerts: Record<string, 'green' | 'orange' | 'red'> = {}
       for (const route of TRACKED_ROUTES) {
         const raw = localStorage.getItem('flowstate_last_visit_' + route)
-        if (!raw) { alerts[route] = 'alert'; continue }
+        if (!raw) { alerts[route] = 'red'; continue }
         const age = now - parseInt(raw, 10)
-        if (age > 48 * 3600 * 1000) alerts[route] = 'alert'
-        else if (age > 24 * 3600 * 1000) alerts[route] = 'warn'
+        const days = age / (24 * 3600 * 1000)
+        if (days >= 5) alerts[route] = 'red'
+        else if (days >= 4) alerts[route] = 'orange'
+        else if (days >= 2) alerts[route] = 'green'
       }
       setPageAlerts(alerts)
     } catch {}
@@ -348,10 +350,12 @@ export default function Home() {
               { route:'instagram', icon:<Camera size={14}/>, label:'Instagram', bg:'rgba(225,48,108,0.07)', border:'rgba(225,48,108,0.22)', color:'#e1306c' },
             ] as { route:string; icon:JSX.Element; label:string; bg:string; border:string; color:string; bold?:boolean }[]).map(({ route, icon, label, bg, border, color, bold }) => {
               const alert = pageAlerts[route]
-              const dotColor = alert === 'alert' ? C.red : alert === 'warn' ? C.amber : null
+              const alertBg     = alert === 'red' ? 'rgba(255,68,102,0.15)' : alert === 'orange' ? 'rgba(255,184,0,0.13)' : alert === 'green' ? 'rgba(0,255,136,0.11)' : null
+              const alertBorder = alert === 'red' ? 'rgba(255,68,102,0.5)'  : alert === 'orange' ? 'rgba(255,184,0,0.45)'  : alert === 'green' ? 'rgba(0,255,136,0.4)'   : null
+              const finalBg     = alertBg ?? bg
+              const finalBorder = alertBorder ?? border
               return (
-                <button key={route} onClick={() => navTo(route)} style={{ position:'relative', display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:bg, border:border==='none'?'none':'1px solid '+border, borderRadius:'0.75rem', color, cursor:'pointer', fontSize:'0.8rem', fontWeight:bold?700:600, fontFamily:'inherit' }}>
-                  {dotColor && <span style={{ position:'absolute', top:'4px', right:'4px', width:'7px', height:'7px', borderRadius:'50%', background:dotColor, boxShadow:'0 0 4px '+dotColor }} />}
+                <button key={route} onClick={() => navTo(route)} style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:finalBg, border:finalBorder==='none'?'none':'1px solid '+finalBorder, borderRadius:'0.75rem', color, cursor:'pointer', fontSize:'0.8rem', fontWeight:bold?700:600, fontFamily:'inherit', transition:'background 0.3s,border-color 0.3s' }}>
                   {icon}{label}
                 </button>
               )
