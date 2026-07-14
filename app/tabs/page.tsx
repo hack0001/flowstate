@@ -324,7 +324,7 @@ function BookmarkletPanel({ onClose }: { onClose: () => void }) {
 
       <button onClick={copy} style={{
         display:'flex', alignItems:'center', gap:'0.5rem',
-        padding:'0.55rem 1rem', borderRadius:'0.6rem', border:'none',
+        padding:'0.55rem 1rem', borderRadius:'0.6rem',
         background: copied ? C.green+'22' : C.cyan+'22',
         border: '1px solid '+(copied ? C.green+'44' : C.cyan+'44'),
         color: copied ? C.green : C.cyan,
