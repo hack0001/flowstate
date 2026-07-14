@@ -558,7 +558,9 @@ export default function CalendarPage() {
       try { localStorage.setItem('flowstate_reminders', JSON.stringify(next)) } catch {}
       return next
     })
-    supabase.from('reminders').upsert({ id: r.id, title: r.title, emoji: r.emoji, color: r.color, start_date: r.startDate, recurrence: r.recurrence, time_label: r.timeLabel }, { onConflict: 'id' }).then()
+    supabase.from('reminders')
+      .upsert({ id: r.id, title: r.title, emoji: r.emoji, color: r.color, start_date: r.startDate, recurrence: r.recurrence, time_label: r.timeLabel }, { onConflict: 'id' })
+      .then(({ error }) => { if (error) console.error('[reminders] upsert failed:', error.message, error) })
     setShowReminderModal(false)
     setEditingReminder(null)
   }
@@ -569,7 +571,8 @@ export default function CalendarPage() {
       try { localStorage.setItem('flowstate_reminders', JSON.stringify(next)) } catch {}
       return next
     })
-    supabase.from('reminders').delete().eq('id', id).then()
+    supabase.from('reminders').delete().eq('id', id)
+      .then(({ error }) => { if (error) console.error('[reminders] delete failed:', error.message, error) })
     setShowReminderModal(false)
     setEditingReminder(null)
   }

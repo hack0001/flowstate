@@ -13,11 +13,11 @@ const C = {
   teal:'#14b8a6', pink:'#ec4899', blue:'#60a5fa',
 }
 
-type Tab = 'framework' | 'checklists' | 'sops' | 'notes' | 'pipeline' | 'todos' | 'links' | 'batch'
+type Tab = 'framework' | 'checklists' | 'sops' | 'notes' | 'pipeline' | 'todos' | 'links' | 'batch' | 'prompts'
 
 const tabColor: Record<Tab, string> = {
   framework: C.blue, checklists: C.orange, sops: C.amber, notes: C.purple,
-  pipeline: C.green, todos: C.red, links: C.teal, batch: C.pink,
+  pipeline: C.green, todos: C.red, links: C.teal, batch: C.pink, prompts: '#22d3ee',
 }
 
 function priorityColor(p: string): string {
@@ -217,6 +217,7 @@ const SOPS: SOP[] = [
       'Use Everbee, Erank, or Alura to measure search volume and competition for niche keywords before committing',
       'Wholesale Ted cross-niche method: take a working niche and add a second qualifier &mdash; &ldquo;teacher shirts&rdquo; &rarr; &ldquo;chemistry teacher shirts for women&rdquo;',
       'Validate buyers not just views: filter Everbee for revenue data, not just listing count',
+      '<strong>Biggest niches to start with:</strong> Holidays/Christmas, Professions, Bachelorettes &mdash; proven year-round demand',
       'Long-term target: 1,000+ active listings using a template system &mdash; 15&ndash;20 min per new listing at scale',
       'Re-validate the niche every 90 days. Trends shift; don&apos;t keep producing into a dying market.',
     ]
@@ -231,7 +232,10 @@ const SOPS: SOP[] = [
       '<strong>Wholesale Ted cross-niche:</strong> Combine two niches &mdash; e.g. dog mums + nurses. Eliminates direct competition from saturated single-niche sellers.',
       'SEO keyword research: enter your idea into Everbee or Erank. Filter for high volume + mid competition.',
       '<strong>George McConnel tags method:</strong> collect tags from the top-selling competitor listings in your niche and model your own tag list from their proven phrases.',
+      '<strong>Everbee pro tip:</strong> filter the full database by shops &lt; 24 months old + listings &lt; 3 months old &mdash; finds new winners before they get saturated.',
       'Track all ideas in a spreadsheet before designing. Validate demand first, design second.',
+      '<strong>Research board:</strong> screenshot best-selling listings into a Canva or Figma whiteboard. Group by design similarity. Note fonts, colours, graphics, words. VISUAL RESEARCH FIRST &mdash; creativity before keyword analysis.',
+      '<strong>Types of design:</strong> Templatised (one interchangeable word across niches: &ldquo;I stopped [X] to be here&rdquo;) vs One-off (graphic-based with Midjourney variations). Templatised scales faster.',
     ]
   },
   {
@@ -241,10 +245,14 @@ const SOPS: SOP[] = [
       '<strong>Tools:</strong> Canva (quick mockups), Kittl (arc/university text, effects), Figma (templates and artboards), Illustrator (advanced)',
       '<strong>Graphics:</strong> Midjourney, Creative Fabrica, Freepik, or Etsy vectors &mdash; verify commercial licence on every asset',
       'Add font glyphs from Creative Fabrica for uniqueness that plain Canva competitors can&apos;t replicate easily',
+      '<strong>Font DUO technique:</strong> pair one blocky/bold font with one script or accent font. Look at proven combinations on bestselling listings before picking. Use font matcherator to identify fonts you see on Etsy.',
       'Max 2 complementary font duos &mdash; research which fonts are selling on your product type right now',
       'Keep designs simple: 1 colour or tight complementary palette. Many bestsellers are single colour.',
+      '<strong>Distressed overlay:</strong> search &ldquo;distressed grunge text&rdquo; on Creative Fabrica and overlay in Canva or Photoshop for a vintage/worn look. Edmund font also achieves this naturally.',
       'Add personalisation value (names, custom text) &mdash; drives Etsy&apos;s personalisation search traffic',
       'Export: 4500&times;5100px transparent PNG. Whites: hex #FCFCFC for double-ink vibrance. 100% opacity throughout.',
+      '<strong>Tracer App:</strong> if your graphic has many colours, vectorise it to SVG via Tracer &mdash; enables colour-swapping without quality loss.',
+      'In Canva grid view: rename all designs before downloading. Duplicate the file to make a white-text version separately.',
       'Final thumbnail test: view at 12% size. If the design isn&apos;t readable, the buyer won&apos;t click.',
     ]
   },
@@ -254,10 +262,13 @@ const SOPS: SOP[] = [
     steps:[
       'Prepare listing content in Prelist first: title, description, 13 tags, price, personalisation instructions',
       'In Printify: select supplier (Swift POD or Monster Digital), upload design, configure all variants',
-      'Pricing target: 57% gross margin. Formula: (retail &minus; Printify cost) &divide; retail. At 10+ sales, move to 30&ndash;40%.',
+      '<strong>Check DPI in Printify before publishing</strong> &mdash; must be above 300 DPI or print quality will fail',
+      'Variant visibility: set to &ldquo;show all variants&rdquo; &mdash; if a colour is sold out, show the next option rather than hiding it',
+      'Pricing target: 57% gross margin (with Printify Premium). Without Premium: target 45%. At 10+ sales, consider 30&ndash;40% to stay competitive.',
       'Use Vela to bulk assign mockup photos per colour variant &mdash; ensures every colour has the correct image',
       'Set listing disclosure: &ldquo;another company&rdquo;, &ldquo;a finished product&rdquo;, &ldquo;made to order&rdquo;, production partner selected and obscured',
       'Shipping profile: processing 2&ndash;7 days (add buffer), USA under $6 USD (Etsy penalises above this), GPSR contact if EU/NI',
+      '<strong>Vela publishing order:</strong> Refresh &rarr; Select Products &rarr; Edit Listings &rarr; Shipping Profile (Apply) &rarr; Section (Apply) &rarr; Tags (Apply) &rarr; Delete Old Mockups (optional) &rarr; Listing Info Cards (Apply) &rarr; Mockups &rarr; Titles revisions &rarr; Tags revisions &rarr; Sync Updates',
       'After publishing: view live on Etsy and verify thumbnail, all variants, personalisation box, and production partner disclosure',
     ]
   },
@@ -265,13 +276,21 @@ const SOPS: SOP[] = [
     id:'05', icon:'&#128200;', title:'Marketing & SEO',
     tagline:'Win the Etsy algorithm through SEO. Every listing should work passively.',
     steps:[
-      '<strong>Title:</strong> First phrase = most accurate product description. Rest separated by commas = alternative real searches. One &ldquo;gift&rdquo; phrase required.',
-      '<strong>Tags:</strong> All 13 used. Multi-word phrases only. Don&apos;t repeat attributes. Use George McConnel method &mdash; model tag list from top-selling competitors.',
+      '<strong>Keyword hierarchy:</strong> Primary (title &mdash; main concept) &rarr; Secondary (title + tags &mdash; niche modifiers) &rarr; Short-tail high-volume (tags + description) &rarr; Long-tail specific phrases (title). To rank on broad searches you must first rank on specific ones.',
+      '<strong>Title:</strong> First phrase = most accurate product description. Rest separated by commas = alternative real searches. One &ldquo;gift&rdquo; phrase required. First 30 characters matter most.',
+      '<strong>Tags:</strong> All 13 used. Multi-word phrases only. Don&apos;t repeat attributes. Model from top-selling competitors. &ldquo;Comfort Colors shirt&rdquo; is a strong general tag.',
       '<strong>Description:</strong> First 2 sentences keyword-rich (not title copy-paste). Then point-form: care instructions, sizing, returns, personalisation guide.',
+      '<strong>Attributes:</strong> ONE OF THE BIGGEST SEO FACTORS &mdash; fill in all relevant ones (size, style, occasion, holiday, colour, neckline). Wisely chosen attributes free up tag slots.',
       '<strong>Photos:</strong> Mockups at 2700&times;2200px minimum. No AI main photo. Guarantee slide in images 1&ndash;2. Alt text on main photo.',
-      'SEO completeness: fill About Me, shop title, shop sections, attributes &mdash; Etsy ranks incomplete shops lower',
+      '<strong>Guarantee template:</strong> &ldquo;If anything happens for any reason, you can contact us within 7&ndash;14 days of delivery and get either a replacement or a refund.&rdquo; &mdash; add this text to a mockup image card.',
+      '<strong>Comfort Colors priority stack:</strong> Pepper (first &mdash; highest demand), Expresso, Bay, Berry, Blue Jean, Ivory, Moss, Orchid, Violet. Offer 6&ndash;7 colours only &mdash; need a mockup for each. 90% of sales are the colour of your first mockup.',
+      'Create separate listings: one for light colours, one for dark colours &mdash; different mockups, different main photo, different title variations.',
+      '<strong>Express Delivery:</strong> highlight express delivery option in mockup images &mdash; faster availability is a conversion lever',
+      '<strong>Social proof:</strong> add a mockup card showing your best shop review &mdash; this alone can significantly lift conversion',
       'On new listings: run 25% off for 5 days to kickstart conversion signals that improve organic rank',
       'All external traffic via Share &amp; Save link (saves 4% on transaction fees)',
+      '<strong>Ads:</strong> run Etsy ads on new listings to generate early sales data &mdash; early signal improves organic ranking',
+      '<strong>Renewals:</strong> if a listing underperforms, update the mockups and relist &mdash; it gets a brief algorithm boost after changes. Test iterations before giving up.',
     ]
   },
   {
@@ -285,6 +304,10 @@ const SOPS: SOP[] = [
       'Negative reviews: message customer to resolve privately, then respond publicly once done',
       'Package insert via Printify branding: thank you + discount code + IG tag CTA',
       'Automate: thank-you discount, abandoned cart discount, favorited-item discount in Etsy Discounts panel',
+      '<strong>Returns process:</strong> ask customer for photo of shipping label + receipt + parcel. Use return address from print partner. Submit photo to Printify &mdash; they can often refund directly.',
+      '<strong>Exchanges:</strong> charge a replacement fee of &#36;10&ndash;12 to break even &mdash; never absorb the full exchange cost',
+      'Add a Q&amp;A section to listings: ask ChatGPT &ldquo;What concerns may make someone hesitate buying [PRODUCT]?&rdquo; &mdash; preempt the top 5 in your description and info cards',
+      '<strong>Canned messages:</strong> set up templated responses in Etsy Messages for common queries. Example: &ldquo;We ship most orders within 1&ndash;3 business days. US delivery takes 1&ndash;6 days in transit. We do not guarantee delivery times.&rdquo;',
     ]
   },
   {
@@ -295,8 +318,12 @@ const SOPS: SOP[] = [
       'Shipping profiles: processing 2&ndash;7 days + buffer; USA USPS under $6 USD; EU/NI with GPSR contact; Germany LUCID number added',
       'Production partners: set up in Etsy account once, then select on every listing (Printify/Swift POD/Monster)',
       'Instagram @TopNotchThreadz: create account, link in Etsy &ldquo;Around the web&rdquo;, include in message to buyer',
+      '<strong>Pinterest:</strong> create Pinterest account alongside Instagram &mdash; both required for social traffic. Ask buyers to follow and tag on both.',
       'Printify settings: order routing OFF, 24-hour approval window, package inserts ON, gift messages ON',
       'Etsy shop completeness: banner + logo, About Me, shop members, shop sections, translation ON, sold listings hidden',
+      '<strong>About Me page:</strong> must be fully complete with photos, personal story, shop members and blurb &mdash; Etsy will not fully rank incomplete shops',
+      '<strong>Canned messages:</strong> set up templated responses in Etsy Messages before you get busy &mdash; shipping queries, sizing questions, personalisation instructions',
+      'Shop Title: tell buyers exactly what you sell (e.g. &ldquo;Custom family t-shirts and sweatshirts&rdquo;) &mdash; most sellers skip this',
       'Printify premium: enable when monthly sales exceed &pound;115 &mdash; savings outweigh the subscription cost',
     ]
   },
@@ -306,7 +333,8 @@ const SOPS: SOP[] = [
     steps:[
       '<strong>Providers:</strong> Swift POD (fast, quality, US-focused) and Monster Digital (alternative for quality comparison)',
       'Test order every new product before mass-uploading to Etsy &mdash; verify print quality, colour accuracy, sizing',
-      '<strong>Pricing:</strong> target 57% gross margin. E.g. Printify cost &pound;12 &rarr; sell at &pound;28 for ~57% margin after fees.',
+      '<strong>Initial colour setup:</strong> White, Ivory, Bay, Orchid, Violet, Blossom, Blue Jean &mdash; add these variants first. Remove all default Printify mockups (Save Selection only) and replace with your own.',
+      '<strong>Pricing:</strong> target 57% gross margin with Printify Premium. Without Premium: target 45%. At 57%, retail is approx. &pound;28&ndash;35. Note: 57% is pre-sale &mdash; running promotions reduces real margin.',
       'At 10+ sales of one design: consider 30&ndash;40% margin to remain competitive while still profitable',
       'Variant setup: create all colours in Printify, then use Vela to assign individual mockup photos per colour',
       'Settings: order routing OFF, approval 24-hour window, delayed orders auto-send ON, package inserts ON',
@@ -325,6 +353,123 @@ const SOPS: SOP[] = [
       'Use Everbee to benchmark competitor revenue in your niche &mdash; find what is actually selling right now.',
     ]
   },
+]
+
+// ---- ChatGPT Prompts ----
+type PromptItem = { title: string; prompt: string; note: string }
+type PromptCategory = { category: string; emoji: string; items: PromptItem[] }
+
+const CHATGPT_PROMPTS: PromptCategory[] = [
+  {
+    category: 'Niche Discovery',
+    emoji: '&#128270;',
+    items: [
+      {
+        title: 'Hobby list for niches',
+        prompt: 'Give me a list of 50 of the most popular hobbies, sports, and activities that I can use as niche ideas for my print on demand business',
+        note: 'Starting point - take each idea and validate on Etsy / Everbee before designing'
+      },
+      {
+        title: 'Niche deep-dive',
+        prompt: 'Outline the most important aspects of the [NICHE] niche that I should know to create products and listings that resonate. Include insights on customer interests, unique keywords or themes, slang or lingo, and preferred aesthetics',
+        note: 'Replace [NICHE] with your target e.g. "30th birthday"'
+      },
+      {
+        title: 'Trending themes in niche',
+        prompt: 'I am creating [NICHE] shirts - what are the top trending party themes or activities for someone [TARGET AUDIENCE]',
+        note: 'e.g. "30th birthday shirts" / "someone turning 30"'
+      },
+      {
+        title: 'Niche sub-ideas',
+        prompt: 'Give me 20 niche ideas within [BROAD NICHE] for print on demand products that are specific enough to have low competition but enough demand to sell',
+        note: 'e.g. [BROAD NICHE] = "nurse gifts" - niche down to oncology nurse, night shift nurse, etc.'
+      },
+    ]
+  },
+  {
+    category: 'Phrase Generation',
+    emoji: '&#128172;',
+    items: [
+      {
+        title: 'Sarcastic phrases for age niche',
+        prompt: 'Give me 20 sarcastic phrases that only someone turning [AGE] would understand',
+        note: 'Replace [AGE] with 30, 40, 50, etc.'
+      },
+      {
+        title: 'Profession shirt phrases',
+        prompt: 'Give me 30 funny phrases that I could use for shirt designs that only a [PROFESSION] would understand',
+        note: 'e.g. "school counselor", "oncology nurse", "accountant"'
+      },
+      {
+        title: 'Cross-niche combo phrases',
+        prompt: 'Give me 30 sarcastic phrases that I could use for a mug design that only a [NICHE] who loves [HOBBY] would understand',
+        note: 'e.g. "Siamese cat owner who loves books" - cross-niche method'
+      },
+      {
+        title: 'Group vacation / event shirts',
+        prompt: 'Give me 30 funny "most likely to" phrases that I could use for group vacation shirts with a [THEME] theme',
+        note: 'e.g. camping, beach, bachelorette, family reunion, stag do'
+      },
+      {
+        title: 'Trademark-free sayings',
+        prompt: 'Give me trademark-free sayings that I can use for my print on demand sweatshirt targeting [NICHE]',
+        note: 'Always verify on USPTO after - ChatGPT can hallucinate trademarked phrases'
+      },
+      {
+        title: 'Template phrase variations',
+        prompt: 'Take the saying "[BASE SAYING]" and give me 20 variations that swap the core word for different niches while keeping the same format and humour',
+        note: 'e.g. "I stopped reading to be here" -> cooking, baking, knitting, hiking, gaming'
+      },
+    ]
+  },
+  {
+    category: 'Listing Copy',
+    emoji: '&#128221;',
+    items: [
+      {
+        title: 'Etsy description opener (SEO)',
+        prompt: 'Using these keywords write a 200 character description for my [PRODUCT] that goes at the top of an Etsy listing description: [KEYWORDS]',
+        note: 'First 2 sentences are indexed by Etsy for SEO - must include primary keywords naturally'
+      },
+      {
+        title: 'Buyer hesitation research',
+        prompt: 'I sell [PRODUCT] on Etsy. What possible concerns, doubts or questions may make someone hesitate from buying? List the top 10.',
+        note: 'Use the output to build your mockup info cards and description bullet points'
+      },
+      {
+        title: 'Full product description',
+        prompt: 'Write a complete Etsy product description for a [PRODUCT] in the [NICHE] niche. Use these keywords: [KEYWORDS]. Include care instructions, sizing note, and returns policy. Format with short paragraphs and bullet points.',
+        note: 'Edit the output - remove anything that sounds generic or AI-written'
+      },
+    ]
+  },
+  {
+    category: 'Keywords & Tags',
+    emoji: '&#127991;',
+    items: [
+      {
+        title: 'Long-tail keyword list',
+        prompt: 'Give me 30 long-tail keyword phrases for an Etsy listing selling [PRODUCT] in the [NICHE] niche. These should be specific phrases buyers would actually type into Etsy.',
+        note: 'Verify search volume in Erank or Everbee before using'
+      },
+      {
+        title: '13 Etsy tags',
+        prompt: 'Give me 13 Etsy tags for a [PRODUCT] targeting [NICHE]. Tags must be multi-word phrases, not single words. Include occasion, gift, and style variations.',
+        note: 'Use as a starting point - cross-check against actual top seller tags in Erank'
+      },
+    ]
+  },
+]
+
+// ---- Font Reference ----
+const FONTS: { category: string; fonts: string[]; useCase: string }[] = [
+  { category: 'General / Versatile', fonts: ['Remington Weather', 'Paper Cutout', 'Vintage College Dept', 'Vancouver'], useCase: 'Everyday niches, text-only designs, sarcastic sayings' },
+  { category: 'Feminine / Women\'s', fonts: ['Clementina', 'Limon Mint'], useCase: 'Women\'s shirts, mothers, feminine niches' },
+  { category: 'Rustic / Stressed', fonts: ['Edmund', 'Rustic Pantry'], useCase: 'Rustic look, distressed aesthetic, country themes' },
+  { category: 'Dictionary / Fake Definition', fonts: ['Bookmania'], useCase: 'Fake definition shirts: "Accountant (n.) someone who..."' },
+  { category: 'Western / Country', fonts: ['Monday', 'Road Rage', 'Western Carlo'], useCase: 'Country music, rodeo, Western lifestyle niches' },
+  { category: 'Halloween', fonts: ['Sansation', 'Vampire Zone', 'Spooky Man'], useCase: 'Halloween season designs' },
+  { category: 'Kids / Fun', fonts: ['Dinosauce', 'Islands Sans', 'Morris Jr'], useCase: 'Children\'s clothing, family matching sets' },
 ]
 
 // ---- Components ----
@@ -417,6 +562,19 @@ const WORKFLOW_PHASES: { num:string; title:string; color:string; tasks:string[] 
   { num:'05', title:'Market &amp; Optimise', color:'#14b8a6', tasks:['Guarantee slides in photos','Run 25% off for 5 days','Review requests on delivery'] },
 ]
 
+const THIRTY_DAY_PLAN: string[] = [
+  'Day 1: make 1 template. Post at least 7 products.',
+  'Day 7: 7 templates built. Posting 7+ products every day.',
+  'Day 30: 30 templates. Posting a minimum of 30 products per day.',
+  'Ongoing: revise 1 existing template per day to improve it.',
+  'This is the minimum viable system - templates compound. 30/day posting changes the outcome.',
+]
+
+const DESIGN_TYPES: { type:string; desc:string; color:string }[] = [
+  { type:'Templatised', color:'#14b8a6', desc:'One interchangeable word used across many niches. E.g. "I stopped [ACTIVITY] to be here" -> cooking, baking, reading, gaming, hiking. Design once, multiply across 20+ niches. Fastest path to volume.' },
+  { type:'One-Off', color:'#8b5cf6', desc:'Cannot be easily templatised but can have many graphic variations. If it uses an image, use Midjourney to generate 8-15 similar copyright-free variants. Volume comes from iteration, not templates.' },
+]
+
 export default function EtsyPage() {
   const router = useRouter()
   const { t } = useLanguage()
@@ -427,6 +585,17 @@ export default function EtsyPage() {
   const [search, setSearch] = useState('')
   const [todoFilter, setTodoFilter] = useState('All')
   const [pipeFilter, setPipeFilter] = useState('All')
+  const [copiedPrompt, setCopiedPrompt] = useState<string|null>(null)
+
+  function copyPrompt(text: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedPrompt(text)
+      setTimeout(() => setCopiedPrompt(null), 1600)
+    }).catch(() => {
+      setCopiedPrompt(text)
+      setTimeout(() => setCopiedPrompt(null), 1600)
+    })
+  }
 
   useEffect(() => {
     try {
@@ -474,6 +643,7 @@ export default function EtsyPage() {
     { key:'framework', label:'Framework' },
     { key:'checklists', label: t('checklists') },
     { key:'sops', label: t('productionSOPs') },
+    { key:'prompts', label:'Prompts' },
     { key:'notes', label:'Notes' },
     { key:'pipeline', label:'Pipeline' },
     { key:'todos', label:'Todos' },
@@ -599,6 +769,46 @@ export default function EtsyPage() {
                 </div>
               ))}
             </div>
+
+            {/* 30-Day Launch Plan */}
+            <div style={{ marginTop:'1rem', background:'rgba(34,211,238,0.05)', border:'1px solid rgba(34,211,238,0.18)', borderRadius:'0.875rem', padding:'1rem' }}>
+              <p style={{ fontSize:'0.72rem', fontWeight:800, color:'#22d3ee', margin:'0 0 0.6rem', textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>Alek 30-Day Launch Plan</p>
+              {THIRTY_DAY_PLAN.map((item, i) => (
+                <div key={i} style={{ display:'flex', gap:'0.4rem', marginBottom:'0.35rem' }}>
+                  <span style={{ color:'#22d3ee', fontSize:'0.7rem', marginTop:'0.1rem', flexShrink:0 }}>&#8594;</span>
+                  <p style={{ fontSize:'0.72rem', color:C.muted, margin:0, lineHeight:1.5 }}>{item}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Types of Design */}
+            <div style={{ marginTop:'0.75rem' }}>
+              <p style={{ fontSize:'0.7rem', fontWeight:700, color:C.muted, letterSpacing:'0.07em', textTransform:'uppercase' as const, margin:'0 0 0.6rem' }}>Types of Design</p>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
+                {DESIGN_TYPES.map(dt => (
+                  <div key={dt.type} style={{ background:C.card, border:'1px solid '+dt.color+'33', borderRadius:'0.875rem', padding:'1rem' }}>
+                    <p style={{ fontSize:'0.75rem', fontWeight:800, color:dt.color, margin:'0 0 0.4rem' }}>{dt.type}</p>
+                    <p style={{ fontSize:'0.71rem', color:C.muted, margin:0, lineHeight:1.5 }}>{dt.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Font Reference */}
+            <div style={{ marginTop:'0.75rem' }}>
+              <p style={{ fontSize:'0.7rem', fontWeight:700, color:C.muted, letterSpacing:'0.07em', textTransform:'uppercase' as const, margin:'0 0 0.6rem' }}>Font Reference</p>
+              <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}>
+                {FONTS.map((fg, i) => (
+                  <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.65rem 1rem', display:'flex', gap:'0.75rem', alignItems:'flex-start' }}>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:'0.73rem', fontWeight:700, color:C.text, margin:'0 0 0.18rem' }}>{fg.category}</p>
+                      <p style={{ fontSize:'0.7rem', color:C.orange, margin:'0 0 0.18rem', fontStyle:'italic' }}>{fg.fonts.join(', ')}</p>
+                      <p style={{ fontSize:'0.65rem', color:C.muted, margin:0 }}>{fg.useCase}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -608,252 +818,4 @@ export default function EtsyPage() {
             <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.25rem', marginBottom:'1.5rem' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
                 <div>
-                  <h2 style={{ fontSize:'0.9rem', fontWeight:800, margin:0 }}>{t('overallProgress')}</h2>
-                  <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.2rem 0 0' }}>{totalDone} of {totalItems} items complete</p>
-                </div>
-                <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
-                  {totalDone > 0 && (
-                    <button onClick={resetAll} style={{ display:'flex', alignItems:'center', gap:'0.3rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', padding:'0.3rem 0.6rem' }}>
-                      <RotateCcw size={11} /> Reset all
-                    </button>
-                  )}
-                  <span style={{ fontSize:'1.5rem', fontWeight:900, color: pct===100 ? C.green : C.orange }}>{pct}%</span>
-                </div>
-              </div>
-              <div style={{ height:'4px', background:C.border, borderRadius:'2px', overflow:'hidden' }}>
-                <div style={{ height:'100%', width:pct+'%', borderRadius:'2px', transition:'width 0.4s ease', background: pct===100 ? 'linear-gradient(90deg,'+C.green+',#00cc6a)' : 'linear-gradient(90deg,'+C.orange+',#ea580c)' }} />
-              </div>
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.625rem' }}>
-              {SECTIONS.map(section => {
-                const secDone = section.items.filter(item => checked[item.id]).length
-                const secPct  = Math.round(secDone / section.items.length * 100)
-                const isOpen  = openSections.has(section.id)
-                return (
-                  <div key={section.id} style={{ background:C.card, border:'1px solid '+(secPct===100 ? 'rgba(0,255,136,0.25)' : C.border), borderRadius:'0.875rem', overflow:'hidden', transition:'border-color 0.3s' }}>
-                    <button onClick={() => toggleSection(section.id)} style={{ width:'100%', display:'flex', alignItems:'center', gap:'0.75rem', padding:'1rem 1.125rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', textAlign:'left' }}>
-                      <span style={{ fontSize:'1.1rem' }} dangerouslySetInnerHTML={{ __html: section.emoji }} />
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <p style={{ fontSize:'0.85rem', fontWeight:700, color: secPct===100 ? C.green : C.text, margin:0 }}>{section.title}</p>
-                        <p style={{ fontSize:'0.65rem', color:C.muted, margin:'0.15rem 0 0' }}>{secDone}/{section.items.length} complete</p>
-                      </div>
-                      <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
-                        <div style={{ width:'48px', height:'3px', background:C.border, borderRadius:'2px', overflow:'hidden' }}>
-                          <div style={{ height:'100%', width:secPct+'%', background: secPct===100 ? C.green : C.orange, borderRadius:'2px', transition:'width 0.3s' }} />
-                        </div>
-                        <ChevronDown size={15} color={C.muted} style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition:'transform 0.2s', flexShrink:0 }} />
-                      </div>
-                    </button>
-                    {isOpen && (
-                      <div style={{ padding:'0.25rem 1rem 1rem', borderTop:'1px solid '+C.border }}>
-                        <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-                          {section.items.map(item => (
-                            <CheckItem key={item.id} id={item.id} label={item.label} note={item.note} checked={!!checked[item.id]} onToggle={toggleCheck} />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* SOPs */}
-        {activeTab === 'sops' && (
-          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
-            <div style={{ marginBottom:'1.5rem', padding:'0.875rem 1rem', background:'rgba(249,115,22,0.05)', border:'1px solid rgba(249,115,22,0.15)', borderRadius:'0.875rem', display:'flex', alignItems:'center', gap:'0.75rem' }}>
-              <span style={{ fontSize:'1rem' }}>&#128722;</span>
-              <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5 }}>
-                TopNotchThreadz operating procedures. Open the relevant accordion when you need it.
-              </p>
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
-              {SOPS.map(sop => <SOPCard key={sop.id} sop={sop} />)}
-            </div>
-          </div>
-        )}
-
-        {/* Notes */}
-        {activeTab === 'notes' && (
-          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
-            <SearchBar value={search} onChange={setSearch} placeholder="Search notes and study materials..." />
-            <p style={{ fontSize:'0.7rem', color:C.muted, margin:'-0.25rem 0 1rem' }}>
-              {ETSY_NOTES.filter(n => !search || n.name.toLowerCase().includes(search.toLowerCase()) || n.notes.toLowerCase().includes(search.toLowerCase())).length} of {ETSY_NOTES.length} notes
-            </p>
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-              {ETSY_NOTES
-                .filter(n => !search || n.name.toLowerCase().includes(search.toLowerCase()) || n.notes.toLowerCase().includes(search.toLowerCase()))
-                .map((note, i) => (
-                  <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem' }}>
-                    <Badge label={note.priority} color={priorityColor(note.priority)} />
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{note.name}</p>
-                      {note.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.15rem 0 0' }}>{note.notes}</p>}
-                    </div>
-                    <a href={note.file_url || note.notion_url} target="_blank" rel="noreferrer" style={lnk(C.purple)}>
-                      <ExternalLink size={11} />
-                      {note.file_url ? 'Open' : 'Notion'}
-                    </a>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {/* Pipeline */}
-        {activeTab === 'pipeline' && (
-          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
-            <SearchBar value={search} onChange={setSearch} placeholder="Search tools and software..." />
-            <div style={{ display:'flex', gap:'0.4rem', marginBottom:'1rem', flexWrap:'wrap' }}>
-              {['All','Active','Not Active',''].map(f => {
-                const label = f === '' ? 'Misc' : f
-                const isAct = pipeFilter === f
-                const col = f === 'Active' ? C.green : f === 'Not Active' ? C.red : f === '' ? C.muted : C.orange
-                return (
-                  <button key={label} onClick={() => setPipeFilter(f)} style={{
-                    padding:'0.22rem 0.6rem', borderRadius:'999px',
-                    border:'1px solid '+(isAct ? col : C.border),
-                    background: isAct ? col+'18' : 'transparent',
-                    color: isAct ? col : C.muted,
-                    cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:600,
-                  }}>
-                    {label}
-                  </button>
-                )
-              })}
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-              {SOFTWARE_PIPELINE
-                .filter(tool => !search || tool.name.toLowerCase().includes(search.toLowerCase()) || tool.notes.toLowerCase().includes(search.toLowerCase()))
-                .filter(tool => pipeFilter === 'All' || tool.status === pipeFilter)
-                .map((tool, i) => (
-                  <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem' }}>
-                    <div style={{ display:'flex', flexDirection:'column', gap:'0.25rem', flexShrink:0, minWidth:'4.5rem' }}>
-                      <Badge label={tool.status || 'Misc'} color={tool.status === 'Active' ? C.green : tool.status === 'Not Active' ? C.red : C.muted} />
-                      {tool.priority === 'High' && <Badge label="High priority" color={C.red} />}
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{tool.name}</p>
-                      {tool.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.15rem 0 0', lineHeight:1.5 }}>{tool.notes}</p>}
-                    </div>
-                    {(tool.file_url || tool.notion_url) && (
-                      <a href={tool.file_url || tool.notion_url} target="_blank" rel="noreferrer" style={lnk(C.green)}>
-                        <ExternalLink size={11} /> Open
-                      </a>
-                    )}
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {/* Todos */}
-        {activeTab === 'todos' && (
-          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
-            <SearchBar value={search} onChange={setSearch} placeholder="Search todos..." />
-            <div style={{ display:'flex', gap:'0.4rem', marginBottom:'1rem', flexWrap:'wrap' }}>
-              {['All','Not Started','Started','Ongoing','Completed'].map(f => {
-                const isAct = todoFilter === f
-                const col = f === 'All' ? C.orange : stageColor(f)
-                return (
-                  <button key={f} onClick={() => setTodoFilter(f)} style={{
-                    padding:'0.22rem 0.6rem', borderRadius:'999px',
-                    border:'1px solid '+(isAct ? col : C.border),
-                    background: isAct ? col+'18' : 'transparent',
-                    color: isAct ? col : C.muted,
-                    cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:600,
-                  }}>
-                    {f}
-                  </button>
-                )
-              })}
-            </div>
-            <p style={{ fontSize:'0.7rem', color:C.muted, margin:'-0.25rem 0 1rem' }}>
-              {ETSY_TODOS.filter(td => (!search || td.name.toLowerCase().includes(search.toLowerCase())) && (todoFilter === 'All' || td.stage === todoFilter)).length} todos
-            </p>
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-              {ETSY_TODOS
-                .filter(td => !search || td.name.toLowerCase().includes(search.toLowerCase()) || td.notes.toLowerCase().includes(search.toLowerCase()))
-                .filter(td => todoFilter === 'All' || td.stage === todoFilter)
-                .map((td, i) => (
-                  <div key={i} style={{ background:C.card, border:'1px solid '+(td.stage === 'Completed' ? 'rgba(0,255,136,0.12)' : C.border), borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'flex-start', gap:'0.625rem' }}>
-                    <div style={{ display:'flex', flexDirection:'column', gap:'0.25rem', flexShrink:0, paddingTop:'1px' }}>
-                      <Badge label={td.stage} color={stageColor(td.stage)} />
-                      <Badge label={td.priority} color={priorityColor(td.priority)} />
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <p style={{ fontSize:'0.8rem', fontWeight:600, color: td.stage === 'Completed' ? C.muted : C.text, margin:0, textDecoration: td.stage === 'Completed' ? 'line-through' : 'none', opacity: td.stage === 'Completed' ? 0.7 : 1 }}>{td.name}</p>
-                      {td.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.2rem 0 0', lineHeight:1.5 }}>{td.notes}</p>}
-                    </div>
-                    <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'0.35rem', flexShrink:0 }}>
-                      {td.target_date && <span style={{ fontSize:'0.62rem', color:C.muted, whiteSpace:'nowrap' }}>{td.target_date}</span>}
-                      <a href={td.notion_url} target="_blank" rel="noreferrer" style={lnk(C.red)}>
-                        <ExternalLink size={10} />
-                      </a>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {/* Links */}
-        {activeTab === 'links' && (
-          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
-            <p style={{ fontSize:'0.7rem', color:C.muted, margin:'0 0 1rem' }}>{ETSY_LINKS.length} saved links from Notion</p>
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-              {ETSY_LINKS.map((link, i) => (
-                <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem' }}>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:'0 0 0.2rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{link.name}</p>
-                    <p style={{ fontSize:'0.65rem', color:C.muted, margin:0 }}>Saved {link.created}</p>
-                  </div>
-                  <a href={link.url} target="_blank" rel="noreferrer" style={lnk(C.teal)}>
-                    <ExternalLink size={11} /> Open
-                  </a>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Batch */}
-        {activeTab === 'batch' && (
-          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
-            <SearchBar value={search} onChange={setSearch} placeholder="Search ideas, niches, seed keywords..." />
-            <p style={{ fontSize:'0.7rem', color:C.muted, margin:'-0.25rem 0 1rem' }}>
-              {BATCH_WORKFLOW.filter(item => !search || item.idea_theme.toLowerCase().includes(search.toLowerCase()) || item.seed_keyword.toLowerCase().includes(search.toLowerCase()) || item.niche.toLowerCase().includes(search.toLowerCase())).length} of {BATCH_WORKFLOW.length} batch items
-            </p>
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-              {BATCH_WORKFLOW
-                .filter(item => !search || item.idea_theme.toLowerCase().includes(search.toLowerCase()) || item.seed_keyword.toLowerCase().includes(search.toLowerCase()) || item.niche.toLowerCase().includes(search.toLowerCase()))
-                .map((item, i) => (
-                  <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'flex-start', gap:'0.625rem' }}>
-                    <span style={{ fontSize:'0.6rem', color:C.muted, fontWeight:700, minWidth:'1.75rem', flexShrink:0, paddingTop:'2px' }}>#{item.id}</span>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:'0 0 0.3rem' }}>{item.idea_theme}</p>
-                      <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap', alignItems:'center' }}>
-                        {item.niche && <Badge label={item.niche} color={C.muted} />}
-                        <Badge label={item.batch_priority} color={priorityColor(item.batch_priority)} />
-                        {item.batch_stage && <Badge label={item.batch_stage} color={C.pink} />}
-                        {item.method && <Badge label={item.method} color={C.teal} />}
-                      </div>
-                      {item.seed_keyword && (
-                        <p style={{ fontSize:'0.67rem', color:C.sec, margin:'0.3rem 0 0' }}>Keyword: {item.seed_keyword}</p>
-                      )}
-                    </div>
-                    <a href={item.notion_url} target="_blank" rel="noreferrer" style={lnk(C.pink)}>
-                      <ExternalLink size={10} />
-                    </a>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-      </div>
-    </main>
-  )
-}
+                  <h2 style={{ fontSize:'0.9rem', font
