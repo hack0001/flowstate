@@ -44,23 +44,27 @@ function lsRead():SavedTab[] { try{ return JSON.parse(localStorage.getItem(LS_KE
 function lsWrite(tabs:SavedTab[]){ try{ localStorage.setItem(LS_KEY,JSON.stringify(tabs)) }catch{} }
 
 // ── Supabase background sync ──────────────────────────────────────────────────
+// Returns null on success, error message string on failure.
 // Always reads FRESH localStorage at merge time — no stale snapshot passed in.
-async function dbSync(onMerge:(merged:SavedTab[])=>void) {
+async function dbSync(onMerge:(merged:SavedTab[])=>void): Promise<string|null> {
   try {
     const { data, error } = await supabase.from('tabs').select('*').order('added_at',{ ascending:false })
-    if (error||!data) return
-    // Read current localStorage AT time of merge (captures any writes since fetch started)
+    if (error) { console.error('[tabs] dbSync select:', error); return error.message }
+    if (!data) return 'No data returned'
     const current  = lsRead()
     const remote   = data.map(fromRow)
     const remoteIds= new Set(remote.map(t=>t.id))
     const localOnly= current.filter(t=>!remoteIds.has(t.id))
-    // Push local-only rows up to Supabase
-    if (localOnly.length>0) supabase.from('tabs').upsert(localOnly.map(toRow),{onConflict:'id'}).then()
+    if (localOnly.length>0) {
+      const { error: upsertErr } = await supabase.from('tabs').upsert(localOnly.map(toRow),{onConflict:'id'})
+      if (upsertErr) console.error('[tabs] dbSync upsert:', upsertErr)
+    }
     const merged = [...remote,...localOnly]
       .sort((a,b)=>new Date(b.addedAt).getTime()-new Date(a.addedAt).getTime())
     lsWrite(merged)
     onMerge(merged)
-  } catch {}
+    return null
+  } catch(e) { console.error('[tabs] dbSync exception:', e); return String(e) }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -266,11 +270,13 @@ function TabsInner(){
   const [tabs,setTabs]               = useState<SavedTab[]>([])
   const [mounted,setMounted]         = useState(false)
   const [syncing,setSyncing]         = useState(false)
+  const [syncError,setSyncError]     = useState<string|null>(null)
   const [view,setView]               = useState<'active'|'archived'>('active')
   const [search,setSearch]           = useState('')
   const [groupFilter,setGroupFilter] = useState('all')
   const [showAdd,setShowAdd]         = useState(false)
   const [showBM,setShowBM]           = useState(false)
+  const [showSQL,setShowSQL]         = useState(false)
   const [origin,setOrigin]           = useState('')
 
   useEffect(()=>{
@@ -285,15 +291,16 @@ function TabsInner(){
     setTabs(local)
 
     // Listen for storage events from the bookmarklet popup (different window, same origin)
-    // This makes the Tab Sheet update live when a tab is saved via bookmarklet
     function onStorage(e:StorageEvent){
       if(e.key===LS_KEY) setTabs(lsRead())
     }
     window.addEventListener('storage',onStorage)
 
-    // Background sync with Supabase to pick up tabs from other devices
+    // Background sync with Supabase
     setSyncing(true)
-    dbSync(merged=>{ setTabs(merged) }).finally(()=>setSyncing(false))
+    dbSync(merged=>{ setTabs(merged); setSyncError(null) })
+      .then(err=>{ if(err) setSyncError(err) })
+      .finally(()=>setSyncing(false))
 
     return ()=>{ window.removeEventListener('storage',onStorage) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -322,7 +329,8 @@ function TabsInner(){
     }
     const next=[newTab,...current]
     lsWrite(next); setTabs(next)
-    supabase.from('tabs').upsert([toRow(newTab)],{onConflict:'id'}).then()
+    supabase.from('tabs').upsert([toRow(newTab)],{onConflict:'id'})
+      .then(({ error })=>{ if(error) console.error('[tabs] saveTab upsert:',error) })
   }
 
   function mutate(id:string, updates:Partial<SavedTab>){
@@ -332,13 +340,16 @@ function TabsInner(){
     if('status' in updates) dbUpdates.status=updates.status
     if('group'  in updates) dbUpdates.tab_group=updates.group
     if('notes'  in updates) dbUpdates.notes=updates.notes
-    if(Object.keys(dbUpdates).length>0) supabase.from('tabs').update(dbUpdates).eq('id',id).then()
+    if(Object.keys(dbUpdates).length>0)
+      supabase.from('tabs').update(dbUpdates).eq('id',id)
+        .then(({ error })=>{ if(error) console.error('[tabs] mutate update:',error) })
   }
 
   function removeTab(id:string){
     const next=lsRead().filter(t=>t.id!==id)
     lsWrite(next); setTabs(next)
-    supabase.from('tabs').delete().eq('id',id).then()
+    supabase.from('tabs').delete().eq('id',id)
+      .then(({ error })=>{ if(error) console.error('[tabs] removeTab delete:',error) })
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -385,6 +396,41 @@ function TabsInner(){
 
       {/* Body */}
       <div style={{ maxWidth:'800px',margin:'0 auto',padding:'1.5rem 2rem',opacity:mounted?1:0,transition:'opacity 0.3s',animation:'fadeInUp 0.3s ease both' }}>
+
+        {/* Supabase error banner */}
+        {syncError&&(
+          <div style={{ background:'rgba(255,68,102,0.08)',border:'1px solid '+C.red+'44',borderRadius:'0.875rem',padding:'0.875rem 1rem',marginBottom:'1.25rem' }}>
+            <div style={{ display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'0.75rem' }}>
+              <div style={{ flex:1 }}>
+                <p style={{ fontSize:'0.8rem',fontWeight:700,color:C.red,margin:'0 0 0.25rem' }}>Supabase sync failed &mdash; tabs are saving locally only</p>
+                <p style={{ fontSize:'0.72rem',color:C.sec,margin:'0 0 0.5rem',lineHeight:1.5 }}>
+                  Error: <code style={{ fontFamily:'monospace',fontSize:'0.68rem',color:C.amber }}>{syncError}</code>
+                </p>
+                <p style={{ fontSize:'0.72rem',color:C.sec,margin:'0 0 0.5rem' }}>
+                  The <code style={{ fontFamily:'monospace',color:C.cyan }}>tabs</code> table probably doesn&apos;t exist yet.
+                  Run this SQL in your Supabase dashboard:
+                </p>
+                <button onClick={()=>setShowSQL(v=>!v)} style={{ fontSize:'0.68rem',fontWeight:700,color:C.cyan,background:C.cyan+'18',border:'1px solid '+C.cyan+'33',borderRadius:'0.4rem',padding:'0.2rem 0.6rem',cursor:'pointer',fontFamily:'inherit' }}>
+                  {showSQL?'Hide SQL':'Show SQL'}
+                </button>
+              </div>
+              <button onClick={()=>setSyncError(null)} style={{ background:'none',border:'none',color:C.muted,cursor:'pointer',fontFamily:'inherit',flexShrink:0 }}><X size={14}/></button>
+            </div>
+            {showSQL&&(
+              <pre style={{ marginTop:'0.75rem',padding:'0.75rem',background:C.surface,border:'1px solid '+C.border,borderRadius:'0.5rem',fontSize:'0.65rem',color:C.text,overflowX:'auto' as const,lineHeight:1.7,fontFamily:'monospace',whiteSpace:'pre' as const }}>{`create table tabs (
+  id text primary key,
+  url text not null,
+  title text,
+  favicon text,
+  tab_group text default '',
+  notes text default '',
+  added_at timestamptz default now(),
+  status text default 'active',
+  source text default 'manual'
+);`}</pre>
+            )}
+          </div>
+        )}
 
         {showBM&&origin&&<BookmarkletPanel origin={origin} onClose={()=>setShowBM(false)}/>}
 
