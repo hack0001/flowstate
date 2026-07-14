@@ -57,7 +57,7 @@ async function dbSync(onMerge:(merged:SavedTab[])=>void): Promise<string|null> {
     const localOnly= current.filter(t=>!remoteIds.has(t.id))
     if (localOnly.length>0) {
       const { error: upsertErr } = await supabase.from('tabs').upsert(localOnly.map(toRow),{onConflict:'id'})
-      if (upsertErr) console.error('[tabs] dbSync upsert:', upsertErr)
+      if (upsertErr) { console.error('[tabs] dbSync upsert:', upsertErr); return upsertErr.message }
     }
     const merged = [...remote,...localOnly]
       .sort((a,b)=>new Date(b.addedAt).getTime()-new Date(a.addedAt).getTime())
@@ -65,6 +65,19 @@ async function dbSync(onMerge:(merged:SavedTab[])=>void): Promise<string|null> {
     onMerge(merged)
     return null
   } catch(e) { console.error('[tabs] dbSync exception:', e); return String(e) }
+}
+
+// ── Supabase direct write (used by saveTab/mutate/removeTab) ─────────────────
+// Returns error message or null.
+async function dbWrite(fn:()=>Promise<{error:unknown|null}>): Promise<string|null> {
+  try {
+    const { error } = await fn()
+    if (error && typeof error === 'object' && 'message' in error) {
+      console.error('[tabs] write error:', error)
+      return (error as {message:string}).message
+    }
+    return null
+  } catch(e) { console.error('[tabs] write exception:', e); return String(e) }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -329,8 +342,8 @@ function TabsInner(){
     }
     const next=[newTab,...current]
     lsWrite(next); setTabs(next)
-    supabase.from('tabs').upsert([toRow(newTab)],{onConflict:'id'})
-      .then(({ error })=>{ if(error) console.error('[tabs] saveTab upsert:',error) })
+    dbWrite(()=>supabase.from('tabs').upsert([toRow(newTab)],{onConflict:'id'}))
+      .then(err=>{ if(err) setSyncError(`Write failed: ${err}`) })
   }
 
   function mutate(id:string, updates:Partial<SavedTab>){
@@ -341,15 +354,15 @@ function TabsInner(){
     if('group'  in updates) dbUpdates.tab_group=updates.group
     if('notes'  in updates) dbUpdates.notes=updates.notes
     if(Object.keys(dbUpdates).length>0)
-      supabase.from('tabs').update(dbUpdates).eq('id',id)
-        .then(({ error })=>{ if(error) console.error('[tabs] mutate update:',error) })
+      dbWrite(()=>supabase.from('tabs').update(dbUpdates).eq('id',id))
+        .then(err=>{ if(err) setSyncError(`Write failed: ${err}`) })
   }
 
   function removeTab(id:string){
     const next=lsRead().filter(t=>t.id!==id)
     lsWrite(next); setTabs(next)
-    supabase.from('tabs').delete().eq('id',id)
-      .then(({ error })=>{ if(error) console.error('[tabs] removeTab delete:',error) })
+    dbWrite(()=>supabase.from('tabs').delete().eq('id',id))
+      .then(err=>{ if(err) setSyncError(`Write failed: ${err}`) })
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -406,18 +419,30 @@ function TabsInner(){
                 <p style={{ fontSize:'0.72rem',color:C.sec,margin:'0 0 0.5rem',lineHeight:1.5 }}>
                   Error: <code style={{ fontFamily:'monospace',fontSize:'0.68rem',color:C.amber }}>{syncError}</code>
                 </p>
-                <p style={{ fontSize:'0.72rem',color:C.sec,margin:'0 0 0.5rem' }}>
-                  The <code style={{ fontFamily:'monospace',color:C.cyan }}>tabs</code> table probably doesn&apos;t exist yet.
-                  Run this SQL in your Supabase dashboard:
-                </p>
-                <button onClick={()=>setShowSQL(v=>!v)} style={{ fontSize:'0.68rem',fontWeight:700,color:C.cyan,background:C.cyan+'18',border:'1px solid '+C.cyan+'33',borderRadius:'0.4rem',padding:'0.2rem 0.6rem',cursor:'pointer',fontFamily:'inherit' }}>
-                  {showSQL?'Hide SQL':'Show SQL'}
-                </button>
-              </div>
-              <button onClick={()=>setSyncError(null)} style={{ background:'none',border:'none',color:C.muted,cursor:'pointer',fontFamily:'inherit',flexShrink:0 }}><X size={14}/></button>
-            </div>
-            {showSQL&&(
-              <pre style={{ marginTop:'0.75rem',padding:'0.75rem',background:C.surface,border:'1px solid '+C.border,borderRadius:'0.5rem',fontSize:'0.65rem',color:C.text,overflowX:'auto' as const,lineHeight:1.7,fontFamily:'monospace',whiteSpace:'pre' as const }}>{`create table tabs (
+                {(syncError.toLowerCase().includes('permission')||syncError.toLowerCase().includes('rls')||syncError.toLowerCase().includes('policy')||syncError.toLowerCase().includes('row-level')||syncError.toLowerCase().includes('not authorized'))?(
+                  <>
+                    <p style={{ fontSize:'0.72rem',color:C.sec,margin:'0 0 0.5rem',lineHeight:1.5 }}>
+                      RLS is blocking writes. Run either of these in your Supabase SQL Editor:
+                    </p>
+                    <button onClick={()=>setShowSQL(v=>!v)} style={{ fontSize:'0.68rem',fontWeight:700,color:C.cyan,background:C.cyan+'18',border:'1px solid '+C.cyan+'33',borderRadius:'0.4rem',padding:'0.2rem 0.6rem',cursor:'pointer',fontFamily:'inherit' }}>
+                      {showSQL?'Hide SQL':'Show fix SQL'}
+                    </button>
+                    {showSQL&&(
+                      <pre style={{ marginTop:'0.75rem',padding:'0.75rem',background:C.surface,border:'1px solid '+C.border,borderRadius:'0.5rem',fontSize:'0.65rem',color:C.text,overflowX:'auto' as const,lineHeight:1.7,fontFamily:'monospace',whiteSpace:'pre' as const }}>{`-- Option A: disable RLS entirely (simplest for a personal app)
+alter table tabs disable row level security;
+
+-- Option B: add a permissive policy instead
+create policy "allow_all" on tabs
+  for all using (true) with check (true);`}</pre>
+                    )}
+                  </>
+                ):(
+                  <button onClick={()=>setShowSQL(v=>!v)} style={{ fontSize:'0.68rem',fontWeight:700,color:C.cyan,background:C.cyan+'18',border:'1px solid '+C.cyan+'33',borderRadius:'0.4rem',padding:'0.2rem 0.6rem',cursor:'pointer',fontFamily:'inherit' }}>
+                    {showSQL?'Hide':'Show table SQL'}
+                  </button>
+                )}
+                {showSQL&&!syncError.toLowerCase().includes('permission')&&!syncError.toLowerCase().includes('rls')&&!syncError.toLowerCase().includes('policy')&&(
+                  <pre style={{ marginTop:'0.75rem',padding:'0.75rem',background:C.surface,border:'1px solid '+C.border,borderRadius:'0.5rem',fontSize:'0.65rem',color:C.text,overflowX:'auto' as const,lineHeight:1.7,fontFamily:'monospace',whiteSpace:'pre' as const }}>{`create table tabs (
   id text primary key,
   url text not null,
   title text,
@@ -428,7 +453,10 @@ function TabsInner(){
   status text default 'active',
   source text default 'manual'
 );`}</pre>
-            )}
+                )}
+              </div>
+              <button onClick={()=>{ setSyncError(null); setShowSQL(false) }} style={{ background:'none',border:'none',color:C.muted,cursor:'pointer',fontFamily:'inherit',flexShrink:0 }}><X size={14}/></button>
+            </div>
           </div>
         )}
 
