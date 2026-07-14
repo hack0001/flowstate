@@ -69,7 +69,7 @@ async function dbSync(onMerge:(merged:SavedTab[])=>void): Promise<string|null> {
 
 // ── Supabase direct write (used by saveTab/mutate/removeTab) ─────────────────
 // Returns error message or null.
-async function dbWrite(fn:()=>Promise<{error:unknown|null}>): Promise<string|null> {
+async function dbWrite(fn:()=>PromiseLike<{error:unknown|null}>): Promise<string|null> {
   try {
     const { error } = await fn()
     if (error && typeof error === 'object' && 'message' in error) {
