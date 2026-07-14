@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle, Circle, RotateCcw, Tv, ChevronDown } from 'lucide-react'
 import { useLanguage } from '@/context/LanguageContext'
+import { supabase } from '@/lib/supabase'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -281,14 +282,28 @@ export default function YouTubePage() {
   const [shorts, setShorts] = useState<Set<string>>(new Set())
 
   useEffect(() => {
+    // Local cache first
     try {
       const raw = localStorage.getItem(LS_KEY)
       if (raw) setCreation(new Set(JSON.parse(raw) as string[]))
-    } catch {}
-    try {
       const rs = localStorage.getItem(LS_SHORTS)
       if (rs) setShorts(new Set(JSON.parse(rs) as string[]))
     } catch {}
+    // Supabase authoritative fetch
+    supabase.from('checklist_state').select('key,state').in('key', ['yt_creation', 'yt_shorts']).then(({ data }) => {
+      data?.forEach(row => {
+        if (row.key === 'yt_creation' && Array.isArray(row.state)) {
+          const s = new Set(row.state as string[])
+          setCreation(s)
+          try { localStorage.setItem(LS_KEY, JSON.stringify([...s])) } catch {}
+        }
+        if (row.key === 'yt_shorts' && Array.isArray(row.state)) {
+          const s = new Set(row.state as string[])
+          setShorts(s)
+          try { localStorage.setItem(LS_SHORTS, JSON.stringify([...s])) } catch {}
+        }
+      })
+    })
     setMounted(true)
   }, [])
 
@@ -296,7 +311,9 @@ export default function YouTubePage() {
     setCreation(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id); else next.add(id)
-      try { localStorage.setItem(LS_KEY, JSON.stringify([...next])) } catch {}
+      const arr = [...next]
+      try { localStorage.setItem(LS_KEY, JSON.stringify(arr)) } catch {}
+      supabase.from('checklist_state').upsert({ key: 'yt_creation', state: arr, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
       return next
     })
   }
@@ -313,7 +330,9 @@ export default function YouTubePage() {
     setShorts(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id); else next.add(id)
-      try { localStorage.setItem(LS_SHORTS, JSON.stringify([...next])) } catch {}
+      const arr = [...next]
+      try { localStorage.setItem(LS_SHORTS, JSON.stringify(arr)) } catch {}
+      supabase.from('checklist_state').upsert({ key: 'yt_shorts', state: arr, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
       return next
     })
   }

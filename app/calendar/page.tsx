@@ -293,10 +293,17 @@ export default function CalendarPage() {
   }, [])
 
   useEffect(() => {
+    // Show local cache instantly, then fetch Supabase (authoritative)
     try {
       const raw = localStorage.getItem('flowstate_cal_habits')
       if (raw) setHabits(JSON.parse(raw) as HabitBlock[])
     } catch {}
+    supabase.from('habit_blocks').select('*').then(({ data }) => {
+      if (!data || data.length === 0) return
+      const h = data.map(r => ({ id: r.id, title: r.title, emoji: r.emoji, color: r.color, days: r.days as number[], timeLabel: r.time_label as string }))
+      setHabits(h)
+      try { localStorage.setItem('flowstate_cal_habits', JSON.stringify(h)) } catch {}
+    })
   }, [])
 
   useEffect(() => {
@@ -304,6 +311,12 @@ export default function CalendarPage() {
       const raw = localStorage.getItem('flowstate_reminders')
       if (raw) setReminders(JSON.parse(raw) as Reminder[])
     } catch {}
+    supabase.from('reminders').select('*').order('start_date').then(({ data }) => {
+      if (!data || data.length === 0) return
+      const r = data.map(row => ({ id: row.id, title: row.title, emoji: row.emoji, color: row.color, startDate: row.start_date as string, recurrence: row.recurrence as ReminderRecurrence, timeLabel: row.time_label as string }))
+      setReminders(r)
+      try { localStorage.setItem('flowstate_reminders', JSON.stringify(r)) } catch {}
+    })
   }, [])
 
   function handleOrganise() { setOrgPlan(buildOrganisePlan(weekTasks, weekStart)) }
@@ -500,15 +513,16 @@ export default function CalendarPage() {
   function saveHabit() {
     if (!habitDraft.title.trim() || habitDraft.days.length === 0) return
     const h: HabitBlock = {
-      id: editingHabit?.id ?? (Date.now().toString()),
+      id: editingHabit?.id ?? Date.now().toString(),
       title: habitDraft.title.trim(), emoji: habitDraft.emoji,
       color: habitDraft.color, days: habitDraft.days, timeLabel: habitDraft.timeLabel,
     }
     setHabits(prev => {
       const next = editingHabit ? prev.map(x => x.id === h.id ? h : x) : [...prev, h]
-      localStorage.setItem('flowstate_cal_habits', JSON.stringify(next))
+      try { localStorage.setItem('flowstate_cal_habits', JSON.stringify(next)) } catch {}
       return next
     })
+    supabase.from('habit_blocks').upsert({ id: h.id, title: h.title, emoji: h.emoji, color: h.color, days: h.days, time_label: h.timeLabel }, { onConflict: 'id' }).then()
     setShowHabitModal(false)
     setEditingHabit(null)
   }
@@ -516,9 +530,10 @@ export default function CalendarPage() {
   function deleteHabit(id: string) {
     setHabits(prev => {
       const next = prev.filter(h => h.id !== id)
-      localStorage.setItem('flowstate_cal_habits', JSON.stringify(next))
+      try { localStorage.setItem('flowstate_cal_habits', JSON.stringify(next)) } catch {}
       return next
     })
+    supabase.from('habit_blocks').delete().eq('id', id).then()
   }
 
   function openReminderForm(r: Reminder | null) {
@@ -540,9 +555,10 @@ export default function CalendarPage() {
     }
     setReminders(prev => {
       const next = editingReminder ? prev.map(x => x.id === r.id ? r : x) : [...prev, r]
-      localStorage.setItem('flowstate_reminders', JSON.stringify(next))
+      try { localStorage.setItem('flowstate_reminders', JSON.stringify(next)) } catch {}
       return next
     })
+    supabase.from('reminders').upsert({ id: r.id, title: r.title, emoji: r.emoji, color: r.color, start_date: r.startDate, recurrence: r.recurrence, time_label: r.timeLabel }, { onConflict: 'id' }).then()
     setShowReminderModal(false)
     setEditingReminder(null)
   }
@@ -550,9 +566,10 @@ export default function CalendarPage() {
   function deleteReminder(id: string) {
     setReminders(prev => {
       const next = prev.filter(r => r.id !== id)
-      localStorage.setItem('flowstate_reminders', JSON.stringify(next))
+      try { localStorage.setItem('flowstate_reminders', JSON.stringify(next)) } catch {}
       return next
     })
+    supabase.from('reminders').delete().eq('id', id).then()
     setShowReminderModal(false)
     setEditingReminder(null)
   }

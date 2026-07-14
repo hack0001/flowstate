@@ -597,6 +597,7 @@ export default function WelshPage() {
   const [todoFinished, setTodoFinished] = useState(false)
 
   useEffect(() => {
+    // Local cache first for instant render
     try {
       setBest(Number(localStorage.getItem(BEST_KEY) ?? 0))
       setStreak(Number(localStorage.getItem(STREAK_KEY) ?? 0))
@@ -604,10 +605,30 @@ export default function WelshPage() {
       if (stored) {
         const parsed: CustomWord[] = JSON.parse(stored)
         setCustomWords(parsed)
-        // Regenerate questions to include custom words if quiz hasn't started
         if (parsed.length > 0) setQuestions(buildQuestions(parsed))
       }
     } catch {}
+    // Supabase authoritative fetch
+    Promise.all([
+      supabase.from('welsh_progress').select('*').eq('id', 1).single(),
+      supabase.from('welsh_custom_words').select('en,cy').order('created_at'),
+    ]).then(([{ data: prog }, { data: words }]) => {
+      if (prog) {
+        setStreak(prog.streak as number)
+        setBest(prog.best as number)
+        try {
+          localStorage.setItem(STREAK_KEY, String(prog.streak))
+          localStorage.setItem(BEST_KEY,   String(prog.best))
+          localStorage.setItem(LAST_KEY,   prog.last_date as string)
+        } catch {}
+      }
+      if (words && words.length > 0) {
+        const cw = words as CustomWord[]
+        setCustomWords(cw)
+        setQuestions(buildQuestions(cw))
+        try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(cw)) } catch {}
+      }
+    })
     setMounted(true)
   }, [])
 
@@ -650,18 +671,19 @@ export default function WelshPage() {
   }
 
   function finishQuiz() {
+    const today = todayStr()
+    const last  = localStorage.getItem(LAST_KEY) ?? ''
+    const yesterday = (() => { const d = new Date(); d.setDate(d.getDate()-1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0') })()
+    const newStreak = last === yesterday ? streak + 1 : last === today ? streak : 1
+    const newBest   = Math.max(best, score)
     try {
-      const today = todayStr()
-      const last  = localStorage.getItem(LAST_KEY)
-      const yesterday = (() => { const d = new Date(); d.setDate(d.getDate()-1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0') })()
-      const newStreak = last === yesterday ? streak + 1 : last === today ? streak : 1
-      const newBest   = Math.max(best, score)
       localStorage.setItem(LAST_KEY,   today)
       localStorage.setItem(STREAK_KEY, String(newStreak))
       localStorage.setItem(BEST_KEY,   String(newBest))
-      setStreak(newStreak)
-      setBest(newBest)
     } catch {}
+    setStreak(newStreak)
+    setBest(newBest)
+    supabase.from('welsh_progress').upsert({ id: 1, streak: newStreak, best: newBest, last_date: today }, { onConflict: 'id' }).then()
     setDone(true)
   }
 
@@ -676,28 +698,33 @@ export default function WelshPage() {
 
   function addCustomWord() {
     if (!newEn.trim() || !newCy.trim()) return
-    const updated = [...customWords, { en: newEn.trim(), cy: newCy.trim() }]
+    const en = newEn.trim(), cy = newCy.trim()
+    const updated = [...customWords, { en, cy }]
     setCustomWords(updated)
     try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(updated)) } catch {}
+    supabase.from('welsh_custom_words').insert({ id: `w_${Date.now()}`, en, cy }).then()
     setNewEn('')
     setNewCy('')
   }
 
   function deleteCustomWord(i: number) {
+    const word = customWords[i]
     const updated = customWords.filter((_, idx) => idx !== i)
     setCustomWords(updated)
     try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(updated)) } catch {}
+    supabase.from('welsh_custom_words').delete().eq('en', word.en).eq('cy', word.cy).then()
   }
 
   function todoSaveAndNext() {
     const task = todoTasks[todoIdx]
     if (!task || !todoCy.trim()) return
-    // Save the pair to custom words
     const already = customWords.some(w => w.en.toLowerCase() === task.title.toLowerCase())
     if (!already) {
-      const updated = [...customWords, { en: task.title, cy: todoCy.trim() }]
+      const en = task.title, cy = todoCy.trim()
+      const updated = [...customWords, { en, cy }]
       setCustomWords(updated)
       try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(updated)) } catch {}
+      supabase.from('welsh_custom_words').insert({ id: `w_${Date.now()}`, en, cy }).then()
     }
     setTodoSavedIds(prev => new Set([...prev, task.id]))
     setTodoCy('')

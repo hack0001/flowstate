@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { ShoppingBag, CheckCircle, Circle, RotateCcw, ChevronDown, ExternalLink, Search, BookOpen } from 'lucide-react'
 import { useLanguage } from '@/context/LanguageContext'
 import { ETSY_NOTES, SOFTWARE_PIPELINE, ETSY_TODOS, ETSY_LINKS, BATCH_WORKFLOW } from '@/lib/etsy-data'
+import { supabase } from '@/lib/supabase'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -432,6 +433,13 @@ export default function EtsyPage() {
       const raw = localStorage.getItem(LS_KEY)
       if (raw) setChecked(JSON.parse(raw) as Record<string,boolean>)
     } catch {}
+    supabase.from('checklist_state').select('state').eq('key', 'etsy_checklists').single().then(({ data }) => {
+      if (data?.state && typeof data.state === 'object' && !Array.isArray(data.state)) {
+        const s = data.state as Record<string,boolean>
+        setChecked(s)
+        try { localStorage.setItem(LS_KEY, JSON.stringify(s)) } catch {}
+      }
+    })
     setMounted(true)
   }, [])
 
@@ -439,6 +447,7 @@ export default function EtsyPage() {
     setChecked(prev => {
       const next = { ...prev, [id]: !prev[id] }
       try { localStorage.setItem(LS_KEY, JSON.stringify(next)) } catch {}
+      supabase.from('checklist_state').upsert({ key: 'etsy_checklists', state: next, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
       return next
     })
   }
@@ -454,6 +463,7 @@ export default function EtsyPage() {
   function resetAll() {
     setChecked({})
     try { localStorage.removeItem(LS_KEY) } catch {}
+    supabase.from('checklist_state').upsert({ key: 'etsy_checklists', state: {}, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
   }
 
   const totalItems = SECTIONS.reduce((sum, s) => sum + s.items.length, 0)
