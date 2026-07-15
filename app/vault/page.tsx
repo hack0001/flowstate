@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Search, ExternalLink, X, BookOpen, Wrench, Lightbulb, Film, FileText, Headphones, ShoppingCart, Star, Plus, Edit3, Trash2 } from 'lucide-react'
+import { ChevronLeft, Search, ExternalLink, X, BookOpen, Wrench, Lightbulb, Film, FileText, Headphones, ShoppingCart, Star, Plus, Edit3, Trash2, ClipboardList, RotateCcw } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -249,7 +249,8 @@ export default function VaultPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [draft, setDraft] = useState<DraftItem>(EMPTY_DRAFT)
   const [saving, setSaving] = useState(false)
-  const [priorityView, setPriorityView] = useState(false)
+  const [view, setView] = useState<'all'|'priority'|'done'>('all')
+  const [toast, setToast] = useState<string|null>(null)
   const [vPriorityOrder, setVPriorityOrder] = useState<string[]>([])
   const [vDragId, setVDragId] = useState<string|null>(null)
   const [vDragOver, setVDragOver] = useState<string|null>(null)
@@ -304,7 +305,9 @@ export default function VaultPage() {
     requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
   }
 
-  const filtered = items.filter(item => {
+  const activeItems = items.filter(it => it.status !== 'Done' && it.status !== 'Read')
+
+  const filtered = activeItems.filter(item => {
     const matchCat = catFilter === 'All' || item.category === catFilter
     const q = search.toLowerCase()
     const matchSearch = !q ||
@@ -317,7 +320,7 @@ export default function VaultPage() {
   })
 
   const catCounts: Record<string, number> = {}
-  items.forEach(i => { if (i.category) catCounts[i.category] = (catCounts[i.category] ?? 0) + 1 })
+  activeItems.forEach(i => { if (i.category) catCounts[i.category] = (catCounts[i.category] ?? 0) + 1 })
 
   function openNew() {
     setDraft(EMPTY_DRAFT)
@@ -365,6 +368,25 @@ export default function VaultPage() {
     if (expanded === id) setExpanded(null)
   }
 
+  async function convertToTask(item: VaultItem, e: React.MouseEvent) {
+    e.stopPropagation()
+    const { error } = await supabase.from('master_tasks').insert({
+      title: item.title,
+      status: 'To Do',
+      archived: false,
+    })
+    if (!error) {
+      setToast('Added to tasks: ' + item.title.slice(0, 40))
+      setTimeout(() => setToast(null), 3000)
+    }
+  }
+
+  async function restoreItem(item: VaultItem, e: React.MouseEvent) {
+    e.stopPropagation()
+    await supabase.from('vault_items').update({ status: '' }).eq('id', item.id)
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: '' } : i))
+  }
+
   return (
     <main style={{ minHeight:'100vh', background:C.bg, color:C.text }}>
       {/* Header */}
@@ -379,7 +401,7 @@ export default function VaultPage() {
                 &#128218; Knowledge Vault
               </h1>
               <p style={{ fontSize:'0.82rem', color:C.sec, margin:0 }}>
-                {items.length} items &mdash; books, articles, tools, ideas
+                {activeItems.length} active &mdash; {items.filter(i=>i.status==='Done'||i.status==='Read').length} done
               </p>
             </div>
             <button onClick={openNew} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.75rem', color:C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, alignSelf:'flex-end' }}>
@@ -392,28 +414,31 @@ export default function VaultPage() {
       <div style={{ maxWidth:'1000px', margin:'0 auto', padding:'1.5rem 2rem' }}>
         {/* View toggle */}
         {(() => {
-          const activeItems = items.filter(it => it.status !== 'Done' && it.status !== 'Read')
           const vValidOrder = vPriorityOrder.filter(id => activeItems.some(it => it.id === id))
           const vAssignedSet = new Set(vValidOrder)
           const vUnassignedCount = activeItems.filter(it => !vAssignedSet.has(it.id)).length
+          const doneCount = items.filter(it => it.status === 'Done' || it.status === 'Read').length
           return (
-            <div style={{ display:'flex', gap:'0.5rem', marginBottom:'1.25rem' }}>
-              <button onClick={() => setPriorityView(false)} style={{ padding:'0.4rem 1rem', borderRadius:'0.625rem', border:'1px solid '+(priorityView ? C.border : C.purple), background:priorityView ? 'transparent' : 'rgba(139,92,246,0.12)', color:priorityView ? C.muted : C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
+            <div style={{ display:'flex', gap:'0.5rem', marginBottom:'1.25rem', flexWrap:'wrap' }}>
+              <button onClick={() => setView('all')} style={{ padding:'0.4rem 1rem', borderRadius:'0.625rem', border:'1px solid '+(view === 'all' ? C.purple : C.border), background:view === 'all' ? 'rgba(139,92,246,0.12)' : 'transparent', color:view === 'all' ? C.purple : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
                 All Items
               </button>
-              <button onClick={() => setPriorityView(true)} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.4rem 1rem', borderRadius:'0.625rem', border:'1px solid '+(priorityView ? '#ff6b35' : C.border), background:priorityView ? 'rgba(255,107,53,0.12)' : 'transparent', color:priorityView ? '#ff6b35' : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
+              <button onClick={() => setView('priority')} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.4rem 1rem', borderRadius:'0.625rem', border:'1px solid '+(view === 'priority' ? '#ff6b35' : C.border), background:view === 'priority' ? 'rgba(255,107,53,0.12)' : 'transparent', color:view === 'priority' ? '#ff6b35' : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
                 Priority View
                 {vUnassignedCount > 0 && (
                   <span style={{ background:C.red, color:'#fff', fontSize:'0.55rem', fontWeight:800, borderRadius:'9999px', padding:'0.1rem 0.35rem', lineHeight:1 }}>{vUnassignedCount}</span>
                 )}
+              </button>
+              <button onClick={() => setView('done')} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.4rem 1rem', borderRadius:'0.625rem', border:'1px solid '+(view === 'done' ? C.green : C.border), background:view === 'done' ? 'rgba(0,255,136,0.08)' : 'transparent', color:view === 'done' ? C.green : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
+                Done
+                {doneCount > 0 && <span style={{ background:C.green, color:'#000', fontSize:'0.55rem', fontWeight:800, borderRadius:'9999px', padding:'0.1rem 0.35rem', lineHeight:1 }}>{doneCount}</span>}
               </button>
             </div>
           )
         })()}
 
         {/* Priority view */}
-        {priorityView && (() => {
-          const activeItems = items.filter(it => it.status !== 'Done' && it.status !== 'Read')
+        {view === 'priority' && (() => {
           const vValidOrder = vPriorityOrder.filter(id => activeItems.some(it => it.id === id))
           const vAssignedSet = new Set(vValidOrder)
           const vUnassigned = activeItems.filter(it => !vAssignedSet.has(it.id))
@@ -470,6 +495,9 @@ export default function VaultPage() {
                           {it.category && meta && (
                             <span style={{ fontSize:'0.65rem', fontWeight:700, color:meta.color, background:meta.color+'15', border:'1px solid '+meta.color+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem' }}>{meta.icon}{it.category}</span>
                           )}
+                          <button type="button" draggable={false} onClick={e => convertToTask(it, e)} style={{ background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', color:C.cyan, cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.68rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.25rem' }} title="Convert to Task">
+                            <ClipboardList size={11}/> Task
+                          </button>
                         </div>
                       )
                     })}
@@ -519,6 +547,9 @@ export default function VaultPage() {
                             )}
                             <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([id, ...vValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
                             <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([...vValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                            <button type="button" draggable={false} onClick={e => convertToTask(it, e)} style={{ background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', color:C.cyan, cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.68rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.25rem' }} title="Convert to Task">
+                              <ClipboardList size={11}/> Task
+                            </button>
                             <button onClick={() => vHandleRemove(id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', padding:'0.15rem', borderRadius:'0.25rem' }}>
                               <X size={13}/>
                             </button>
@@ -541,7 +572,49 @@ export default function VaultPage() {
           )
         })()}
 
-        {!priorityView && <>
+        {/* Done view */}
+        {view === 'done' && (() => {
+          const doneItems = items.filter(it => it.status === 'Done' || it.status === 'Read')
+          return (
+            <div>
+              {doneItems.length === 0 ? (
+                <div style={{ textAlign:'center', padding:'3rem', color:C.muted }}>
+                  <p style={{ margin:0, fontSize:'0.875rem' }}>Nothing completed yet</p>
+                </div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.5rem' }}>
+                  {doneItems.map(item => {
+                    const meta = item.category ? CAT_META[item.category] : null
+                    return (
+                      <div key={item.id} style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem' }}>
+                        {meta && <span style={{ color:meta.color, flexShrink:0 }}>{meta.icon}</span>}
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <p style={{ fontSize:'0.85rem', fontWeight:600, color:C.text, margin:'0 0 0.15rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textDecoration:'line-through', opacity:0.6 }}>
+                            {item.title}
+                          </p>
+                          <p style={{ fontSize:'0.7rem', color:C.muted, margin:0 }}>
+                            {item.category && <span>{item.category}</span>}
+                            {item.category && item.author_source && <span> &middot; </span>}
+                            {item.author_source && <span>{item.author_source}</span>}
+                          </p>
+                        </div>
+                        <StatusChip status={item.status}/>
+                        <button onClick={e => convertToTask(item, e)} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.35rem 0.7rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', borderRadius:'0.5rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:700, flexShrink:0 }}>
+                          <ClipboardList size={11}/> Task
+                        </button>
+                        <button onClick={e => restoreItem(item, e)} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.35rem 0.7rem', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:'0.5rem', color:C.green, cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:700, flexShrink:0 }}>
+                          <RotateCcw size={11}/> Restore
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
+        {view === 'all' && <>
         {/* Search */}
         <div style={{ position:'relative', marginBottom:'1.25rem' }}>
           <Search size={15} color={C.muted} style={{ position:'absolute', left:'0.875rem', top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
@@ -554,7 +627,7 @@ export default function VaultPage() {
         <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap', marginBottom:'1.75rem' }}>
           {CATEGORIES.map(cat => {
             const active = catFilter === cat
-            const count = cat === 'All' ? items.length : (catCounts[cat] ?? 0)
+            const count = cat === 'All' ? activeItems.length : (catCounts[cat] ?? 0)
             if (cat !== 'All' && count === 0) return null
             const meta = cat !== 'All' ? CAT_META[cat] : null
             return (
@@ -664,6 +737,12 @@ export default function VaultPage() {
                         >
                           <Edit3 size={12}/> Edit
                         </button>
+                        <button
+                          onClick={e => convertToTask(item, e)}
+                          style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', borderRadius:'0.625rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700 }}
+                        >
+                          <ClipboardList size={12}/> &#8594; Task
+                        </button>
                         {item.notion_url && (
                           <a
                             href={item.notion_url}
@@ -700,6 +779,12 @@ export default function VaultPage() {
           onClose={() => setDrawerOpen(false)}
           saving={saving}
         />
+      )}
+
+      {toast && (
+        <div style={{ position:'fixed', bottom:'2rem', left:'50%', transform:'translateX(-50%)', background:C.green, color:'#0a0a0f', padding:'0.75rem 1.5rem', borderRadius:'0.875rem', fontWeight:800, fontSize:'0.82rem', zIndex:200, boxShadow:'0 4px 24px rgba(0,255,136,0.3)', display:'flex', alignItems:'center', gap:'0.5rem', whiteSpace:'nowrap' }}>
+          <ClipboardList size={14}/> {toast}
+        </div>
       )}
 
       <style>{`
