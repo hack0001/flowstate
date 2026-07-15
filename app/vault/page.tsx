@@ -501,6 +501,8 @@ export default function VaultPage() {
                             {it.category && meta && (
                               <span style={{ fontSize:'0.65rem', fontWeight:700, color:meta.color, background:meta.color+'15', border:'1px solid '+meta.color+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem' }}>{meta.icon}{it.category}</span>
                             )}
+                            <button onClick={() => saveVPriority([id, ...vValidOrder.filter(i=>i!==id)])} style={{ background:'none', border:'none', color:'#ff6b35', cursor:'pointer', padding:'0.2rem 0.2rem', fontSize:'0.65rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.25rem', fontWeight:700 }} title="Send to top">&#8593;</button>
+                            <button onClick={() => saveVPriority([...vValidOrder.filter(i=>i!==id), id])} style={{ background:'none', border:'none', color:'#ff6b35', cursor:'pointer', padding:'0.2rem 0.2rem', fontSize:'0.65rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.25rem', fontWeight:700 }} title="Send to bottom">&#8595;</button>
                             <button onClick={() => vHandleRemove(id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', padding:'0.15rem', borderRadius:'0.25rem' }}>
                               <X size={13}/>
                             </button>
