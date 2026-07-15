@@ -17,6 +17,7 @@ const PRIORITY_META: Record<string, { color: string; bg: string }> = {
 }
 
 const PRIORITIES = ['High', 'Medium', 'Low'] as const
+const PERSONAL_PRIORITY_KEY = 'personal_priority'
 
 type Item = {
   id: string; name: string; priority: string; notes: string | null
@@ -169,6 +170,11 @@ export default function PersonalPage() {
   const [editItem, setEditItem]         = useState<Item | null | 'new'>('new' as unknown as Item | null)
   const [modalOpen, setModalOpen]       = useState(false)
   const [selectedItem, setSelectedItem] = useState<Item | null>(null)
+  const [priorityView, setPriorityView]     = useState(false)
+  const [pPriorityOrder, setPPriorityOrder] = useState<string[]>([])
+  const [pDragId, setPDragId]               = useState<string|null>(null)
+  const [pDragOver, setPDragOver]           = useState<string|null>(null)
+  const [pDragFrom, setPDragFrom]           = useState<'unassigned'|'priority'|null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -177,7 +183,33 @@ export default function PersonalPage() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    let pLsLoaded = false
+    try {
+      const raw = localStorage.getItem('fs_p_personal')
+      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setPPriorityOrder(ids); pLsLoaded = true } }
+    } catch {}
+    async function init() {
+      const [, { data: pdata }] = await Promise.all([
+        load(),
+        supabase.from('priority_lists').select('ordered_ids').eq('key', PERSONAL_PRIORITY_KEY).single()
+      ])
+      if (pdata?.ordered_ids && Array.isArray(pdata.ordered_ids) && (pdata.ordered_ids as string[]).length > 0) {
+        const ids = pdata.ordered_ids as string[]
+        setPPriorityOrder(ids)
+        try { localStorage.setItem('fs_p_personal', JSON.stringify(ids)) } catch {}
+      } else if (!pLsLoaded) {
+        const { data: rows } = await supabase.from('personal_items').select('id').neq('archived', true).order('created_at', { ascending: false })
+        if (rows && rows.length > 0) {
+          const allIds = (rows as { id: string }[]).map(r => r.id)
+          setPPriorityOrder(allIds)
+          try { localStorage.setItem('fs_p_personal', JSON.stringify(allIds)) } catch {}
+          supabase.from('priority_lists').upsert({ key: PERSONAL_PRIORITY_KEY, ordered_ids: allIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+        }
+      }
+    }
+    init()
+  }, [load])
 
   const handleToggleDone = async (id: string, archived: boolean) => {
     await supabase.from('personal_items').update({ archived }).eq('id', id)
@@ -197,6 +229,14 @@ export default function PersonalPage() {
   const openEdit = (item: Item | null) => {
     setSelectedItem(item)
     setModalOpen(true)
+  }
+
+  function savePPriority(order: string[]) {
+    const y = window.scrollY
+    setPPriorityOrder(order)
+    try { localStorage.setItem('fs_p_personal', JSON.stringify(order)) } catch {}
+    supabase.from('priority_lists').upsert({ key: PERSONAL_PRIORITY_KEY, ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+    requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
   }
 
   const activeCount = items.filter(i => !i.archived).length
@@ -267,9 +307,126 @@ export default function PersonalPage() {
         </div>
       </div>
 
-      {/* Grid */}
+      {/* Content */}
       <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'1.5rem 2rem' }}>
-        {loading ? (
+
+        {/* View toggle */}
+        {!loading && items.length > 0 && (() => {
+          const activeItems = items.filter(i => !i.archived)
+          const pValid = pPriorityOrder.filter(id => activeItems.some(i => i.id === id))
+          const pUnassigned = activeItems.filter(i => !pValid.includes(i.id))
+          return (
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'1.25rem' }}>
+              <button onClick={() => setPriorityView(false)} style={{ padding:'0.35rem 0.875rem', borderRadius:'9999px', border:'1px solid '+(priorityView ? C.border : C.cyan+'60'), background: priorityView ? 'transparent' : 'rgba(0,212,255,0.1)', color: priorityView ? C.muted : C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, transition:'all 0.15s' }}>
+                All Items
+              </button>
+              <button onClick={() => setPriorityView(true)} style={{ padding:'0.35rem 0.875rem', borderRadius:'9999px', border:'1px solid '+(priorityView ? '#ff6b3560' : C.border), background: priorityView ? 'rgba(255,107,53,0.1)' : 'transparent', color: priorityView ? '#ff6b35' : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, transition:'all 0.15s', display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                Priority View
+                {pUnassigned.length > 0 && <span style={{ background:C.red, color:'#fff', fontSize:'0.55rem', fontWeight:800, borderRadius:'9999px', padding:'0.1rem 0.35rem', lineHeight:1 }}>{pUnassigned.length}</span>}
+              </button>
+            </div>
+          )
+        })()}
+
+        {/* Priority view */}
+        {priorityView && !loading && (() => {
+          const activeItems = items.filter(i => !i.archived)
+          const pValid = pPriorityOrder.filter(id => activeItems.some(i => i.id === id))
+          const pAssigned = new Set(pValid)
+          const pUnassigned = activeItems.filter(i => !pAssigned.has(i.id))
+          return (
+            <div>
+              {/* Unassigned zone */}
+              <div style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.25rem', marginBottom:'1.25rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem' }}>
+                  <h2 style={{ fontSize:'0.72rem', fontWeight:800, color:C.red, margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Unassigned</h2>
+                  {pUnassigned.length > 0 && <span style={{ background:C.red, color:'#fff', fontSize:'0.6rem', fontWeight:800, borderRadius:'9999px', padding:'0.15rem 0.45rem', lineHeight:1 }}>{pUnassigned.length}</span>}
+                  <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>Drag into priority list to rank</p>
+                </div>
+                {pUnassigned.length === 0 ? (
+                  <div style={{ padding:'1.5rem', textAlign:'center', border:'1px dashed rgba(0,255,136,0.3)', borderRadius:'0.875rem', background:'rgba(0,255,136,0.03)' }}>
+                    <p style={{ fontSize:'0.78rem', color:C.green, margin:0, fontWeight:700 }}>All items assigned</p>
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}
+                    onDragOver={e => { e.preventDefault(); setPDragOver('unassigned-zone') }}
+                    onDrop={e => {
+                      e.preventDefault()
+                      if (pDragFrom === 'priority' && pDragId) savePPriority(pValid.filter(i => i !== pDragId))
+                      setPDragId(null); setPDragOver(null); setPDragFrom(null)
+                    }}>
+                    {pUnassigned.map(item => (
+                      <div key={item.id} draggable
+                        onDragStart={() => { setPDragId(item.id); setPDragFrom('unassigned') }}
+                        onDragEnd={() => { setPDragId(null); setPDragOver(null); setPDragFrom(null) }}
+                        style={{ display:'flex', alignItems:'center', gap:'0.6rem', padding:'0.6rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', cursor:'grab', opacity: pDragId===item.id ? 0.4 : 1 }}>
+                        <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>
+                        <span style={{ flex:1, fontSize:'0.82rem', fontWeight:600, color:C.text }}>{item.name}</span>
+                        <PriorityBadge priority={item.priority} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Priority list */}
+              <div style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.25rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem' }}>
+                  <h2 style={{ fontSize:'0.72rem', fontWeight:800, color:'#ff6b35', margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Priority Order</h2>
+                  <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>{pValid.length} items ranked</p>
+                </div>
+                {pValid.length === 0 ? (
+                  <div style={{ padding:'2.5rem 1.5rem', textAlign:'center', border:'2px dashed '+(pDragOver==='p-priority-empty' ? '#ff6b35' : C.border), borderRadius:'0.875rem', background: pDragOver==='p-priority-empty' ? 'rgba(255,107,53,0.05)' : 'transparent', transition:'all 0.15s' }}
+                    onDragOver={e => { e.preventDefault(); setPDragOver('p-priority-empty') }}
+                    onDrop={e => { e.preventDefault(); if (pDragFrom==='unassigned'&&pDragId) savePPriority([pDragId]); setPDragId(null); setPDragOver(null); setPDragFrom(null) }}>
+                    <p style={{ fontSize:'0.82rem', color:C.muted, margin:0 }}>Drag items here to start ranking</p>
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}>
+                    {pValid.map((id, idx) => {
+                      const item = activeItems.find(i => i.id === id)
+                      if (!item) return null
+                      return (
+                        <div key={id} draggable
+                          onDragStart={() => { setPDragId(id); setPDragFrom('priority') }}
+                          onDragEnd={() => { setPDragId(null); setPDragOver(null); setPDragFrom(null) }}
+                          onDragOver={e => { e.preventDefault(); setPDragOver(id) }}
+                          onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && pDragOver===id) setPDragOver(null) }}
+                          onDrop={e => {
+                            e.preventDefault()
+                            if (pDragFrom==='unassigned'&&pDragId) { const o=[...pValid]; o.splice(idx,0,pDragId); savePPriority(o) }
+                            else if (pDragFrom==='priority'&&pDragId&&pDragId!==id) { const w=pValid.filter(i=>i!==pDragId); w.splice(w.indexOf(id),0,pDragId); savePPriority(w) }
+                            setPDragId(null); setPDragOver(null); setPDragFrom(null)
+                          }}
+                          style={{ display:'flex', alignItems:'center', gap:'0.6rem', padding:'0.6rem 0.875rem', background: pDragOver===id ? 'rgba(255,107,53,0.07)' : C.card, border:'1px solid '+(pDragOver===id ? '#ff6b35' : C.border), borderRadius:'0.75rem', cursor:'grab', opacity: pDragId===id ? 0.4 : 1, transition:'background 0.1s, border-color 0.1s' }}>
+                          <span style={{ fontSize:'0.72rem', color:C.muted, fontWeight:700, minWidth:'1.25rem', userSelect:'none' as const }}>{idx+1}</span>
+                          <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>
+                          <span style={{ flex:1, fontSize:'0.82rem', fontWeight:600, color:C.text }}>{item.name}</span>
+                          <PriorityBadge priority={item.priority} />
+                          <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); savePPriority([id, ...pValid.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
+                          <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); savePPriority([...pValid.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                          <button type="button" draggable={false} onClick={e => { e.stopPropagation(); savePPriority(pValid.filter(i=>i!==id)) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.25rem' }}>x</button>
+                        </div>
+                      )
+                    })}
+                    {/* Drop on bottom */}
+                    <div style={{ height:'2rem', borderRadius:'0.75rem', border:'2px dashed '+(pDragOver==='__p_bottom__' ? '#ff6b35' : 'transparent'), background: pDragOver==='__p_bottom__' ? 'rgba(255,107,53,0.05)' : 'transparent', transition:'all 0.15s', marginTop:'0.25rem' }}
+                      onDragOver={e => { e.preventDefault(); setPDragOver('__p_bottom__') }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        if (pDragFrom==='unassigned'&&pDragId) savePPriority([...pValid,pDragId])
+                        else if (pDragFrom==='priority'&&pDragId) savePPriority([...pValid.filter(i=>i!==pDragId),pDragId])
+                        setPDragId(null); setPDragOver(null); setPDragFrom(null)
+                      }} />
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Grid (normal view) */}
+        {!priorityView && (loading ? (
           <p style={{ color:C.muted, fontSize:'0.85rem' }}>Loading...</p>
         ) : visible.length === 0 ? (
           <div style={{ textAlign:'center', padding:'4rem 1rem', color:C.muted }}>
@@ -285,7 +442,7 @@ export default function PersonalPage() {
               ))}
             </div>
           </>
-        )}
+        ))}
       </div>
 
       {modalOpen && (
