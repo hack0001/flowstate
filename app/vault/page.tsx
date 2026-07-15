@@ -249,6 +249,11 @@ export default function VaultPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [draft, setDraft] = useState<DraftItem>(EMPTY_DRAFT)
   const [saving, setSaving] = useState(false)
+  const [priorityView, setPriorityView] = useState(false)
+  const [vPriorityOrder, setVPriorityOrder] = useState<string[]>([])
+  const [vDragId, setVDragId] = useState<string|null>(null)
+  const [vDragOver, setVDragOver] = useState<string|null>(null)
+  const [vDragFrom, setVDragFrom] = useState<'unassigned'|'priority'|null>(null)
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -260,7 +265,17 @@ export default function VaultPage() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    supabase.from('priority_lists').select('ordered_ids').eq('key', 'vault_priority').single().then(({ data }) => {
+      if (data?.ordered_ids && Array.isArray(data.ordered_ids)) setVPriorityOrder(data.ordered_ids as string[])
+    })
+  }, [load])
+
+  function saveVPriority(order: string[]) {
+    setVPriorityOrder(order)
+    supabase.from('priority_lists').upsert({ key: 'vault_priority', ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+  }
 
   const filtered = items.filter(item => {
     const matchCat = catFilter === 'All' || item.category === catFilter
@@ -348,6 +363,154 @@ export default function VaultPage() {
       </div>
 
       <div style={{ maxWidth:'1000px', margin:'0 auto', padding:'1.5rem 2rem' }}>
+        {/* View toggle */}
+        {(() => {
+          const vValidOrder = vPriorityOrder.filter(id => items.some(it => it.id === id))
+          const vAssignedSet = new Set(vValidOrder)
+          const vUnassignedCount = items.filter(it => !vAssignedSet.has(it.id)).length
+          return (
+            <div style={{ display:'flex', gap:'0.5rem', marginBottom:'1.25rem' }}>
+              <button onClick={() => setPriorityView(false)} style={{ padding:'0.4rem 1rem', borderRadius:'0.625rem', border:'1px solid '+(priorityView ? C.border : C.purple), background:priorityView ? 'transparent' : 'rgba(139,92,246,0.12)', color:priorityView ? C.muted : C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
+                All Items
+              </button>
+              <button onClick={() => setPriorityView(true)} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.4rem 1rem', borderRadius:'0.625rem', border:'1px solid '+(priorityView ? '#ff6b35' : C.border), background:priorityView ? 'rgba(255,107,53,0.12)' : 'transparent', color:priorityView ? '#ff6b35' : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
+                Priority View
+                {vUnassignedCount > 0 && (
+                  <span style={{ background:C.red, color:'#fff', fontSize:'0.55rem', fontWeight:800, borderRadius:'9999px', padding:'0.1rem 0.35rem', lineHeight:1 }}>{vUnassignedCount}</span>
+                )}
+              </button>
+            </div>
+          )
+        })()}
+
+        {/* Priority view */}
+        {priorityView && (() => {
+          const vValidOrder = vPriorityOrder.filter(id => items.some(it => it.id === id))
+          const vAssignedSet = new Set(vValidOrder)
+          const vUnassigned = items.filter(it => !vAssignedSet.has(it.id))
+
+          function vHandleDragStart(id: string, from: 'unassigned'|'priority') {
+            setVDragId(id); setVDragFrom(from)
+          }
+          function vHandleDragEnd() {
+            setVDragId(null); setVDragOver(null); setVDragFrom(null)
+          }
+          function vHandleDropOnPriority(targetId: string) {
+            if (!vDragId) return
+            const newOrder = vValidOrder.filter(i => i !== vDragId)
+            const idx = newOrder.indexOf(targetId)
+            if (idx === -1) { saveVPriority([...newOrder, vDragId]); return }
+            newOrder.splice(idx, 0, vDragId)
+            saveVPriority(newOrder)
+            setVDragId(null); setVDragOver(null); setVDragFrom(null)
+          }
+          function vHandleDropOnBottom() {
+            if (!vDragId) return
+            const newOrder = vValidOrder.filter(i => i !== vDragId)
+            saveVPriority([...newOrder, vDragId])
+            setVDragId(null); setVDragOver(null); setVDragFrom(null)
+          }
+          function vHandleRemove(id: string) {
+            saveVPriority(vValidOrder.filter(i => i !== id))
+          }
+
+          return (
+            <div>
+              {/* Unassigned */}
+              <div style={{ marginBottom:'1.75rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.75rem' }}>
+                  <span style={{ fontSize:'0.7rem', fontWeight:800, textTransform:'uppercase' as const, letterSpacing:'0.08em', color:C.red }}>Unassigned</span>
+                  {vUnassigned.length > 0 && <span style={{ background:C.red, color:'#fff', fontSize:'0.55rem', fontWeight:800, borderRadius:'9999px', padding:'0.1rem 0.35rem', lineHeight:1 }}>{vUnassigned.length}</span>}
+                </div>
+                {vUnassigned.length === 0 ? (
+                  <div style={{ padding:'1rem', background:C.card, borderRadius:'0.75rem', border:'1px solid '+C.border, color:C.muted, fontSize:'0.8rem', textAlign:'center' }}>
+                    All items assigned
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.4rem' }}>
+                    {vUnassigned.map(it => {
+                      const meta = it.category ? CAT_META[it.category] : null
+                      return (
+                        <div key={it.id}
+                          draggable
+                          onDragStart={() => vHandleDragStart(it.id, 'unassigned')}
+                          onDragEnd={vHandleDragEnd}
+                          style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', cursor:'grab', opacity: vDragId === it.id ? 0.4 : 1 }}>
+                          <span style={{ color:C.muted, fontSize:'0.75rem' }}>&#9776;</span>
+                          <span style={{ fontSize:'0.82rem', fontWeight:600, color:C.text, flex:1 }}>{it.title}</span>
+                          {it.category && meta && (
+                            <span style={{ fontSize:'0.65rem', fontWeight:700, color:meta.color, background:meta.color+'15', border:'1px solid '+meta.color+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem' }}>{meta.icon}{it.category}</span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Priority order */}
+              <div>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.75rem' }}>
+                  <span style={{ fontSize:'0.7rem', fontWeight:800, textTransform:'uppercase' as const, letterSpacing:'0.08em', color:'#ff6b35' }}>Priority Order</span>
+                  <span style={{ fontSize:'0.65rem', color:C.muted }}>drag to reorder</span>
+                </div>
+                {vValidOrder.length === 0 ? (
+                  <div
+                    onDragOver={e => { e.preventDefault(); setVDragOver('__bottom__') }}
+                    onDragLeave={() => setVDragOver(null)}
+                    onDrop={() => { vHandleDropOnBottom(); setVDragOver(null) }}
+                    style={{ padding:'2rem', background:C.card, borderRadius:'0.75rem', border:'2px dashed '+(vDragOver === '__bottom__' ? '#ff6b35' : C.border), color:C.muted, fontSize:'0.8rem', textAlign:'center', transition:'border-color 0.15s' }}>
+                    Drag items here to set priority
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0' }}>
+                    {vValidOrder.map((id, idx) => {
+                      const it = items.find(x => x.id === id)
+                      if (!it) return null
+                      const meta = it.category ? CAT_META[it.category] : null
+                      const isOver = vDragOver === id
+                      return (
+                        <div key={id}>
+                          {isOver && vDragFrom !== 'unassigned' && (
+                            <div style={{ height:'2px', background:'#ff6b35', borderRadius:'1px', margin:'0 0 2px 0' }}/>
+                          )}
+                          <div
+                            draggable
+                            onDragStart={() => vHandleDragStart(id, 'priority')}
+                            onDragEnd={vHandleDragEnd}
+                            onDragOver={e => { e.preventDefault(); setVDragOver(id) }}
+                            onDragLeave={() => setVDragOver(null)}
+                            onDrop={() => vHandleDropOnPriority(id)}
+                            style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', background:C.card, border:'1px solid '+(isOver ? '#ff6b35' : C.border), borderRadius:'0.75rem', cursor:'grab', opacity: vDragId === id ? 0.4 : 1, marginBottom:'0.4rem', transition:'border-color 0.15s' }}>
+                            <span style={{ fontSize:'0.65rem', fontWeight:800, color:'#ff6b35', minWidth:'1.5rem', textAlign:'center' }}>#{idx+1}</span>
+                            <span style={{ color:C.muted, fontSize:'0.75rem' }}>&#9776;</span>
+                            <span style={{ fontSize:'0.82rem', fontWeight:600, color:C.text, flex:1 }}>{it.title}</span>
+                            {it.category && meta && (
+                              <span style={{ fontSize:'0.65rem', fontWeight:700, color:meta.color, background:meta.color+'15', border:'1px solid '+meta.color+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem' }}>{meta.icon}{it.category}</span>
+                            )}
+                            <button onClick={() => vHandleRemove(id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', padding:'0.15rem', borderRadius:'0.25rem' }}>
+                              <X size={13}/>
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {/* Bottom drop zone */}
+                    <div
+                      onDragOver={e => { e.preventDefault(); setVDragOver('__bottom__') }}
+                      onDragLeave={() => setVDragOver(null)}
+                      onDrop={() => { vHandleDropOnBottom(); setVDragOver(null) }}
+                      style={{ height:'2.5rem', borderRadius:'0.75rem', border:'2px dashed '+(vDragOver === '__bottom__' ? '#ff6b35' : 'transparent'), display:'flex', alignItems:'center', justifyContent:'center', transition:'border-color 0.15s' }}>
+                      {vDragOver === '__bottom__' && <span style={{ fontSize:'0.7rem', color:'#ff6b35' }}>Drop to add last</span>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {!priorityView && <>
         {/* Search */}
         <div style={{ position:'relative', marginBottom:'1.25rem' }}>
           <Search size={15} color={C.muted} style={{ position:'absolute', left:'0.875rem', top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
@@ -495,6 +658,7 @@ export default function VaultPage() {
             })}
           </div>
         )}
+        </>}
       </div>
 
       {drawerOpen && (

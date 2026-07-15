@@ -363,6 +363,11 @@ export default function TasksPage() {
   const [saving, setSaving] = useState(false)
   const [showGains, setShowGains] = useState(false)
   const [gainIdx, setGainIdx] = useState(() => Math.floor(Math.random() * MARGINAL_GAINS.length))
+  const [priorityView, setPriorityView] = useState(false)
+  const [tPriorityOrder, setTPriorityOrder] = useState<string[]>([])
+  const [tDragId, setTDragId] = useState<string|null>(null)
+  const [tDragOver, setTDragOver] = useState<string|null>(null)
+  const [tDragFrom, setTDragFrom] = useState<'unassigned'|'priority'|null>(null)
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
@@ -375,7 +380,17 @@ export default function TasksPage() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').single().then(({ data }) => {
+      if (data?.ordered_ids && Array.isArray(data.ordered_ids)) setTPriorityOrder(data.ordered_ids as string[])
+    })
+  }, [load])
+
+  function saveTPriority(order: string[]) {
+    setTPriorityOrder(order)
+    supabase.from('priority_lists').upsert({ key: 'tasks_priority', ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+  }
 
   async function handleImport() {
     setImporting(true); setImportMsg('')
@@ -645,7 +660,138 @@ export default function TasksPage() {
       </div>
 
       <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'1.5rem 2rem' }}>
-        {loading ? (
+
+        {/* View toggle */}
+        {!loading && tasks.length > 0 && (() => {
+          const tValidOrder = tPriorityOrder.filter(id => tasks.some(t => t.id === id))
+          const tUnassigned = tasks.filter(t => !tValidOrder.includes(t.id))
+          return (
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'1.25rem' }}>
+              <button onClick={() => setPriorityView(false)} style={{ padding:'0.35rem 0.875rem', borderRadius:'9999px', border:'1px solid '+(priorityView ? C.border : C.cyan+'60'), background: priorityView ? 'transparent' : 'rgba(0,212,255,0.1)', color: priorityView ? C.muted : C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, transition:'all 0.15s' }}>
+                All Tasks
+              </button>
+              <button onClick={() => setPriorityView(true)} style={{ padding:'0.35rem 0.875rem', borderRadius:'9999px', border:'1px solid '+(priorityView ? '#ff6b3560' : C.border), background: priorityView ? 'rgba(255,107,53,0.1)' : 'transparent', color: priorityView ? '#ff6b35' : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, transition:'all 0.15s', display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                Priority View
+                {tUnassigned.length > 0 && <span style={{ background:C.red, color:'#fff', fontSize:'0.55rem', fontWeight:800, borderRadius:'9999px', padding:'0.1rem 0.35rem', lineHeight:1 }}>{tUnassigned.length}</span>}
+              </button>
+            </div>
+          )
+        })()}
+
+        {/* Priority view */}
+        {priorityView && !loading && (() => {
+          const tValidOrder = tPriorityOrder.filter(id => tasks.some(t => t.id === id))
+          const tAssigned = new Set(tValidOrder)
+          const tUnassigned = tasks.filter(t => !tAssigned.has(t.id))
+          return (
+            <div>
+              {/* Unassigned */}
+              <div style={{ marginBottom:'2rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem' }}>
+                  <h2 style={{ fontSize:'0.72rem', fontWeight:800, color:C.red, margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Unassigned</h2>
+                  {tUnassigned.length > 0 && <span style={{ background:C.red, color:'#fff', fontSize:'0.6rem', fontWeight:800, borderRadius:'9999px', padding:'0.15rem 0.45rem', lineHeight:1 }}>{tUnassigned.length}</span>}
+                  <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>Drag into priority list to rank</p>
+                </div>
+                {tUnassigned.length === 0 ? (
+                  <div style={{ padding:'1.5rem', textAlign:'center', border:'1px dashed rgba(0,255,136,0.3)', borderRadius:'0.875rem', background:'rgba(0,255,136,0.03)' }}>
+                    <p style={{ fontSize:'0.78rem', color:C.green, margin:0, fontWeight:700 }}>All tasks assigned</p>
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}
+                    onDragOver={e => { e.preventDefault(); setTDragOver('unassigned-zone') }}
+                    onDrop={e => {
+                      e.preventDefault()
+                      if (tDragFrom === 'priority' && tDragId) saveTPriority(tValidOrder.filter(i => i !== tDragId))
+                      setTDragId(null); setTDragOver(null); setTDragFrom(null)
+                    }}
+                  >
+                    {tUnassigned.map(task => (
+                      <div key={task.id} draggable
+                        onDragStart={() => { setTDragId(task.id); setTDragFrom('unassigned') }}
+                        onDragEnd={() => { setTDragId(null); setTDragOver(null); setTDragFrom(null) }}
+                        style={{ background:C.card, border:'1px solid '+(tDragId===task.id ? C.red+'55' : C.border), borderRadius:'0.75rem', padding:'0.65rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem', cursor:'grab', opacity:tDragId===task.id?0.4:1, transition:'all 0.1s' }}>
+                        <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{task.title}</p>
+                          <div style={{ display:'flex', gap:'0.3rem', marginTop:'0.2rem', flexWrap:'wrap' }}>
+                            {task.task_type && <TypeBadge type={task.task_type}/>}
+                            <StatusBadge status={task.status}/>
+                            {task.urgency === 'Urgent' && <span style={{ fontSize:'0.58rem', color:C.red, border:'1px solid '+C.red+'40', borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>Urgent</span>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Priority list */}
+              <div>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem' }}>
+                  <h2 style={{ fontSize:'0.72rem', fontWeight:800, color:'#ff6b35', margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Priority Order</h2>
+                  <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>{tValidOrder.length} tasks ranked</p>
+                </div>
+                {tValidOrder.length === 0 ? (
+                  <div style={{ padding:'2.5rem 1.5rem', textAlign:'center', border:'2px dashed '+(tDragOver==='t-priority-empty' ? '#ff6b35' : C.border), borderRadius:'0.875rem', background:tDragOver==='t-priority-empty'?'rgba(255,107,53,0.05)':'transparent', transition:'all 0.15s' }}
+                    onDragOver={e => { e.preventDefault(); setTDragOver('t-priority-empty') }}
+                    onDragLeave={() => setTDragOver(null)}
+                    onDrop={e => { e.preventDefault(); if (tDragFrom==='unassigned'&&tDragId) saveTPriority([tDragId]); setTDragId(null); setTDragOver(null); setTDragFrom(null) }}>
+                    <p style={{ fontSize:'0.78rem', color:C.muted, margin:0 }}>Drag tasks here to set priority order</p>
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}>
+                    {tValidOrder.map((id, idx) => {
+                      const task = tasks.find(t => t.id === id)
+                      if (!task) return null
+                      return (
+                        <div key={id}>
+                          {tDragOver === id && <div style={{ height:'2px', background:'#ff6b35', borderRadius:'1px', margin:'0 0 0.25rem', opacity:0.8 }} />}
+                          <div draggable
+                            onDragStart={() => { setTDragId(id); setTDragFrom('priority') }}
+                            onDragEnd={() => { setTDragId(null); setTDragOver(null); setTDragFrom(null) }}
+                            onDragOver={e => { e.preventDefault(); setTDragOver(id) }}
+                            onDragLeave={() => { if (tDragOver===id) setTDragOver(null) }}
+                            onDrop={e => {
+                              e.preventDefault()
+                              if (tDragFrom==='unassigned'&&tDragId) { const o=[...tValidOrder]; o.splice(idx,0,tDragId); saveTPriority(o) }
+                              else if (tDragFrom==='priority'&&tDragId&&tDragId!==id) { const w=tValidOrder.filter(i=>i!==tDragId); w.splice(w.indexOf(id),0,tDragId); saveTPriority(w) }
+                              setTDragId(null); setTDragOver(null); setTDragFrom(null)
+                            }}
+                            style={{ background:C.card, border:'1px solid '+(tDragId===id?'#ff6b3555':C.border), borderRadius:'0.75rem', padding:'0.65rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem', cursor:'grab', opacity:tDragId===id?0.4:1, transition:'all 0.1s' }}>
+                            <span style={{ fontSize:'0.65rem', fontWeight:900, color:'#ff6b35', minWidth:'1.4rem', textAlign:'center' as const, flexShrink:0 }}>#{idx+1}</span>
+                            <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{task.title}</p>
+                              <div style={{ display:'flex', gap:'0.3rem', marginTop:'0.2rem', flexWrap:'wrap' }}>
+                                {task.task_type && <TypeBadge type={task.task_type}/>}
+                                <StatusBadge status={task.status}/>
+                                {task.urgency === 'Urgent' && <span style={{ fontSize:'0.58rem', color:C.red, border:'1px solid '+C.red+'40', borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>Urgent</span>}
+                              </div>
+                            </div>
+                            <button onClick={e => { e.stopPropagation(); saveTPriority(tValidOrder.filter(i=>i!==id)) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0 }}>x</button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    <div style={{ height:'2.75rem', border:'2px dashed '+(tDragOver==='t-bottom'?'#ff6b35':C.border), borderRadius:'0.75rem', display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.15s', background:tDragOver==='t-bottom'?'rgba(255,107,53,0.05)':'transparent' }}
+                      onDragOver={e => { e.preventDefault(); setTDragOver('t-bottom') }}
+                      onDragLeave={() => { if (tDragOver==='t-bottom') setTDragOver(null) }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        if (tDragFrom==='unassigned'&&tDragId) saveTPriority([...tValidOrder,tDragId])
+                        else if (tDragFrom==='priority'&&tDragId) saveTPriority([...tValidOrder.filter(i=>i!==tDragId),tDragId])
+                        setTDragId(null); setTDragOver(null); setTDragFrom(null)
+                      }}>
+                      <p style={{ fontSize:'0.67rem', color:tDragOver==='t-bottom'?'#ff6b35':C.muted, margin:0 }}>Drop here to add at end</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {priorityView ? null : loading ? (
           <div style={{ color:C.muted, fontSize:'0.85rem' }}>Loading...</div>
         ) : tasks.length === 0 ? (
           <div style={{ textAlign:'center', padding:'4rem 1rem', color:C.muted }}>

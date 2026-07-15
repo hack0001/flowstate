@@ -278,8 +278,12 @@ export default function YouTubePage() {
   const [creation, setCreation] = useState<Set<string>>(new Set(INITIAL_CREATION))
   const [health, setHealth] = useState<Set<string>>(new Set())
   const [mounted, setMounted] = useState(false)
-  const [activeTab, setActiveTab] = useState<'checklists'|'shorts'|'sops'>('checklists')
+  const [activeTab, setActiveTab] = useState<'checklists'|'shorts'|'sops'|'priority'>('checklists')
   const [shorts, setShorts] = useState<Set<string>>(new Set())
+  const [priorityOrder, setPriorityOrder] = useState<string[]>([])
+  const [ytDragId, setYtDragId] = useState<string|null>(null)
+  const [ytDragOver, setYtDragOver] = useState<string|null>(null)
+  const [ytDragFrom, setYtDragFrom] = useState<'unassigned'|'priority'|null>(null)
 
   useEffect(() => {
     // Local cache first
@@ -304,8 +308,18 @@ export default function YouTubePage() {
         }
       })
     })
+    supabase.from('priority_lists').select('ordered_ids').eq('key', 'youtube_priority').single().then(({ data }) => {
+      if (data?.ordered_ids && Array.isArray(data.ordered_ids)) setPriorityOrder(data.ordered_ids as string[])
+    })
     setMounted(true)
   }, [])
+
+  const ALL_YT_ITEMS = [...CREATION_ITEMS, ...HEALTH_ITEMS, ...SHORTS_CHECKLIST]
+
+  function saveYtPriority(order: string[]) {
+    setPriorityOrder(order)
+    supabase.from('priority_lists').upsert({ key: 'youtube_priority', ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+  }
 
   function toggleCreation(id: string) {
     setCreation(prev => {
@@ -365,18 +379,27 @@ export default function YouTubePage() {
           <h1 style={{ fontSize:'1.6rem', fontWeight:900, margin:0, letterSpacing:'-0.02em' }}>{t('channelHub')}</h1>
           <p style={{ fontSize:'0.875rem', color:C.sec, margin:'0.25rem 0 1rem' }}>{t('checklists')} &amp; {t('productionSOPs')}</p>
         </div>
-        <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', gap:'0.25rem' }}>
-          {(['checklists','shorts','sops'] as const).map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)} style={{
-              padding:'0.7rem 1.25rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit',
-              fontSize:'0.82rem', fontWeight: activeTab === tab ? 700 : 500,
-              color: activeTab === tab ? (tab === 'sops' ? C.amber : tab === 'shorts' ? C.green : C.red) : C.muted,
-              borderBottom: activeTab === tab ? '2px solid '+(tab === 'sops' ? C.amber : tab === 'shorts' ? C.green : C.red) : '2px solid transparent',
-              marginBottom:'-1px', transition:'all 0.15s', textTransform:'capitalize',
-            }}>
-              {tab === 'sops' ? t('productionSOPs') : tab === 'shorts' ? 'Shorts SOP' : t('checklists')}
-            </button>
-          ))}
+        <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', gap:'0.25rem', overflowX:'auto' }}>
+          {(['checklists','shorts','sops','priority'] as const).map(tab => {
+            const tabCol = tab === 'sops' ? C.amber : tab === 'shorts' ? C.green : tab === 'priority' ? '#ff6b35' : C.red
+            const ytValidOrder = priorityOrder.filter(id => ALL_YT_ITEMS.some(it => it.id === id))
+            const ytUnassignedCount = ALL_YT_ITEMS.filter(it => !ytValidOrder.includes(it.id)).length
+            return (
+              <button key={tab} onClick={() => setActiveTab(tab)} style={{
+                padding:'0.7rem 1.25rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit',
+                fontSize:'0.82rem', fontWeight: activeTab === tab ? 700 : 500,
+                color: activeTab === tab ? tabCol : C.muted,
+                borderBottom: activeTab === tab ? '2px solid '+tabCol : '2px solid transparent',
+                marginBottom:'-1px', transition:'all 0.15s', textTransform:'capitalize',
+                display:'flex', alignItems:'center', gap:'0.25rem', whiteSpace:'nowrap', flexShrink:0,
+              }}>
+                {tab === 'sops' ? t('productionSOPs') : tab === 'shorts' ? 'Shorts SOP' : tab === 'priority' ? 'Priority' : t('checklists')}
+                {tab === 'priority' && ytUnassignedCount > 0 && (
+                  <span style={{ background:C.red, color:'#fff', fontSize:'0.55rem', fontWeight:800, borderRadius:'9999px', padding:'0.1rem 0.35rem', lineHeight:1 }}>{ytUnassignedCount}</span>
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -619,6 +642,103 @@ export default function YouTubePage() {
             </div>
           </div>
         )}
+
+        {activeTab === 'priority' && (() => {
+          const ytValidOrder = priorityOrder.filter(id => ALL_YT_ITEMS.some(it => it.id === id))
+          const ytAssigned = new Set(ytValidOrder)
+          const ytUnassigned = ALL_YT_ITEMS.filter(it => !ytAssigned.has(it.id))
+          return (
+            <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+              {/* Unassigned */}
+              <div style={{ marginBottom:'2rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem' }}>
+                  <h2 style={{ fontSize:'0.72rem', fontWeight:800, color:C.red, margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Unassigned</h2>
+                  {ytUnassigned.length > 0 && <span style={{ background:C.red, color:'#fff', fontSize:'0.6rem', fontWeight:800, borderRadius:'9999px', padding:'0.15rem 0.45rem', lineHeight:1 }}>{ytUnassigned.length}</span>}
+                  <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>Drag into priority list to rank</p>
+                </div>
+                {ytUnassigned.length === 0 ? (
+                  <div style={{ padding:'1.5rem', textAlign:'center', border:'1px dashed rgba(0,255,136,0.3)', borderRadius:'0.875rem', background:'rgba(0,255,136,0.03)' }}>
+                    <p style={{ fontSize:'0.78rem', color:C.green, margin:0, fontWeight:700 }}>All tasks assigned</p>
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}
+                    onDragOver={e => { e.preventDefault(); setYtDragOver('unassigned-zone') }}
+                    onDrop={e => {
+                      e.preventDefault()
+                      if (ytDragFrom === 'priority' && ytDragId) saveYtPriority(ytValidOrder.filter(i => i !== ytDragId))
+                      setYtDragId(null); setYtDragOver(null); setYtDragFrom(null)
+                    }}
+                  >
+                    {ytUnassigned.map(it => (
+                      <div key={it.id} draggable
+                        onDragStart={() => { setYtDragId(it.id); setYtDragFrom('unassigned') }}
+                        onDragEnd={() => { setYtDragId(null); setYtDragOver(null); setYtDragFrom(null) }}
+                        style={{ background:'#1a1a26', border:'1px solid '+(ytDragId===it.id ? '#ff446655' : '#2a2a3a'), borderRadius:'0.75rem', padding:'0.65rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem', cursor:'grab', opacity: ytDragId===it.id ? 0.4 : 1, transition:'all 0.1s' }}>
+                        <span style={{ fontSize:'0.8rem', color:'#4a4a6a', userSelect:'none' as const }}>&#9776;</span>
+                        <p style={{ fontSize:'0.8rem', fontWeight:600, color:'#f0f0ff', margin:0, flex:1 }} dangerouslySetInnerHTML={{ __html: it.label }} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Priority list */}
+              <div>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem' }}>
+                  <h2 style={{ fontSize:'0.72rem', fontWeight:800, color:'#ff6b35', margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Priority Order</h2>
+                  <p style={{ fontSize:'0.68rem', color:'#4a4a6a', margin:0 }}>{ytValidOrder.length} tasks ranked</p>
+                </div>
+                {ytValidOrder.length === 0 ? (
+                  <div style={{ padding:'2.5rem 1.5rem', textAlign:'center', border:'2px dashed '+(ytDragOver==='priority-empty' ? '#ff6b35' : '#2a2a3a'), borderRadius:'0.875rem', background: ytDragOver==='priority-empty' ? 'rgba(255,107,53,0.05)' : 'transparent', transition:'all 0.15s' }}
+                    onDragOver={e => { e.preventDefault(); setYtDragOver('priority-empty') }}
+                    onDragLeave={() => setYtDragOver(null)}
+                    onDrop={e => { e.preventDefault(); if (ytDragFrom === 'unassigned' && ytDragId) saveYtPriority([ytDragId]); setYtDragId(null); setYtDragOver(null); setYtDragFrom(null) }}>
+                    <p style={{ fontSize:'0.78rem', color:'#4a4a6a', margin:0 }}>Drag items here to set priority order</p>
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}>
+                    {ytValidOrder.map((id, idx) => {
+                      const it = ALL_YT_ITEMS.find(x => x.id === id)
+                      if (!it) return null
+                      return (
+                        <div key={id}>
+                          {ytDragOver === id && <div style={{ height:'2px', background:'#ff6b35', borderRadius:'1px', margin:'0 0 0.25rem', opacity:0.8 }} />}
+                          <div draggable
+                            onDragStart={() => { setYtDragId(id); setYtDragFrom('priority') }}
+                            onDragEnd={() => { setYtDragId(null); setYtDragOver(null); setYtDragFrom(null) }}
+                            onDragOver={e => { e.preventDefault(); setYtDragOver(id) }}
+                            onDragLeave={() => { if (ytDragOver === id) setYtDragOver(null) }}
+                            onDrop={e => {
+                              e.preventDefault()
+                              if (ytDragFrom === 'unassigned' && ytDragId) { const o=[...ytValidOrder]; o.splice(idx,0,ytDragId); saveYtPriority(o) }
+                              else if (ytDragFrom === 'priority' && ytDragId && ytDragId !== id) { const w=ytValidOrder.filter(i=>i!==ytDragId); w.splice(w.indexOf(id),0,ytDragId); saveYtPriority(w) }
+                              setYtDragId(null); setYtDragOver(null); setYtDragFrom(null)
+                            }}
+                            style={{ background:'#1a1a26', border:'1px solid '+(ytDragId===id ? '#ff6b3555' : '#2a2a3a'), borderRadius:'0.75rem', padding:'0.65rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem', cursor:'grab', opacity: ytDragId===id ? 0.4 : 1, transition:'all 0.1s' }}>
+                            <span style={{ fontSize:'0.65rem', fontWeight:900, color:'#ff6b35', minWidth:'1.4rem', textAlign:'center' as const, flexShrink:0 }}>#{idx+1}</span>
+                            <span style={{ fontSize:'0.8rem', color:'#4a4a6a', userSelect:'none' as const }}>&#9776;</span>
+                            <p style={{ fontSize:'0.8rem', fontWeight:600, color:'#f0f0ff', margin:0, flex:1 }} dangerouslySetInnerHTML={{ __html: it.label }} />
+                            <button onClick={e => { e.stopPropagation(); saveYtPriority(ytValidOrder.filter(i=>i!==id)) }} style={{ background:'none', border:'none', color:'#4a4a6a', cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.25rem' }}>x</button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    <div style={{ height:'2.75rem', border:'2px dashed '+(ytDragOver==='yt-bottom' ? '#ff6b35' : '#2a2a3a'), borderRadius:'0.75rem', display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.15s', background: ytDragOver==='yt-bottom' ? 'rgba(255,107,53,0.05)' : 'transparent' }}
+                      onDragOver={e => { e.preventDefault(); setYtDragOver('yt-bottom') }}
+                      onDragLeave={() => { if (ytDragOver === 'yt-bottom') setYtDragOver(null) }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        if (ytDragFrom === 'unassigned' && ytDragId) saveYtPriority([...ytValidOrder, ytDragId])
+                        else if (ytDragFrom === 'priority' && ytDragId) saveYtPriority([...ytValidOrder.filter(i=>i!==ytDragId), ytDragId])
+                        setYtDragId(null); setYtDragOver(null); setYtDragFrom(null)
+                      }}>
+                      <p style={{ fontSize:'0.67rem', color: ytDragOver==='yt-bottom' ? '#ff6b35' : '#4a4a6a', margin:0 }}>Drop here to add at end</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
       </div>
     </main>
   )

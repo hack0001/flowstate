@@ -13,11 +13,11 @@ const C = {
   teal:'#14b8a6', pink:'#ec4899', blue:'#60a5fa',
 }
 
-type Tab = 'framework' | 'checklists' | 'sops' | 'notes' | 'pipeline' | 'todos' | 'links' | 'batch' | 'prompts'
+type Tab = 'framework' | 'checklists' | 'sops' | 'notes' | 'pipeline' | 'todos' | 'links' | 'batch' | 'prompts' | 'priority'
 
 const tabColor: Record<Tab, string> = {
   framework: C.blue, checklists: C.orange, sops: C.amber, notes: C.purple,
-  pipeline: C.green, todos: C.red, links: C.teal, batch: C.pink, prompts: '#22d3ee',
+  pipeline: C.green, todos: C.red, links: C.teal, batch: C.pink, prompts: '#22d3ee', priority: '#ff6b35',
 }
 
 function priorityColor(p: string): string {
@@ -575,6 +575,8 @@ const DESIGN_TYPES: { type:string; desc:string; color:string }[] = [
   { type:'One-Off', color:'#8b5cf6', desc:'Cannot be easily templatised but can have many graphic variations. If it uses an image, use Midjourney to generate 8-15 similar copyright-free variants. Volume comes from iteration, not templates.' },
 ]
 
+const ETSY_PRIORITY_KEY = 'etsy_todos_priority'
+
 export default function EtsyPage() {
   const router = useRouter()
   const { t } = useLanguage()
@@ -586,6 +588,10 @@ export default function EtsyPage() {
   const [todoFilter, setTodoFilter] = useState('All')
   const [pipeFilter, setPipeFilter] = useState('All')
   const [copiedPrompt, setCopiedPrompt] = useState<string|null>(null)
+  const [priorityOrder, setPriorityOrder] = useState<string[]>([])
+  const [dragId, setDragId] = useState<string|null>(null)
+  const [dragOver, setDragOver] = useState<string|null>(null)
+  const [dragFrom, setDragFrom] = useState<'unassigned'|'priority'|null>(null)
 
   function copyPrompt(text: string) {
     navigator.clipboard.writeText(text).then(() => {
@@ -607,6 +613,11 @@ export default function EtsyPage() {
         const s = data.state as Record<string,boolean>
         setChecked(s)
         try { localStorage.setItem(LS_KEY, JSON.stringify(s)) } catch {}
+      }
+    })
+    supabase.from('priority_lists').select('ordered_ids').eq('key', ETSY_PRIORITY_KEY).single().then(({ data }) => {
+      if (data?.ordered_ids && Array.isArray(data.ordered_ids)) {
+        setPriorityOrder(data.ordered_ids as string[])
       }
     })
     setMounted(true)
@@ -635,9 +646,23 @@ export default function EtsyPage() {
     supabase.from('checklist_state').upsert({ key: 'etsy_checklists', state: {}, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
   }
 
+  function savePriority(order: string[]) {
+    setPriorityOrder(order)
+    supabase.from('priority_lists').upsert({ key: ETSY_PRIORITY_KEY, ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+  }
+
+  function getTodoId(td: { notion_url?: string; name: string }): string {
+    return td.notion_url || td.name
+  }
+
   const totalItems = SECTIONS.reduce((sum, s) => sum + s.items.length, 0)
   const totalDone  = Object.values(checked).filter(Boolean).length
   const pct = Math.round(totalDone / totalItems * 100)
+
+  const validOrder = priorityOrder.filter(id => ETSY_TODOS.some(td => getTodoId(td) === id))
+  const assignedSet = new Set(validOrder)
+  const unassigned = ETSY_TODOS.filter(td => !assignedSet.has(getTodoId(td)))
+  const unassignedCount = unassigned.length
 
   const tabs: { key: Tab; label: string }[] = [
     { key:'framework', label:'Framework' },
@@ -649,6 +674,7 @@ export default function EtsyPage() {
     { key:'todos', label:'Todos' },
     { key:'links', label:'Links' },
     { key:'batch', label:'Batch' },
+    { key:'priority', label:'Priority' },
   ]
 
   function lnk(color: string): React.CSSProperties {
@@ -701,8 +727,14 @@ export default function EtsyPage() {
               color: activeTab===tab.key ? tabColor[tab.key] : C.muted,
               borderBottom: activeTab===tab.key ? '2px solid '+tabColor[tab.key] : '2px solid transparent',
               marginBottom:'-1px', transition:'all 0.15s', whiteSpace:'nowrap', flexShrink:0,
+              display:'flex', alignItems:'center', gap:'0.25rem',
             }}>
               {tab.label}
+              {tab.key === 'priority' && unassignedCount > 0 && (
+                <span style={{ background:C.red, color:'#fff', fontSize:'0.55rem', fontWeight:800, borderRadius:'9999px', padding:'0.1rem 0.35rem', lineHeight:1 }}>
+                  {unassignedCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -714,7 +746,6 @@ export default function EtsyPage() {
         {/* Framework */}
         {activeTab === 'framework' && (
           <div style={{ animation:'fadeInUp 0.3s ease both' }}>
-            {/* Phase 1 Rules */}
             <div style={{ background:'rgba(96,165,250,0.06)', border:'1px solid rgba(96,165,250,0.2)', borderRadius:'1rem', padding:'1.25rem', marginBottom:'1rem' }}>
               <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.75rem' }}>
                 <span dangerouslySetInnerHTML={{ __html:'&#128204;' }} />
@@ -729,7 +760,6 @@ export default function EtsyPage() {
                 ))}
               </div>
             </div>
-            {/* Time Block + Strategy grid */}
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem', marginBottom:'1rem' }}>
               <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', padding:'1rem' }}>
                 <p style={{ fontSize:'0.72rem', fontWeight:700, color:C.amber, margin:'0 0 0.6rem', textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>Time Block</p>
@@ -750,7 +780,6 @@ export default function EtsyPage() {
                 ))}
               </div>
             </div>
-            {/* Workflow Phases */}
             <p style={{ fontSize:'0.7rem', fontWeight:700, color:C.muted, letterSpacing:'0.07em', textTransform:'uppercase' as const, margin:'0 0 0.75rem' }}>Workflow Phases</p>
             <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.5rem' }}>
               {WORKFLOW_PHASES.map(phase => (
@@ -769,8 +798,6 @@ export default function EtsyPage() {
                 </div>
               ))}
             </div>
-
-            {/* 30-Day Launch Plan */}
             <div style={{ marginTop:'1rem', background:'rgba(34,211,238,0.05)', border:'1px solid rgba(34,211,238,0.18)', borderRadius:'0.875rem', padding:'1rem' }}>
               <p style={{ fontSize:'0.72rem', fontWeight:800, color:'#22d3ee', margin:'0 0 0.6rem', textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>Alek 30-Day Launch Plan</p>
               {THIRTY_DAY_PLAN.map((item, i) => (
@@ -780,8 +807,6 @@ export default function EtsyPage() {
                 </div>
               ))}
             </div>
-
-            {/* Types of Design */}
             <div style={{ marginTop:'0.75rem' }}>
               <p style={{ fontSize:'0.7rem', fontWeight:700, color:C.muted, letterSpacing:'0.07em', textTransform:'uppercase' as const, margin:'0 0 0.6rem' }}>Types of Design</p>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
@@ -793,8 +818,6 @@ export default function EtsyPage() {
                 ))}
               </div>
             </div>
-
-            {/* Font Reference */}
             <div style={{ marginTop:'0.75rem' }}>
               <p style={{ fontSize:'0.7rem', fontWeight:700, color:C.muted, letterSpacing:'0.07em', textTransform:'uppercase' as const, margin:'0 0 0.6rem' }}>Font Reference</p>
               <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}>
@@ -818,4 +841,460 @@ export default function EtsyPage() {
             <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.25rem', marginBottom:'1.5rem' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
                 <div>
-                  <h2 style={{ fontSize:'0.9rem', font
+                  <h2 style={{ fontSize:'0.9rem', fontWeight:800, margin:0 }}>{t('overallProgress')}</h2>
+                  <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.2rem 0 0' }}>{totalDone} of {totalItems} items complete</p>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+                  {totalDone > 0 && (
+                    <button onClick={resetAll} style={{ display:'flex', alignItems:'center', gap:'0.3rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', padding:'0.3rem 0.6rem' }}>
+                      <RotateCcw size={11} /> Reset all
+                    </button>
+                  )}
+                  <span style={{ fontSize:'1.5rem', fontWeight:900, color: pct===100 ? C.green : C.orange }}>{pct}%</span>
+                </div>
+              </div>
+              <div style={{ height:'4px', background:C.border, borderRadius:'2px', overflow:'hidden' }}>
+                <div style={{ height:'100%', width:pct+'%', borderRadius:'2px', transition:'width 0.4s ease', background: pct===100 ? 'linear-gradient(90deg,'+C.green+',#00cc6a)' : 'linear-gradient(90deg,'+C.orange+',#ea580c)' }} />
+              </div>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.625rem' }}>
+              {SECTIONS.map(section => {
+                const secDone = section.items.filter(item => checked[item.id]).length
+                const secPct  = Math.round(secDone / section.items.length * 100)
+                const isOpen  = openSections.has(section.id)
+                return (
+                  <div key={section.id} style={{ background:C.card, border:'1px solid '+(secPct===100 ? 'rgba(0,255,136,0.25)' : C.border), borderRadius:'0.875rem', overflow:'hidden', transition:'border-color 0.3s' }}>
+                    <button onClick={() => toggleSection(section.id)} style={{ width:'100%', display:'flex', alignItems:'center', gap:'0.75rem', padding:'1rem 1.125rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', textAlign:'left' }}>
+                      <span style={{ fontSize:'1.1rem' }} dangerouslySetInnerHTML={{ __html: section.emoji }} />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ fontSize:'0.85rem', fontWeight:700, color: secPct===100 ? C.green : C.text, margin:0 }}>{section.title}</p>
+                        <p style={{ fontSize:'0.65rem', color:C.muted, margin:'0.15rem 0 0' }}>{secDone}/{section.items.length} complete</p>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+                        <div style={{ width:'48px', height:'3px', background:C.border, borderRadius:'2px', overflow:'hidden' }}>
+                          <div style={{ height:'100%', width:secPct+'%', background: secPct===100 ? C.green : C.orange, borderRadius:'2px', transition:'width 0.3s' }} />
+                        </div>
+                        <ChevronDown size={15} color={C.muted} style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0)', transition:'transform 0.2s', flexShrink:0 }} />
+                      </div>
+                    </button>
+                    {isOpen && (
+                      <div style={{ padding:'0.25rem 1rem 1rem', borderTop:'1px solid '+C.border }}>
+                        <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+                          {section.items.map(item => (
+                            <CheckItem key={item.id} id={item.id} label={item.label} note={item.note} checked={!!checked[item.id]} onToggle={toggleCheck} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* SOPs */}
+        {activeTab === 'sops' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <div style={{ marginBottom:'1.5rem', padding:'0.875rem 1rem', background:'rgba(249,115,22,0.05)', border:'1px solid rgba(249,115,22,0.15)', borderRadius:'0.875rem', display:'flex', alignItems:'center', gap:'0.75rem' }}>
+              <span style={{ fontSize:'1rem' }}>&#128722;</span>
+              <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5 }}>TopNotchThreadz operating procedures. Open the relevant accordion when you need it.</p>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+              {SOPS.map(sop => <SOPCard key={sop.id} sop={sop} />)}
+            </div>
+          </div>
+        )}
+
+        {/* Prompts */}
+        {activeTab === 'prompts' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <div style={{ marginBottom:'1.5rem', padding:'0.875rem 1rem', background:'rgba(34,211,238,0.05)', border:'1px solid rgba(34,211,238,0.15)', borderRadius:'0.875rem' }}>
+              <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.6 }}>
+                Copy-paste ChatGPT prompts. Click any prompt box to copy it, then paste into ChatGPT. Replace text in [BRACKETS] with your specifics.
+              </p>
+            </div>
+            {CHATGPT_PROMPTS.map((cat, ci) => (
+              <div key={ci} style={{ marginBottom:'1.75rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.75rem' }}>
+                  <span dangerouslySetInnerHTML={{ __html: cat.emoji }} />
+                  <h2 style={{ fontSize:'0.72rem', fontWeight:800, color:'#22d3ee', margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>{cat.category}</h2>
+                </div>
+                <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.5rem' }}>
+                  {cat.items.map((item, ii) => (
+                    <div key={ii} style={{ background:C.card, border:'1px solid '+(copiedPrompt===item.prompt ? 'rgba(34,211,238,0.35)' : C.border), borderRadius:'0.875rem', overflow:'hidden', transition:'border-color 0.2s' }}>
+                      <div style={{ padding:'0.875rem 1rem' }}>
+                        <p style={{ fontSize:'0.82rem', fontWeight:700, color:C.text, margin:'0 0 0.5rem' }}>{item.title}</p>
+                        <button
+                          onClick={() => copyPrompt(item.prompt)}
+                          style={{ width:'100%', textAlign:'left', background: copiedPrompt===item.prompt ? 'rgba(34,211,238,0.1)' : 'rgba(34,211,238,0.05)', border:'1px solid rgba(34,211,238,0.18)', borderRadius:'0.5rem', padding:'0.6rem 0.75rem', cursor:'pointer', fontFamily:'monospace', fontSize:'0.74rem', color: copiedPrompt===item.prompt ? '#22d3ee' : C.sec, lineHeight:1.65, transition:'all 0.15s', display:'block' }}
+                        >
+                          {copiedPrompt===item.prompt ? 'Copied to clipboard!' : item.prompt}
+                        </button>
+                        {item.note && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.4rem 0 0', lineHeight:1.5 }}>{item.note}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Notes */}
+        {activeTab === 'notes' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <SearchBar value={search} onChange={setSearch} placeholder="Search notes and study materials..." />
+            <p style={{ fontSize:'0.7rem', color:C.muted, margin:'-0.25rem 0 1rem' }}>
+              {ETSY_NOTES.filter(n => !search || n.name.toLowerCase().includes(search.toLowerCase()) || n.notes.toLowerCase().includes(search.toLowerCase())).length} of {ETSY_NOTES.length} notes
+            </p>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+              {ETSY_NOTES
+                .filter(n => !search || n.name.toLowerCase().includes(search.toLowerCase()) || n.notes.toLowerCase().includes(search.toLowerCase()))
+                .map((note, i) => (
+                  <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem' }}>
+                    <Badge label={note.priority} color={priorityColor(note.priority)} />
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{note.name}</p>
+                      {note.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.15rem 0 0' }}>{note.notes}</p>}
+                    </div>
+                    <a href={note.file_url || note.notion_url} target="_blank" rel="noreferrer" style={lnk(C.purple)}>
+                      <ExternalLink size={11} />
+                      {note.file_url ? 'Open' : 'Notion'}
+                    </a>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Pipeline */}
+        {activeTab === 'pipeline' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <SearchBar value={search} onChange={setSearch} placeholder="Search tools and software..." />
+            <div style={{ display:'flex', gap:'0.4rem', marginBottom:'1rem', flexWrap:'wrap' }}>
+              {['All','Active','Not Active',''].map(f => {
+                const label = f === '' ? 'Misc' : f
+                const isAct = pipeFilter === f
+                const col = f === 'Active' ? C.green : f === 'Not Active' ? C.red : f === '' ? C.muted : C.orange
+                return (
+                  <button key={label} onClick={() => setPipeFilter(f)} style={{
+                    padding:'0.22rem 0.6rem', borderRadius:'999px',
+                    border:'1px solid '+(isAct ? col : C.border),
+                    background: isAct ? col+'18' : 'transparent',
+                    color: isAct ? col : C.muted,
+                    cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:600,
+                  }}>
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+              {SOFTWARE_PIPELINE
+                .filter(tool => !search || tool.name.toLowerCase().includes(search.toLowerCase()) || tool.notes.toLowerCase().includes(search.toLowerCase()))
+                .filter(tool => pipeFilter === 'All' || tool.status === pipeFilter)
+                .map((tool, i) => (
+                  <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem' }}>
+                    <div style={{ display:'flex', flexDirection:'column', gap:'0.25rem', flexShrink:0, minWidth:'4.5rem' }}>
+                      <Badge label={tool.status || 'Misc'} color={tool.status === 'Active' ? C.green : tool.status === 'Not Active' ? C.red : C.muted} />
+                      {tool.priority === 'High' && <Badge label="High priority" color={C.red} />}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{tool.name}</p>
+                      {tool.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.15rem 0 0', lineHeight:1.5 }}>{tool.notes}</p>}
+                    </div>
+                    {(tool.file_url || tool.notion_url) && (
+                      <a href={tool.file_url || tool.notion_url} target="_blank" rel="noreferrer" style={lnk(C.green)}>
+                        <ExternalLink size={11} /> Open
+                      </a>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Todos */}
+        {activeTab === 'todos' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <SearchBar value={search} onChange={setSearch} placeholder="Search todos..." />
+            <div style={{ display:'flex', gap:'0.4rem', marginBottom:'1rem', flexWrap:'wrap' }}>
+              {['All','Not Started','Started','Ongoing','Completed'].map(f => {
+                const isAct = todoFilter === f
+                const col = f === 'All' ? C.orange : stageColor(f)
+                return (
+                  <button key={f} onClick={() => setTodoFilter(f)} style={{
+                    padding:'0.22rem 0.6rem', borderRadius:'999px',
+                    border:'1px solid '+(isAct ? col : C.border),
+                    background: isAct ? col+'18' : 'transparent',
+                    color: isAct ? col : C.muted,
+                    cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:600,
+                  }}>
+                    {f}
+                  </button>
+                )
+              })}
+            </div>
+            <p style={{ fontSize:'0.7rem', color:C.muted, margin:'-0.25rem 0 1rem' }}>
+              {ETSY_TODOS.filter(td => (!search || td.name.toLowerCase().includes(search.toLowerCase())) && (todoFilter === 'All' || td.stage === todoFilter)).length} todos
+            </p>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+              {ETSY_TODOS
+                .filter(td => !search || td.name.toLowerCase().includes(search.toLowerCase()) || td.notes.toLowerCase().includes(search.toLowerCase()))
+                .filter(td => todoFilter === 'All' || td.stage === todoFilter)
+                .map((td, i) => (
+                  <div key={i} style={{ background:C.card, border:'1px solid '+(td.stage === 'Completed' ? 'rgba(0,255,136,0.12)' : C.border), borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'flex-start', gap:'0.625rem' }}>
+                    <div style={{ display:'flex', flexDirection:'column', gap:'0.25rem', flexShrink:0, paddingTop:'1px' }}>
+                      <Badge label={td.stage} color={stageColor(td.stage)} />
+                      <Badge label={td.priority} color={priorityColor(td.priority)} />
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:'0.8rem', fontWeight:600, color: td.stage === 'Completed' ? C.muted : C.text, margin:0, textDecoration: td.stage === 'Completed' ? 'line-through' : 'none', opacity: td.stage === 'Completed' ? 0.7 : 1 }}>{td.name}</p>
+                      {td.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.2rem 0 0', lineHeight:1.5 }}>{td.notes}</p>}
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'0.35rem', flexShrink:0 }}>
+                      {td.target_date && <span style={{ fontSize:'0.62rem', color:C.muted, whiteSpace:'nowrap' }}>{td.target_date}</span>}
+                      <a href={td.notion_url} target="_blank" rel="noreferrer" style={lnk(C.red)}>
+                        <ExternalLink size={10} />
+                      </a>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Links */}
+        {activeTab === 'links' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <p style={{ fontSize:'0.7rem', color:C.muted, margin:'0 0 1rem' }}>{ETSY_LINKS.length} saved links from Notion</p>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+              {ETSY_LINKS.map((link, i) => (
+                <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem' }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:'0 0 0.2rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{link.name}</p>
+                    <p style={{ fontSize:'0.65rem', color:C.muted, margin:0 }}>Saved {link.created}</p>
+                  </div>
+                  <a href={link.url} target="_blank" rel="noreferrer" style={lnk(C.teal)}>
+                    <ExternalLink size={11} /> Open
+                  </a>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Batch */}
+        {activeTab === 'batch' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            <SearchBar value={search} onChange={setSearch} placeholder="Search ideas, niches, seed keywords..." />
+            <p style={{ fontSize:'0.7rem', color:C.muted, margin:'-0.25rem 0 1rem' }}>
+              {BATCH_WORKFLOW.filter(item => !search || item.idea_theme.toLowerCase().includes(search.toLowerCase()) || item.seed_keyword.toLowerCase().includes(search.toLowerCase()) || item.niche.toLowerCase().includes(search.toLowerCase())).length} of {BATCH_WORKFLOW.length} batch items
+            </p>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+              {BATCH_WORKFLOW
+                .filter(item => !search || item.idea_theme.toLowerCase().includes(search.toLowerCase()) || item.seed_keyword.toLowerCase().includes(search.toLowerCase()) || item.niche.toLowerCase().includes(search.toLowerCase()))
+                .map((item, i) => (
+                  <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'flex-start', gap:'0.625rem' }}>
+                    <span style={{ fontSize:'0.6rem', color:C.muted, fontWeight:700, minWidth:'1.75rem', flexShrink:0, paddingTop:'2px' }}>#{item.id}</span>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:'0 0 0.3rem' }}>{item.idea_theme}</p>
+                      <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap', alignItems:'center' }}>
+                        {item.niche && <Badge label={item.niche} color={C.muted} />}
+                        <Badge label={item.batch_priority} color={priorityColor(item.batch_priority)} />
+                        {item.batch_stage && <Badge label={item.batch_stage} color={C.pink} />}
+                        {item.method && <Badge label={item.method} color={C.teal} />}
+                      </div>
+                      {item.seed_keyword && (
+                        <p style={{ fontSize:'0.67rem', color:C.sec, margin:'0.3rem 0 0' }}>Keyword: {item.seed_keyword}</p>
+                      )}
+                    </div>
+                    <a href={item.notion_url} target="_blank" rel="noreferrer" style={lnk(C.pink)}>
+                      <ExternalLink size={10} />
+                    </a>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Priority */}
+        {activeTab === 'priority' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+            {/* Unassigned zone */}
+            <div style={{ marginBottom:'2rem' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem' }}>
+                <h2 style={{ fontSize:'0.72rem', fontWeight:800, color:C.red, margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Unassigned</h2>
+                {unassignedCount > 0 && (
+                  <span style={{ background:C.red, color:'#fff', fontSize:'0.6rem', fontWeight:800, borderRadius:'9999px', padding:'0.15rem 0.45rem', lineHeight:1 }}>{unassignedCount}</span>
+                )}
+                <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>Drag into the priority list below to rank</p>
+              </div>
+              {unassigned.length === 0 ? (
+                <div style={{ padding:'1.5rem', textAlign:'center', border:'1px dashed rgba(0,255,136,0.3)', borderRadius:'0.875rem', background:'rgba(0,255,136,0.03)' }}>
+                  <p style={{ fontSize:'0.78rem', color:C.green, margin:0, fontWeight:700 }}>All todos assigned</p>
+                </div>
+              ) : (
+                <div
+                  style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}
+                  onDragOver={e => { e.preventDefault(); setDragOver('unassigned-zone') }}
+                  onDrop={e => {
+                    e.preventDefault()
+                    if (dragFrom === 'priority' && dragId) {
+                      savePriority(validOrder.filter(id => id !== dragId))
+                    }
+                    setDragId(null); setDragOver(null); setDragFrom(null)
+                  }}
+                >
+                  {unassigned.map(td => {
+                    const tid = getTodoId(td)
+                    return (
+                      <div
+                        key={tid}
+                        draggable
+                        onDragStart={() => { setDragId(tid); setDragFrom('unassigned') }}
+                        onDragEnd={() => { setDragId(null); setDragOver(null); setDragFrom(null) }}
+                        style={{
+                          background:C.card,
+                          border:'1px solid '+(dragId===tid ? C.red+'55' : C.border),
+                          borderRadius:'0.75rem', padding:'0.65rem 0.875rem',
+                          display:'flex', alignItems:'center', gap:'0.625rem',
+                          cursor:'grab', opacity: dragId===tid ? 0.4 : 1,
+                          transition:'all 0.1s',
+                        }}
+                      >
+                        <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{td.name}</p>
+                          {td.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.1rem 0 0', lineHeight:1.4 }}>{td.notes}</p>}
+                        </div>
+                        <div style={{ display:'flex', gap:'0.3rem', flexShrink:0, alignItems:'center' }}>
+                          <Badge label={td.stage} color={stageColor(td.stage)} />
+                          <Badge label={td.priority} color={priorityColor(td.priority)} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Priority list */}
+            <div>
+              <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem' }}>
+                <h2 style={{ fontSize:'0.72rem', fontWeight:800, color:'#ff6b35', margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Priority Order</h2>
+                <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>{validOrder.length} items ranked</p>
+              </div>
+              {validOrder.length === 0 ? (
+                <div
+                  style={{
+                    padding:'2.5rem 1.5rem', textAlign:'center',
+                    border:'2px dashed '+(dragOver==='priority-empty' ? '#ff6b35' : C.border),
+                    borderRadius:'0.875rem',
+                    background: dragOver==='priority-empty' ? 'rgba(255,107,53,0.05)' : 'transparent',
+                    transition:'all 0.15s',
+                  }}
+                  onDragOver={e => { e.preventDefault(); setDragOver('priority-empty') }}
+                  onDragLeave={() => setDragOver(null)}
+                  onDrop={e => {
+                    e.preventDefault()
+                    if (dragFrom === 'unassigned' && dragId) savePriority([dragId])
+                    setDragId(null); setDragOver(null); setDragFrom(null)
+                  }}
+                >
+                  <p style={{ fontSize:'0.78rem', color:C.muted, margin:0 }}>Drag items here to set your priority order</p>
+                </div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}>
+                  {validOrder.map((id, idx) => {
+                    const td = ETSY_TODOS.find(t => getTodoId(t) === id)
+                    if (!td) return null
+                    const isInsertTarget = dragOver === id && dragFrom !== null
+                    return (
+                      <div key={id}>
+                        {isInsertTarget && (
+                          <div style={{ height:'2px', background:'#ff6b35', borderRadius:'1px', margin:'0 0 0.25rem', opacity:0.8 }} />
+                        )}
+                        <div
+                          onDragOver={e => { e.preventDefault(); setDragOver(id) }}
+                          onDragLeave={() => { if (dragOver === id) setDragOver(null) }}
+                          onDrop={e => {
+                            e.preventDefault()
+                            if (dragFrom === 'unassigned' && dragId) {
+                              const newOrder = [...validOrder]
+                              newOrder.splice(idx, 0, dragId)
+                              savePriority(newOrder)
+                            } else if (dragFrom === 'priority' && dragId && dragId !== id) {
+                              const without = validOrder.filter(i => i !== dragId)
+                              const insertAt = without.indexOf(id)
+                              without.splice(insertAt, 0, dragId)
+                              savePriority(without)
+                            }
+                            setDragId(null); setDragOver(null); setDragFrom(null)
+                          }}
+                          draggable
+                          onDragStart={() => { setDragId(id); setDragFrom('priority') }}
+                          onDragEnd={() => { setDragId(null); setDragOver(null); setDragFrom(null) }}
+                          style={{
+                            background:C.card,
+                            border:'1px solid '+(dragId===id ? '#ff6b3555' : C.border),
+                            borderRadius:'0.75rem', padding:'0.65rem 0.875rem',
+                            display:'flex', alignItems:'center', gap:'0.625rem',
+                            cursor:'grab', opacity: dragId===id ? 0.4 : 1,
+                            transition:'all 0.1s',
+                          }}
+                        >
+                          <span style={{ fontSize:'0.65rem', fontWeight:900, color:'#ff6b35', minWidth:'1.4rem', textAlign:'center' as const, flexShrink:0 }}>#{idx+1}</span>
+                          <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{td.name}</p>
+                            {td.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.1rem 0 0', lineHeight:1.4 }}>{td.notes}</p>}
+                          </div>
+                          <div style={{ display:'flex', gap:'0.3rem', flexShrink:0, alignItems:'center' }}>
+                            <Badge label={td.stage} color={stageColor(td.stage)} />
+                            <Badge label={td.priority} color={priorityColor(td.priority)} />
+                          </div>
+                          <button
+                            onClick={e => { e.stopPropagation(); savePriority(validOrder.filter(i => i !== id)) }}
+                            style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.25rem' }}
+                            title="Remove from priority list"
+                          >x</button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {/* Drop zone at bottom */}
+                  <div
+                    style={{
+                      height:'2.75rem',
+                      border:'2px dashed '+(dragOver==='priority-bottom' ? '#ff6b35' : C.border),
+                      borderRadius:'0.75rem',
+                      display:'flex', alignItems:'center', justifyContent:'center',
+                      transition:'all 0.15s',
+                      background: dragOver==='priority-bottom' ? 'rgba(255,107,53,0.05)' : 'transparent',
+                    }}
+                    onDragOver={e => { e.preventDefault(); setDragOver('priority-bottom') }}
+                    onDragLeave={() => { if (dragOver === 'priority-bottom') setDragOver(null) }}
+                    onDrop={e => {
+                      e.preventDefault()
+                      if (dragFrom === 'unassigned' && dragId) {
+                        savePriority([...validOrder, dragId])
+                      } else if (dragFrom === 'priority' && dragId) {
+                        savePriority([...validOrder.filter(i => i !== dragId), dragId])
+                      }
+                      setDragId(null); setDragOver(null); setDragFrom(null)
+                    }}
+                  >
+                    <p style={{ fontSize:'0.67rem', color: dragOver==='priority-bottom' ? '#ff6b35' : C.muted, margin:0, transition:'color 0.15s' }}>Drop here to add at end</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+      </div>
+    </main>
+  )
+}
