@@ -372,8 +372,9 @@ export default function VaultPage() {
     e.stopPropagation()
     const { error } = await supabase.from('master_tasks').insert({
       title: item.title,
-      status: 'To Do',
+      status: 'Not started',
       archived: false,
+      from_vault: true,
     })
     if (!error) {
       setToast('Added to tasks: ' + item.title.slice(0, 40))

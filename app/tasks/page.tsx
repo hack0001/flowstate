@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Search, X, CheckSquare, Download, Plus, Edit3, Trash2, ExternalLink, Zap, TrendingUp, ChevronDown } from 'lucide-react'
+import { ChevronLeft, Search, X, CheckSquare, Download, Plus, Edit3, Trash2, ExternalLink, Zap, TrendingUp, ChevronDown, BookOpen } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -74,6 +74,7 @@ type Task = {
   notion_url: string | null
   archived: boolean
   created_at: string
+  from_vault: boolean
 }
 
 type DraftTask = {
@@ -363,6 +364,7 @@ export default function TasksPage() {
   const [saving, setSaving] = useState(false)
   const [showGains, setShowGains] = useState(false)
   const [gainIdx, setGainIdx] = useState(() => Math.floor(Math.random() * MARGINAL_GAINS.length))
+  const [toast, setToast] = useState<string|null>(null)
   const [priorityView, setPriorityView] = useState(false)
   const [tPriorityOrder, setTPriorityOrder] = useState<string[]>([])
   const [tDragId, setTDragId] = useState<string|null>(null)
@@ -485,6 +487,20 @@ export default function TasksPage() {
     await supabase.from('master_tasks').update({ archived: true }).eq('id', id)
     setTasks(prev => prev.filter(t => t.id !== id))
     if (expanded === id) setExpanded(null)
+  }
+
+  async function convertToVault(task: Task, e: React.MouseEvent) {
+    e.stopPropagation()
+    const { error } = await supabase.from('vault_items').insert({
+      title: task.title,
+      status: 'To Read',
+      archived: false,
+      category: null,
+    })
+    if (!error) {
+      setToast('Added to vault: ' + task.title.slice(0, 40))
+      setTimeout(() => setToast(null), 3000)
+    }
   }
 
   async function cycleStatus(task: Task, e: React.MouseEvent) {
@@ -734,22 +750,30 @@ export default function TasksPage() {
                       setTDragId(null); setTDragOver(null); setTDragFrom(null)
                     }}
                   >
-                    {tUnassigned.map(task => (
-                      <div key={task.id} draggable
-                        onDragStart={() => { setTDragId(task.id); setTDragFrom('unassigned') }}
-                        onDragEnd={() => { setTDragId(null); setTDragOver(null); setTDragFrom(null) }}
-                        style={{ background:C.card, border:'1px solid '+(tDragId===task.id ? C.red+'55' : C.border), borderRadius:'0.75rem', padding:'0.65rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem', cursor:'grab', opacity:tDragId===task.id?0.4:1, transition:'all 0.1s' }}>
-                        <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{task.title}</p>
-                          <div style={{ display:'flex', gap:'0.3rem', marginTop:'0.2rem', flexWrap:'wrap' }}>
-                            {task.task_type && <TypeBadge type={task.task_type}/>}
-                            <StatusBadge status={task.status}/>
-                            {task.urgency === 'Urgent' && <span style={{ fontSize:'0.58rem', color:C.red, border:'1px solid '+C.red+'40', borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>Urgent</span>}
+                    {tUnassigned.map(task => {
+                      const needsSetup = task.from_vault && !task.task_type && !task.urgency && !task.priority
+                      return (
+                        <div key={task.id} draggable
+                          onDragStart={() => { setTDragId(task.id); setTDragFrom('unassigned') }}
+                          onDragEnd={() => { setTDragId(null); setTDragOver(null); setTDragFrom(null) }}
+                          style={{ background:C.card, border:'1px solid '+(tDragId===task.id ? C.red+'55' : needsSetup ? C.amber+'50' : C.border), borderRadius:'0.75rem', padding:'0.65rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem', cursor:'grab', opacity:tDragId===task.id?0.4:1, transition:'all 0.1s' }}>
+                          <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{task.title}</p>
+                            <div style={{ display:'flex', gap:'0.3rem', marginTop:'0.2rem', flexWrap:'wrap' }}>
+                              {task.from_vault && <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', fontSize:'0.55rem', fontWeight:800, color:C.purple, background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}><BookOpen size={8}/>Vault</span>}
+                              {needsSetup && <span style={{ fontSize:'0.55rem', fontWeight:800, color:C.amber, background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>Needs setup</span>}
+                              {task.task_type && <TypeBadge type={task.task_type}/>}
+                              <StatusBadge status={task.status}/>
+                              {task.urgency === 'Urgent' && <span style={{ fontSize:'0.58rem', color:C.red, border:'1px solid '+C.red+'40', borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>Urgent</span>}
+                            </div>
                           </div>
+                          <button type="button" draggable={false} onClick={e => convertToVault(task, e)} style={{ background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)', color:C.purple, cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.68rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.25rem' }} title="Send to Vault">
+                            <BookOpen size={10}/> Vault
+                          </button>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -772,6 +796,7 @@ export default function TasksPage() {
                     {tValidOrder.map((id, idx) => {
                       const task = tasks.find(t => t.id === id)
                       if (!task) return null
+                      const needsSetup = task.from_vault && !task.task_type && !task.urgency && !task.priority
                       return (
                         <div key={id}>
                           {tDragOver === id && <div style={{ height:'2px', background:'#ff6b35', borderRadius:'1px', margin:'0 0 0.25rem', opacity:0.8 }} />}
@@ -786,12 +811,14 @@ export default function TasksPage() {
                               else if (tDragFrom==='priority'&&tDragId&&tDragId!==id) { const w=tValidOrder.filter(i=>i!==tDragId); w.splice(w.indexOf(id),0,tDragId); saveTPriority(w) }
                               setTDragId(null); setTDragOver(null); setTDragFrom(null)
                             }}
-                            style={{ background:C.card, border:'1px solid '+(tDragId===id?'#ff6b3555':C.border), borderRadius:'0.75rem', padding:'0.65rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem', cursor:'grab', opacity:tDragId===id?0.4:1, transition:'all 0.1s' }}>
+                            style={{ background:C.card, border:'1px solid '+(tDragId===id?'#ff6b3555':needsSetup?C.amber+'50':C.border), borderRadius:'0.75rem', padding:'0.65rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem', cursor:'grab', opacity:tDragId===id?0.4:1, transition:'all 0.1s' }}>
                             <span style={{ fontSize:'0.65rem', fontWeight:900, color:'#ff6b35', minWidth:'1.4rem', textAlign:'center' as const, flexShrink:0 }}>#{idx+1}</span>
                             <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>
                             <div style={{ flex:1, minWidth:0 }}>
                               <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{task.title}</p>
                               <div style={{ display:'flex', gap:'0.3rem', marginTop:'0.2rem', flexWrap:'wrap' }}>
+                                {task.from_vault && <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', fontSize:'0.55rem', fontWeight:800, color:C.purple, background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}><BookOpen size={8}/>Vault</span>}
+                                {needsSetup && <span style={{ fontSize:'0.55rem', fontWeight:800, color:C.amber, background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>Needs setup</span>}
                                 {task.task_type && <TypeBadge type={task.task_type}/>}
                                 <StatusBadge status={task.status}/>
                                 {task.urgency === 'Urgent' && <span style={{ fontSize:'0.58rem', color:C.red, border:'1px solid '+C.red+'40', borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>Urgent</span>}
@@ -799,6 +826,9 @@ export default function TasksPage() {
                             </div>
                             <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([id, ...tValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
                             <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([...tValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                            <button type="button" draggable={false} onClick={e => convertToVault(task, e)} style={{ background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)', color:C.purple, cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.68rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.25rem' }} title="Send to Vault">
+                              <BookOpen size={10}/> Vault
+                            </button>
                             <button onClick={e => { e.stopPropagation(); saveTPriority(tValidOrder.filter(i=>i!==id)) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0 }}>x</button>
                           </div>
                         </div>
@@ -851,19 +881,23 @@ export default function TasksPage() {
                 const isExp = expanded === task.id
                 const typeM = task.task_type ? TYPE_META[task.task_type] : null
                 const isOverdue = task.due_date && task.due_date < today && task.status !== 'Done'
+                const needsSetup = task.from_vault && !task.task_type && !task.urgency && !task.priority
                 return (
                   <div key={task.id} onClick={() => setExpanded(isExp ? null : task.id)}
                     style={{
-                      background:C.card, border:'1px solid '+(isExp?(typeM?.color??C.cyan)+'40':C.border),
+                      background:C.card,
+                      border:'1px solid '+(isExp?(typeM?.color??C.cyan)+'40':needsSetup?C.amber+'50':C.border),
                       borderRadius:'1rem', padding:'1rem', cursor:'pointer',
                       transition:'border-color 0.2s ease',
-                      boxShadow: isExp ? '0 0 18px '+(typeM?.color??C.cyan)+'12' : 'none',
+                      boxShadow: isExp ? '0 0 18px '+(typeM?.color??C.cyan)+'12' : needsSetup ? '0 0 12px rgba(255,184,0,0.08)' : 'none',
                     }}>
 
-                    {/* Top row: type badge + frog + status (click-to-cycle) */}
+                    {/* Top row: type badge + frog + vault badges + status (click-to-cycle) */}
                     <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.5rem', flexWrap:'wrap' }}>
                       <TypeBadge type={task.task_type}/>
                       {task.is_frog && <span style={{ fontSize:'0.85rem' }}>&#128293;</span>}
+                      {task.from_vault && <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', fontSize:'0.55rem', fontWeight:800, color:C.purple, background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}><BookOpen size={8}/>Vault</span>}
+                      {needsSetup && <span style={{ fontSize:'0.55rem', fontWeight:800, color:C.amber, background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>&#9888; Setup</span>}
                       <span style={{ marginLeft:'auto' }}>
                         <StatusBadge status={task.status} onClick={e => cycleStatus(task, e)}/>
                       </span>
@@ -915,6 +949,12 @@ export default function TasksPage() {
                           >
                             <Edit3 size={12}/> Edit
                           </button>
+                          <button
+                            onClick={e => convertToVault(task, e)}
+                            style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.25)', borderRadius:'0.625rem', color:C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700 }}
+                          >
+                            <BookOpen size={12}/> &#8594; Vault
+                          </button>
                           {task.notion_url && (
                             <a
                               href={task.notion_url}
@@ -951,6 +991,12 @@ export default function TasksPage() {
           onClose={() => setDrawerOpen(false)}
           saving={saving}
         />
+      )}
+
+      {toast && (
+        <div style={{ position:'fixed', bottom:'2rem', left:'50%', transform:'translateX(-50%)', background:C.purple, color:'#fff', padding:'0.75rem 1.5rem', borderRadius:'0.875rem', fontWeight:800, fontSize:'0.82rem', zIndex:200, boxShadow:'0 4px 24px rgba(139,92,246,0.35)', display:'flex', alignItems:'center', gap:'0.5rem', whiteSpace:'nowrap' }}>
+          <BookOpen size={14}/> {toast}
+        </div>
       )}
 
       <style>{`
