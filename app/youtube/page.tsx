@@ -309,7 +309,13 @@ export default function YouTubePage() {
       })
     })
     supabase.from('priority_lists').select('ordered_ids').eq('key', 'youtube_priority').single().then(({ data }) => {
-      if (data?.ordered_ids && Array.isArray(data.ordered_ids)) setPriorityOrder(data.ordered_ids as string[])
+      if (data?.ordered_ids && Array.isArray(data.ordered_ids) && (data.ordered_ids as string[]).length > 0) {
+        setPriorityOrder(data.ordered_ids as string[])
+      } else {
+        const allIds = [...CREATION_ITEMS, ...HEALTH_ITEMS, ...SHORTS_CHECKLIST].map(it => it.id)
+        setPriorityOrder(allIds)
+        supabase.from('priority_lists').upsert({ key: 'youtube_priority', ordered_ids: allIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+      }
     })
     setMounted(true)
   }, [])

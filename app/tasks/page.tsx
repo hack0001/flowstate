@@ -381,10 +381,23 @@ export default function TasksPage() {
   }, [])
 
   useEffect(() => {
-    load()
-    supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').single().then(({ data }) => {
-      if (data?.ordered_ids && Array.isArray(data.ordered_ids)) setTPriorityOrder(data.ordered_ids as string[])
-    })
+    async function init() {
+      const [, { data: pdata }] = await Promise.all([
+        load(),
+        supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').single()
+      ])
+      if (pdata?.ordered_ids && Array.isArray(pdata.ordered_ids) && (pdata.ordered_ids as string[]).length > 0) {
+        setTPriorityOrder(pdata.ordered_ids as string[])
+      } else {
+        const { data: ids } = await supabase.from('master_tasks').select('id').neq('archived', true).order('created_at', { ascending: false })
+        if (ids && ids.length > 0) {
+          const allIds = (ids as { id: string }[]).map(t => t.id)
+          setTPriorityOrder(allIds)
+          supabase.from('priority_lists').upsert({ key: 'tasks_priority', ordered_ids: allIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+        }
+      }
+    }
+    init()
   }, [load])
 
   function saveTPriority(order: string[]) {

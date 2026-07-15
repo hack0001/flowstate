@@ -616,8 +616,12 @@ export default function EtsyPage() {
       }
     })
     supabase.from('priority_lists').select('ordered_ids').eq('key', ETSY_PRIORITY_KEY).single().then(({ data }) => {
-      if (data?.ordered_ids && Array.isArray(data.ordered_ids)) {
+      if (data?.ordered_ids && Array.isArray(data.ordered_ids) && (data.ordered_ids as string[]).length > 0) {
         setPriorityOrder(data.ordered_ids as string[])
+      } else {
+        const allIds = ETSY_TODOS.map(td => td.notion_url || td.name)
+        setPriorityOrder(allIds)
+        supabase.from('priority_lists').upsert({ key: ETSY_PRIORITY_KEY, ordered_ids: allIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
       }
     })
     setMounted(true)

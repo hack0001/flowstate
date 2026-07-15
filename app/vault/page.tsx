@@ -266,10 +266,23 @@ export default function VaultPage() {
   }, [])
 
   useEffect(() => {
-    load()
-    supabase.from('priority_lists').select('ordered_ids').eq('key', 'vault_priority').single().then(({ data }) => {
-      if (data?.ordered_ids && Array.isArray(data.ordered_ids)) setVPriorityOrder(data.ordered_ids as string[])
-    })
+    async function init() {
+      const [, { data: pdata }] = await Promise.all([
+        load(),
+        supabase.from('priority_lists').select('ordered_ids').eq('key', 'vault_priority').single()
+      ])
+      if (pdata?.ordered_ids && Array.isArray(pdata.ordered_ids) && (pdata.ordered_ids as string[]).length > 0) {
+        setVPriorityOrder(pdata.ordered_ids as string[])
+      } else {
+        const { data: ids } = await supabase.from('vault_items').select('id').neq('archived', true).order('created_at', { ascending: false })
+        if (ids && ids.length > 0) {
+          const allIds = (ids as { id: string }[]).map(i => i.id)
+          setVPriorityOrder(allIds)
+          supabase.from('priority_lists').upsert({ key: 'vault_priority', ordered_ids: allIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+        }
+      }
+    }
+    init()
   }, [load])
 
   function saveVPriority(order: string[]) {
