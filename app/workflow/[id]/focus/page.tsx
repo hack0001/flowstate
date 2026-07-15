@@ -16,14 +16,6 @@ const C = {
 }
 
 
-const FOCUS_ITEMS = [
-  { id:'desk',   label:'Desk cleared',          note:'Remove everything except what you need right now' },
-  { id:'phone',  label:'Phone in another room', note:'Not on silent — physically gone' },
-  { id:'timer',  label:'Timer set',              note:'Know exactly how long this session runs' },
-  { id:'notif',  label:'Notifications off',      note:'Do Not Disturb enabled — no pings' },
-  { id:'water',  label:'Drink within reach',     note:'No reason to leave your desk mid-session' },
-  { id:'task',   label:'Task crystal clear',     note:'You know exactly what you are building' },
-]
 
 const ROHN = [
   "Either you run the day or the day runs you.",
@@ -90,8 +82,6 @@ export default function FocusPage() {
   const [ytTrack, setYtTrack] = useState<0|1|2|3|4|5>(0) // 0=off, 1=lofi, 2=rain, 3=jazz, 4=motivate, 5=nsdr
   const [focusMins, setFocusMins] = useState(0)
   const focusStartRef = useRef<number>(Date.now())
-  const [showCheck, setShowCheck] = useState(true)
-  const [checkItems, setCheckItems] = useState<Set<string>>(new Set())
   const [isDistracted, setIsDistracted] = useState(false)
   const [distractedMins, setDistractedMins] = useState(0)
   const distractedMsRef = useRef(0)
@@ -265,47 +255,6 @@ export default function FocusPage() {
   return (
     <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: C.bg, position: 'relative' }}>
 
-
-      {/* -- Pre-flight environment check -- */}
-      {showCheck && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:80, padding:'1rem' }}>
-          <div style={{ background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'1.5rem', padding:'2rem', width:'100%', maxWidth:'26rem' }}>
-            <div style={{ textAlign:'center', marginBottom:'1.75rem' }}>
-              <div style={{ fontSize:'2rem', marginBottom:'0.5rem' }}>&#127919;</div>
-              <h2 style={{ fontSize:'1.25rem', fontWeight:900, color:C.text, margin:'0 0 0.35rem', letterSpacing:'-0.02em' }}>Pre-Flight Check</h2>
-              <p style={{ fontSize:'0.82rem', color:C.sec, margin:0 }}>Get the environment right before you lock in</p>
-            </div>
-            <div style={{ height:'3px', background:'#2a2a3a', borderRadius:'2px', marginBottom:'1.5rem', overflow:'hidden' }}>
-              <div style={{ height:'100%', background:'linear-gradient(90deg,'+C.green+',#00cc6a)', width:(checkItems.size/FOCUS_ITEMS.length*100)+'%', transition:'width 0.3s ease', borderRadius:'2px' }} />
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', marginBottom:'1.75rem' }}>
-              {FOCUS_ITEMS.map(item => {
-                const done = checkItems.has(item.id)
-                return (
-                  <button key={item.id} onClick={() => setCheckItems(prev => { const n=new Set(prev); done?n.delete(item.id):n.add(item.id); return n })}
-                    style={{ display:'flex', alignItems:'center', gap:'0.875rem', padding:'0.75rem 1rem', background:done?'rgba(0,255,136,0.06)':'rgba(255,255,255,0.02)', border:'1px solid '+(done?'rgba(0,255,136,0.25)':'#2a2a3a'), borderRadius:'0.875rem', cursor:'pointer', fontFamily:'inherit', textAlign:'left', transition:'all 0.15s ease' }}>
-                    <div style={{ width:'20px', height:'20px', borderRadius:'50%', flexShrink:0, border:'2px solid '+(done?C.green:'#4a4a6a'), background:done?C.green:'transparent', display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.15s ease' }}>
-                      {done && <span style={{ fontSize:'0.65rem', color:'#000', fontWeight:900 }}>&#10003;</span>}
-                    </div>
-                    <div>
-                      <div style={{ fontSize:'0.875rem', fontWeight:700, color:done?C.green:C.text, transition:'color 0.15s ease' }}>{item.label}</div>
-                      <div style={{ fontSize:'0.72rem', color:C.sec, marginTop:'0.1rem' }}>{item.note}</div>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-            <button onClick={() => { if(checkItems.size===FOCUS_ITEMS.length) setShowCheck(false) }}
-              disabled={checkItems.size < FOCUS_ITEMS.length}
-              style={{ width:'100%', padding:'0.875rem', borderRadius:'0.875rem', border:'none', background:checkItems.size===FOCUS_ITEMS.length?'linear-gradient(135deg,'+C.green+',#00cc6a)':'#2a2a3a', color:checkItems.size===FOCUS_ITEMS.length?'#000':C.muted, fontWeight:900, fontSize:'1rem', cursor:checkItems.size===FOCUS_ITEMS.length?'pointer':'not-allowed', fontFamily:'inherit', transition:'all 0.2s ease' }}>
-              {checkItems.size===FOCUS_ITEMS.length ? 'Begin deep work →' : `${checkItems.size} / ${FOCUS_ITEMS.length} checked`}
-            </button>
-            <button onClick={() => setShowCheck(false)} style={{ width:'100%', marginTop:'0.75rem', padding:'0.4rem', background:'none', border:'none', color:C.muted, fontSize:'0.75rem', cursor:'pointer', fontFamily:'inherit' }}>
-              Skip check
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* -- Top progress bar -- */}
       <div style={{ height: '3px', background: C.border, flexShrink: 0, position: 'relative' }}>

@@ -382,9 +382,10 @@ export default function TasksPage() {
 
   useEffect(() => {
     let tPLsLoaded = false
+    let tLocalIds: string[] = []
     try {
       const raw = localStorage.getItem('fs_p_tasks')
-      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setTPriorityOrder(ids); tPLsLoaded = true } }
+      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setTPriorityOrder(ids); tPLsLoaded = true; tLocalIds = ids } }
     } catch {}
     async function init() {
       const [, { data: pdata }] = await Promise.all([
@@ -395,7 +396,9 @@ export default function TasksPage() {
         const ids = pdata.ordered_ids as string[]
         setTPriorityOrder(ids)
         try { localStorage.setItem('fs_p_tasks', JSON.stringify(ids)) } catch {}
-      } else if (!tPLsLoaded) {
+      } else if (tPLsLoaded) {
+        supabase.from('priority_lists').upsert({ key: 'tasks_priority', ordered_ids: tLocalIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+      } else {
         const { data: ids } = await supabase.from('master_tasks').select('id').neq('archived', true).order('created_at', { ascending: false })
         if (ids && ids.length > 0) {
           const allIds = (ids as { id: string }[]).map(t => t.id)

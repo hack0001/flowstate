@@ -185,9 +185,10 @@ export default function PersonalPage() {
 
   useEffect(() => {
     let pLsLoaded = false
+    let pLocalIds: string[] = []
     try {
       const raw = localStorage.getItem('fs_p_personal')
-      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setPPriorityOrder(ids); pLsLoaded = true } }
+      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setPPriorityOrder(ids); pLsLoaded = true; pLocalIds = ids } }
     } catch {}
     async function init() {
       const [, { data: pdata }] = await Promise.all([
@@ -198,7 +199,9 @@ export default function PersonalPage() {
         const ids = pdata.ordered_ids as string[]
         setPPriorityOrder(ids)
         try { localStorage.setItem('fs_p_personal', JSON.stringify(ids)) } catch {}
-      } else if (!pLsLoaded) {
+      } else if (pLsLoaded) {
+        supabase.from('priority_lists').upsert({ key: PERSONAL_PRIORITY_KEY, ordered_ids: pLocalIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+      } else {
         const { data: rows } = await supabase.from('personal_items').select('id').neq('archived', true).order('created_at', { ascending: false })
         if (rows && rows.length > 0) {
           const allIds = (rows as { id: string }[]).map(r => r.id)

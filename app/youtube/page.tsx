@@ -309,16 +309,19 @@ export default function YouTubePage() {
       })
     })
     let ytPLsLoaded = false
+    let ytLocalIds: string[] = []
     try {
       const raw = localStorage.getItem('fs_p_youtube')
-      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setPriorityOrder(ids); ytPLsLoaded = true } }
+      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setPriorityOrder(ids); ytPLsLoaded = true; ytLocalIds = ids } }
     } catch {}
     supabase.from('priority_lists').select('ordered_ids').eq('key', 'youtube_priority').single().then(({ data }) => {
       if (data?.ordered_ids && Array.isArray(data.ordered_ids) && (data.ordered_ids as string[]).length > 0) {
         const ids = data.ordered_ids as string[]
         setPriorityOrder(ids)
         try { localStorage.setItem('fs_p_youtube', JSON.stringify(ids)) } catch {}
-      } else if (!ytPLsLoaded) {
+      } else if (ytPLsLoaded) {
+        supabase.from('priority_lists').upsert({ key: 'youtube_priority', ordered_ids: ytLocalIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+      } else {
         const allIds = [...CREATION_ITEMS, ...HEALTH_ITEMS, ...SHORTS_CHECKLIST].map(it => it.id)
         setPriorityOrder(allIds)
         try { localStorage.setItem('fs_p_youtube', JSON.stringify(allIds)) } catch {}

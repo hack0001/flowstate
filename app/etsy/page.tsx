@@ -616,16 +616,19 @@ export default function EtsyPage() {
       }
     })
     let pLsLoaded = false
+    let pLocalIds: string[] = []
     try {
       const raw = localStorage.getItem('fs_p_etsy')
-      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setPriorityOrder(ids); pLsLoaded = true } }
+      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setPriorityOrder(ids); pLsLoaded = true; pLocalIds = ids } }
     } catch {}
     supabase.from('priority_lists').select('ordered_ids').eq('key', ETSY_PRIORITY_KEY).single().then(({ data }) => {
       if (data?.ordered_ids && Array.isArray(data.ordered_ids) && (data.ordered_ids as string[]).length > 0) {
         const ids = data.ordered_ids as string[]
         setPriorityOrder(ids)
         try { localStorage.setItem('fs_p_etsy', JSON.stringify(ids)) } catch {}
-      } else if (!pLsLoaded) {
+      } else if (pLsLoaded) {
+        supabase.from('priority_lists').upsert({ key: ETSY_PRIORITY_KEY, ordered_ids: pLocalIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+      } else {
         const allIds = ETSY_TODOS.map(td => td.notion_url || td.name)
         setPriorityOrder(allIds)
         try { localStorage.setItem('fs_p_etsy', JSON.stringify(allIds)) } catch {}

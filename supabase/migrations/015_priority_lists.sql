@@ -8,3 +8,8 @@ create table if not exists priority_lists (
   ordered_ids jsonb       not null default '[]'::jsonb,
   updated_at  timestamptz not null default now()
 );
+
+-- RLS: allow all operations with anon key
+alter table priority_lists enable row level security;
+drop policy if exists allow_all_priority_lists on priority_lists;
+create policy allow_all_priority_lists on priority_lists for all using (true) with check (true);

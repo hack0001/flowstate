@@ -267,9 +267,10 @@ export default function VaultPage() {
 
   useEffect(() => {
     let vPLsLoaded = false
+    let vLocalIds: string[] = []
     try {
       const raw = localStorage.getItem('fs_p_vault')
-      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setVPriorityOrder(ids); vPLsLoaded = true } }
+      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setVPriorityOrder(ids); vPLsLoaded = true; vLocalIds = ids } }
     } catch {}
     async function init() {
       const [, { data: pdata }] = await Promise.all([
@@ -280,7 +281,9 @@ export default function VaultPage() {
         const ids = pdata.ordered_ids as string[]
         setVPriorityOrder(ids)
         try { localStorage.setItem('fs_p_vault', JSON.stringify(ids)) } catch {}
-      } else if (!vPLsLoaded) {
+      } else if (vPLsLoaded) {
+        supabase.from('priority_lists').upsert({ key: 'vault_priority', ordered_ids: vLocalIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+      } else {
         const { data: ids } = await supabase.from('vault_items').select('id').neq('archived', true).order('created_at', { ascending: false })
         if (ids && ids.length > 0) {
           const allIds = (ids as { id: string }[]).map(i => i.id)
