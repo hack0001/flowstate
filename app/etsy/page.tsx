@@ -651,8 +651,10 @@ export default function EtsyPage() {
   }
 
   function savePriority(order: string[]) {
+    const y = window.scrollY
     setPriorityOrder(order)
     supabase.from('priority_lists').upsert({ key: ETSY_PRIORITY_KEY, ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+    requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
   }
 
   function getTodoId(td: { notion_url?: string; name: string }): string {
@@ -1259,8 +1261,8 @@ export default function EtsyPage() {
                             <Badge label={td.stage} color={stageColor(td.stage)} />
                             <Badge label={td.priority} color={priorityColor(td.priority)} />
                           </div>
-                          <button type="button" onMouseDown={e => e.stopPropagation()} onClick={e => { e.preventDefault(); e.stopPropagation(); savePriority([id, ...validOrder.filter(i => i !== id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
-                          <button type="button" onMouseDown={e => e.stopPropagation()} onClick={e => { e.preventDefault(); e.stopPropagation(); savePriority([...validOrder.filter(i => i !== id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                          <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); savePriority([id, ...validOrder.filter(i => i !== id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
+                          <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); savePriority([...validOrder.filter(i => i !== id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
                           <button
                             onClick={e => { e.stopPropagation(); savePriority(validOrder.filter(i => i !== id)) }}
                             style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.25rem' }}

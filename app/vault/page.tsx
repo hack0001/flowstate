@@ -286,8 +286,10 @@ export default function VaultPage() {
   }, [load])
 
   function saveVPriority(order: string[]) {
+    const y = window.scrollY
     setVPriorityOrder(order)
     supabase.from('priority_lists').upsert({ key: 'vault_priority', ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+    requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
   }
 
   const filtered = items.filter(item => {
@@ -501,8 +503,8 @@ export default function VaultPage() {
                             {it.category && meta && (
                               <span style={{ fontSize:'0.65rem', fontWeight:700, color:meta.color, background:meta.color+'15', border:'1px solid '+meta.color+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem' }}>{meta.icon}{it.category}</span>
                             )}
-                            <button type="button" onMouseDown={e => e.stopPropagation()} onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([id, ...vValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
-                            <button type="button" onMouseDown={e => e.stopPropagation()} onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([...vValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                            <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([id, ...vValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
+                            <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([...vValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
                             <button onClick={() => vHandleRemove(id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', padding:'0.15rem', borderRadius:'0.25rem' }}>
                               <X size={13}/>
                             </button>

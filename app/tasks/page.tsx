@@ -401,8 +401,10 @@ export default function TasksPage() {
   }, [load])
 
   function saveTPriority(order: string[]) {
+    const y = window.scrollY
     setTPriorityOrder(order)
     supabase.from('priority_lists').upsert({ key: 'tasks_priority', ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+    requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
   }
 
   async function handleImport() {
@@ -781,8 +783,8 @@ export default function TasksPage() {
                                 {task.urgency === 'Urgent' && <span style={{ fontSize:'0.58rem', color:C.red, border:'1px solid '+C.red+'40', borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>Urgent</span>}
                               </div>
                             </div>
-                            <button type="button" onMouseDown={e => e.stopPropagation()} onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([id, ...tValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
-                            <button type="button" onMouseDown={e => e.stopPropagation()} onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([...tValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                            <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([id, ...tValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
+                            <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([...tValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
                             <button onClick={e => { e.stopPropagation(); saveTPriority(tValidOrder.filter(i=>i!==id)) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0 }}>x</button>
                           </div>
                         </div>
