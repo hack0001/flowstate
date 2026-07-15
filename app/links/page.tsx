@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ExternalLink, Link2, Check, RotateCcw, ChevronDown } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Link2, Check, RotateCcw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 const C = {
@@ -112,7 +112,6 @@ export default function LinksPage() {
   const [links, setLinks] = useState<LinkRow[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('watch')
-  const [showDone, setShowDone] = useState(false)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -154,11 +153,12 @@ export default function LinksPage() {
     .filter(l => l.select_type === 'Read')
     .sort((a, b) => (PRIORITY_ORDER[a.priority ?? ''] ?? 99) - (PRIORITY_ORDER[b.priority ?? ''] ?? 99))
 
-  const tabItems = tab === 'watch' ? watchItems : readItems
+  const tabItems = tab === 'watch' ? watchItems : tab === 'read' ? readItems : done
 
   const TABS: { key: Tab; label: string; count: number; color: string }[] = [
-    { key:'watch', label:'Watch', count: watchItems.length, color: C.purple },
-    { key:'read',  label:'Read',  count: readItems.length,  color: C.green  },
+    { key:'watch',  label:'Watch',    count: watchItems.length, color: C.purple },
+    { key:'read',   label:'Read',     count: readItems.length,  color: C.green  },
+    { key:'done',   label:'Complete', count: done.length,       color: C.cyan   },
   ]
 
   return (
@@ -216,6 +216,13 @@ export default function LinksPage() {
 
       {/* Content */}
       <div style={{ maxWidth:'780px', margin:'0 auto', padding:'2rem', opacity: mounted ? 1 : 0, transition:'opacity 0.3s ease' }}>
+        {tab === 'done' && done.length > 0 && (
+          <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:'1rem' }}>
+            <button onClick={resetDone} style={{ display:'flex', alignItems:'center', gap:'0.35rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, padding:'0.3rem 0.7rem' }}>
+              <RotateCcw size={11} /> Reset all
+            </button>
+          </div>
+        )}
         {loading ? (
           <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', color:C.muted, fontSize:'0.85rem' }}>
             <div style={{ width:'1rem', height:'1rem', borderRadius:'50%', border:'2px solid '+C.muted, borderTopColor:C.cyan, animation:'spin 0.8s linear infinite' }} />
@@ -224,41 +231,13 @@ export default function LinksPage() {
         ) : tabItems.length === 0 ? (
           <div style={{ textAlign:'center', padding:'3rem 1rem', color:C.muted }}>
             <Link2 size={32} style={{ marginBottom:'0.75rem', opacity:0.3 }} />
-            <p style={{ margin:0, fontSize:'0.875rem' }}>No {tab} links pending</p>
+            <p style={{ margin:0, fontSize:'0.875rem' }}>{tab === 'done' ? 'Nothing completed yet' : 'No '+tab+' links pending'}</p>
           </div>
         ) : (
-          <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', animation:'fadeInUp 0.3s ease both' }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', animation:'fadeInUp 0.3s ease both', opacity: tab === 'done' ? 0.7 : 1 }}>
             {tabItems.map(row => (
               <LinkCard key={row.id} row={row} onToggle={toggleChecked} />
             ))}
-          </div>
-        )}
-
-        {/* Done section */}
-        {done.length > 0 && (
-          <div style={{ marginTop:'2.5rem' }}>
-            <button
-              onClick={() => setShowDone(s => !s)}
-              style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'none', border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', padding:'0 0 0.75rem', marginBottom:showDone ? '0.75rem' : 0 }}>
-              <ChevronDown size={14} style={{ transform: showDone ? 'rotate(180deg)' : 'rotate(0deg)', transition:'transform 0.2s' }} />
-              Done ({done.length})
-              {done.length > 0 && (
-                <button onClick={e => { e.stopPropagation(); resetDone() }} style={{
-                  marginLeft:'0.5rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.375rem',
-                  color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', padding:'0.1rem 0.4rem',
-                  display:'flex', alignItems:'center', gap:'0.2rem',
-                }}>
-                  <RotateCcw size={10} /> Reset all
-                </button>
-              )}
-            </button>
-            {showDone && (
-              <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', opacity:0.65 }}>
-                {done.map(row => (
-                  <LinkCard key={row.id} row={row} onToggle={toggleChecked} />
-                ))}
-              </div>
-            )}
           </div>
         )}
       </div>
