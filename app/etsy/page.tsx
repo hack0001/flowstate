@@ -674,9 +674,10 @@ export default function EtsyPage() {
   const totalDone  = Object.values(checked).filter(Boolean).length
   const pct = Math.round(totalDone / totalItems * 100)
 
-  const validOrder = priorityOrder.filter(id => ETSY_TODOS.some(td => getTodoId(td) === id))
+  const ACTIVE_TODOS = ETSY_TODOS.filter(td => td.stage !== 'Completed')
+  const validOrder = priorityOrder.filter(id => ACTIVE_TODOS.some(td => getTodoId(td) === id))
   const assignedSet = new Set(validOrder)
-  const unassigned = ETSY_TODOS.filter(td => !assignedSet.has(getTodoId(td)))
+  const unassigned = ACTIVE_TODOS.filter(td => !assignedSet.has(getTodoId(td)))
   const unassignedCount = unassigned.length
 
   const tabs: { key: Tab; label: string }[] = [
@@ -1223,7 +1224,7 @@ export default function EtsyPage() {
               ) : (
                 <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}>
                   {validOrder.map((id, idx) => {
-                    const td = ETSY_TODOS.find(t => getTodoId(t) === id)
+                    const td = ACTIVE_TODOS.find(t => getTodoId(t) === id)
                     if (!td) return null
                     const isInsertTarget = dragOver === id && dragFrom !== null
                     return (
