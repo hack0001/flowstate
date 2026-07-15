@@ -163,6 +163,7 @@ export default function Home() {
   const [showFocusCheck, setShowFocusCheck] = useState(false)
   const [showReminder, setShowReminder] = useState(false)
   const [pageAlerts, setPageAlerts] = useState<Record<string, 'green' | 'orange' | 'red'>>({})
+  const [pageWarn, setPageWarn] = useState<Set<string>>(new Set())
 
   const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','goals','youtube','links','etsy','niche-calendar','x','nsdr','physical','workflows','instagram','tabs']
 
@@ -233,16 +234,19 @@ export default function Home() {
     try {
       const now = Date.now()
       const alerts: Record<string, 'green' | 'orange' | 'red'> = {}
+      const warn = new Set<string>()
       for (const route of TRACKED_ROUTES) {
         const raw = localStorage.getItem('flowstate_last_visit_' + route)
-        if (!raw) { alerts[route] = 'red'; continue }
+        if (!raw) { alerts[route] = 'red'; warn.add(route); continue }
         const age = now - parseInt(raw, 10)
         const days = age / (24 * 3600 * 1000)
         if (days >= 5) alerts[route] = 'red'
         else if (days >= 4) alerts[route] = 'orange'
         else if (days >= 2) alerts[route] = 'green'
+        if (days >= 3) warn.add(route)
       }
       setPageAlerts(alerts)
+      setPageWarn(warn)
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -355,9 +359,13 @@ export default function Home() {
               const alertBorder = alert === 'red' ? 'rgba(255,68,102,0.5)'  : alert === 'orange' ? 'rgba(255,184,0,0.45)'  : alert === 'green' ? 'rgba(0,255,136,0.4)'   : null
               const finalBg     = alertBg ?? bg
               const finalBorder = alertBorder ?? border
+              const showWarn = pageWarn.has(route)
               return (
-                <button key={route} onClick={() => navTo(route)} style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:finalBg, border:finalBorder==='none'?'none':'1px solid '+finalBorder, borderRadius:'0.75rem', color, cursor:'pointer', fontSize:'0.8rem', fontWeight:bold?700:600, fontFamily:'inherit', transition:'background 0.3s,border-color 0.3s' }}>
+                <button key={route} onClick={() => navTo(route)} style={{ position:'relative', display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:finalBg, border:finalBorder==='none'?'none':'1px solid '+finalBorder, borderRadius:'0.75rem', color, cursor:'pointer', fontSize:'0.8rem', fontWeight:bold?700:600, fontFamily:'inherit', transition:'background 0.3s,border-color 0.3s' }}>
                   {icon}{label}
+                  {showWarn && (
+                    <span style={{ position:'absolute', top:'-7px', right:'-7px', minWidth:'16px', height:'16px', borderRadius:'9999px', background:C.amber, color:'#000', fontSize:'0.55rem', fontWeight:900, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, padding:'0 3px', boxShadow:'0 0 0 2px '+C.bg, pointerEvents:'none' }}>!</span>
+                  )}
                 </button>
               )
             })}
