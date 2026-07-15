@@ -615,12 +615,20 @@ export default function EtsyPage() {
         try { localStorage.setItem(LS_KEY, JSON.stringify(s)) } catch {}
       }
     })
+    let pLsLoaded = false
+    try {
+      const raw = localStorage.getItem('fs_p_etsy')
+      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setPriorityOrder(ids); pLsLoaded = true } }
+    } catch {}
     supabase.from('priority_lists').select('ordered_ids').eq('key', ETSY_PRIORITY_KEY).single().then(({ data }) => {
       if (data?.ordered_ids && Array.isArray(data.ordered_ids) && (data.ordered_ids as string[]).length > 0) {
-        setPriorityOrder(data.ordered_ids as string[])
-      } else {
+        const ids = data.ordered_ids as string[]
+        setPriorityOrder(ids)
+        try { localStorage.setItem('fs_p_etsy', JSON.stringify(ids)) } catch {}
+      } else if (!pLsLoaded) {
         const allIds = ETSY_TODOS.map(td => td.notion_url || td.name)
         setPriorityOrder(allIds)
+        try { localStorage.setItem('fs_p_etsy', JSON.stringify(allIds)) } catch {}
         supabase.from('priority_lists').upsert({ key: ETSY_PRIORITY_KEY, ordered_ids: allIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
       }
     })
@@ -653,6 +661,7 @@ export default function EtsyPage() {
   function savePriority(order: string[]) {
     const y = window.scrollY
     setPriorityOrder(order)
+    try { localStorage.setItem('fs_p_etsy', JSON.stringify(order)) } catch {}
     supabase.from('priority_lists').upsert({ key: ETSY_PRIORITY_KEY, ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
     requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
   }
@@ -1224,7 +1233,7 @@ export default function EtsyPage() {
                         )}
                         <div
                           onDragOver={e => { e.preventDefault(); setDragOver(id) }}
-                          onDragLeave={() => { if (dragOver === id) setDragOver(null) }}
+                          onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && dragOver === id) setDragOver(null) }}
                           onDrop={e => {
                             e.preventDefault()
                             if (dragFrom === 'unassigned' && dragId) {
@@ -1261,8 +1270,8 @@ export default function EtsyPage() {
                             <Badge label={td.stage} color={stageColor(td.stage)} />
                             <Badge label={td.priority} color={priorityColor(td.priority)} />
                           </div>
-                          <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); savePriority([id, ...validOrder.filter(i => i !== id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
-                          <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); savePriority([...validOrder.filter(i => i !== id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                          <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); savePriority([id, ...validOrder.filter(i => i !== id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
+                          <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); savePriority([...validOrder.filter(i => i !== id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
                           <button
                             onClick={e => { e.stopPropagation(); savePriority(validOrder.filter(i => i !== id)) }}
                             style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.25rem' }}

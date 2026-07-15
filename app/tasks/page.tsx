@@ -381,18 +381,26 @@ export default function TasksPage() {
   }, [])
 
   useEffect(() => {
+    let tPLsLoaded = false
+    try {
+      const raw = localStorage.getItem('fs_p_tasks')
+      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setTPriorityOrder(ids); tPLsLoaded = true } }
+    } catch {}
     async function init() {
       const [, { data: pdata }] = await Promise.all([
         load(),
         supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').single()
       ])
       if (pdata?.ordered_ids && Array.isArray(pdata.ordered_ids) && (pdata.ordered_ids as string[]).length > 0) {
-        setTPriorityOrder(pdata.ordered_ids as string[])
-      } else {
+        const ids = pdata.ordered_ids as string[]
+        setTPriorityOrder(ids)
+        try { localStorage.setItem('fs_p_tasks', JSON.stringify(ids)) } catch {}
+      } else if (!tPLsLoaded) {
         const { data: ids } = await supabase.from('master_tasks').select('id').neq('archived', true).order('created_at', { ascending: false })
         if (ids && ids.length > 0) {
           const allIds = (ids as { id: string }[]).map(t => t.id)
           setTPriorityOrder(allIds)
+          try { localStorage.setItem('fs_p_tasks', JSON.stringify(allIds)) } catch {}
           supabase.from('priority_lists').upsert({ key: 'tasks_priority', ordered_ids: allIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
         }
       }
@@ -403,6 +411,7 @@ export default function TasksPage() {
   function saveTPriority(order: string[]) {
     const y = window.scrollY
     setTPriorityOrder(order)
+    try { localStorage.setItem('fs_p_tasks', JSON.stringify(order)) } catch {}
     supabase.from('priority_lists').upsert({ key: 'tasks_priority', ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
     requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
   }
@@ -765,7 +774,7 @@ export default function TasksPage() {
                             onDragStart={() => { setTDragId(id); setTDragFrom('priority') }}
                             onDragEnd={() => { setTDragId(null); setTDragOver(null); setTDragFrom(null) }}
                             onDragOver={e => { e.preventDefault(); setTDragOver(id) }}
-                            onDragLeave={() => { if (tDragOver===id) setTDragOver(null) }}
+                            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && tDragOver===id) setTDragOver(null) }}
                             onDrop={e => {
                               e.preventDefault()
                               if (tDragFrom==='unassigned'&&tDragId) { const o=[...tValidOrder]; o.splice(idx,0,tDragId); saveTPriority(o) }
@@ -783,8 +792,8 @@ export default function TasksPage() {
                                 {task.urgency === 'Urgent' && <span style={{ fontSize:'0.58rem', color:C.red, border:'1px solid '+C.red+'40', borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>Urgent</span>}
                               </div>
                             </div>
-                            <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([id, ...tValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
-                            <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([...tValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                            <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([id, ...tValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
+                            <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([...tValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
                             <button onClick={e => { e.stopPropagation(); saveTPriority(tValidOrder.filter(i=>i!==id)) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0 }}>x</button>
                           </div>
                         </div>

@@ -266,18 +266,26 @@ export default function VaultPage() {
   }, [])
 
   useEffect(() => {
+    let vPLsLoaded = false
+    try {
+      const raw = localStorage.getItem('fs_p_vault')
+      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setVPriorityOrder(ids); vPLsLoaded = true } }
+    } catch {}
     async function init() {
       const [, { data: pdata }] = await Promise.all([
         load(),
         supabase.from('priority_lists').select('ordered_ids').eq('key', 'vault_priority').single()
       ])
       if (pdata?.ordered_ids && Array.isArray(pdata.ordered_ids) && (pdata.ordered_ids as string[]).length > 0) {
-        setVPriorityOrder(pdata.ordered_ids as string[])
-      } else {
+        const ids = pdata.ordered_ids as string[]
+        setVPriorityOrder(ids)
+        try { localStorage.setItem('fs_p_vault', JSON.stringify(ids)) } catch {}
+      } else if (!vPLsLoaded) {
         const { data: ids } = await supabase.from('vault_items').select('id').neq('archived', true).order('created_at', { ascending: false })
         if (ids && ids.length > 0) {
           const allIds = (ids as { id: string }[]).map(i => i.id)
           setVPriorityOrder(allIds)
+          try { localStorage.setItem('fs_p_vault', JSON.stringify(allIds)) } catch {}
           supabase.from('priority_lists').upsert({ key: 'vault_priority', ordered_ids: allIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
         }
       }
@@ -288,6 +296,7 @@ export default function VaultPage() {
   function saveVPriority(order: string[]) {
     const y = window.scrollY
     setVPriorityOrder(order)
+    try { localStorage.setItem('fs_p_vault', JSON.stringify(order)) } catch {}
     supabase.from('priority_lists').upsert({ key: 'vault_priority', ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
     requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
   }
@@ -494,7 +503,7 @@ export default function VaultPage() {
                             onDragStart={() => vHandleDragStart(id, 'priority')}
                             onDragEnd={vHandleDragEnd}
                             onDragOver={e => { e.preventDefault(); setVDragOver(id) }}
-                            onDragLeave={() => setVDragOver(null)}
+                            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setVDragOver(null) }}
                             onDrop={() => vHandleDropOnPriority(id)}
                             style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', background:C.card, border:'1px solid '+(isOver ? '#ff6b35' : C.border), borderRadius:'0.75rem', cursor:'grab', opacity: vDragId === id ? 0.4 : 1, marginBottom:'0.4rem', transition:'border-color 0.15s' }}>
                             <span style={{ fontSize:'0.65rem', fontWeight:800, color:'#ff6b35', minWidth:'1.5rem', textAlign:'center' }}>#{idx+1}</span>
@@ -503,8 +512,8 @@ export default function VaultPage() {
                             {it.category && meta && (
                               <span style={{ fontSize:'0.65rem', fontWeight:700, color:meta.color, background:meta.color+'15', border:'1px solid '+meta.color+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem' }}>{meta.icon}{it.category}</span>
                             )}
-                            <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([id, ...vValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
-                            <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([...vValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                            <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([id, ...vValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
+                            <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([...vValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
                             <button onClick={() => vHandleRemove(id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', padding:'0.15rem', borderRadius:'0.25rem' }}>
                               <X size={13}/>
                             </button>

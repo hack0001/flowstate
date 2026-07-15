@@ -308,12 +308,20 @@ export default function YouTubePage() {
         }
       })
     })
+    let ytPLsLoaded = false
+    try {
+      const raw = localStorage.getItem('fs_p_youtube')
+      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setPriorityOrder(ids); ytPLsLoaded = true } }
+    } catch {}
     supabase.from('priority_lists').select('ordered_ids').eq('key', 'youtube_priority').single().then(({ data }) => {
       if (data?.ordered_ids && Array.isArray(data.ordered_ids) && (data.ordered_ids as string[]).length > 0) {
-        setPriorityOrder(data.ordered_ids as string[])
-      } else {
+        const ids = data.ordered_ids as string[]
+        setPriorityOrder(ids)
+        try { localStorage.setItem('fs_p_youtube', JSON.stringify(ids)) } catch {}
+      } else if (!ytPLsLoaded) {
         const allIds = [...CREATION_ITEMS, ...HEALTH_ITEMS, ...SHORTS_CHECKLIST].map(it => it.id)
         setPriorityOrder(allIds)
+        try { localStorage.setItem('fs_p_youtube', JSON.stringify(allIds)) } catch {}
         supabase.from('priority_lists').upsert({ key: 'youtube_priority', ordered_ids: allIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
       }
     })
@@ -325,6 +333,7 @@ export default function YouTubePage() {
   function saveYtPriority(order: string[]) {
     const y = window.scrollY
     setPriorityOrder(order)
+    try { localStorage.setItem('fs_p_youtube', JSON.stringify(order)) } catch {}
     supabase.from('priority_lists').upsert({ key: 'youtube_priority', ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
     requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
   }
@@ -714,7 +723,7 @@ export default function YouTubePage() {
                             onDragStart={() => { setYtDragId(id); setYtDragFrom('priority') }}
                             onDragEnd={() => { setYtDragId(null); setYtDragOver(null); setYtDragFrom(null) }}
                             onDragOver={e => { e.preventDefault(); setYtDragOver(id) }}
-                            onDragLeave={() => { if (ytDragOver === id) setYtDragOver(null) }}
+                            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && ytDragOver === id) setYtDragOver(null) }}
                             onDrop={e => {
                               e.preventDefault()
                               if (ytDragFrom === 'unassigned' && ytDragId) { const o=[...ytValidOrder]; o.splice(idx,0,ytDragId); saveYtPriority(o) }
@@ -725,8 +734,8 @@ export default function YouTubePage() {
                             <span style={{ fontSize:'0.65rem', fontWeight:900, color:'#ff6b35', minWidth:'1.4rem', textAlign:'center' as const, flexShrink:0 }}>#{idx+1}</span>
                             <span style={{ fontSize:'0.8rem', color:'#4a4a6a', userSelect:'none' as const }}>&#9776;</span>
                             <p style={{ fontSize:'0.8rem', fontWeight:600, color:'#f0f0ff', margin:0, flex:1 }} dangerouslySetInnerHTML={{ __html: it.label }} />
-                            <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); saveYtPriority([id, ...ytValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
-                            <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); saveYtPriority([...ytValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                            <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveYtPriority([id, ...ytValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
+                            <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveYtPriority([...ytValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
                             <button onClick={e => { e.stopPropagation(); saveYtPriority(ytValidOrder.filter(i=>i!==id)) }} style={{ background:'none', border:'none', color:'#4a4a6a', cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.25rem' }}>x</button>
                           </div>
                         </div>
