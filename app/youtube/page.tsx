@@ -399,8 +399,9 @@ export default function YouTubePage() {
         <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', gap:'0.25rem', overflowX:'auto' }}>
           {(['checklists','shorts','sops','priority'] as const).map(tab => {
             const tabCol = tab === 'sops' ? C.amber : tab === 'shorts' ? C.green : tab === 'priority' ? '#ff6b35' : C.red
-            const ytValidOrder = priorityOrder.filter(id => ALL_YT_ITEMS.some(it => it.id === id))
-            const ytUnassignedCount = ALL_YT_ITEMS.filter(it => !ytValidOrder.includes(it.id)).length
+            const ytActiveItems = ALL_YT_ITEMS.filter(it => !creation.has(it.id) && !health.has(it.id) && !shorts.has(it.id))
+            const ytValidOrder = priorityOrder.filter(id => ytActiveItems.some(it => it.id === id))
+            const ytUnassignedCount = ytActiveItems.filter(it => !ytValidOrder.includes(it.id)).length
             return (
               <button key={tab} onClick={() => setActiveTab(tab)} style={{
                 padding:'0.7rem 1.25rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit',
@@ -661,9 +662,10 @@ export default function YouTubePage() {
         )}
 
         {activeTab === 'priority' && (() => {
-          const ytValidOrder = priorityOrder.filter(id => ALL_YT_ITEMS.some(it => it.id === id))
+          const ytActiveItems = ALL_YT_ITEMS.filter(it => !creation.has(it.id) && !health.has(it.id) && !shorts.has(it.id))
+          const ytValidOrder = priorityOrder.filter(id => ytActiveItems.some(it => it.id === id))
           const ytAssigned = new Set(ytValidOrder)
-          const ytUnassigned = ALL_YT_ITEMS.filter(it => !ytAssigned.has(it.id))
+          const ytUnassigned = ytActiveItems.filter(it => !ytAssigned.has(it.id))
           return (
             <div style={{ animation:'fadeInUp 0.3s ease both' }}>
               {/* Unassigned */}

@@ -687,8 +687,9 @@ export default function TasksPage() {
 
         {/* View toggle */}
         {!loading && tasks.length > 0 && (() => {
-          const tValidOrder = tPriorityOrder.filter(id => tasks.some(t => t.id === id))
-          const tUnassigned = tasks.filter(t => !tValidOrder.includes(t.id))
+          const activeTasks = tasks.filter(t => t.status !== 'Done')
+          const tValidOrder = tPriorityOrder.filter(id => activeTasks.some(t => t.id === id))
+          const tUnassigned = activeTasks.filter(t => !tValidOrder.includes(t.id))
           return (
             <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'1.25rem' }}>
               <button onClick={() => setPriorityView(false)} style={{ padding:'0.35rem 0.875rem', borderRadius:'9999px', border:'1px solid '+(priorityView ? C.border : C.cyan+'60'), background: priorityView ? 'transparent' : 'rgba(0,212,255,0.1)', color: priorityView ? C.muted : C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, transition:'all 0.15s' }}>
@@ -704,9 +705,10 @@ export default function TasksPage() {
 
         {/* Priority view */}
         {priorityView && !loading && (() => {
-          const tValidOrder = tPriorityOrder.filter(id => tasks.some(t => t.id === id))
+          const activeTasks = tasks.filter(t => t.status !== 'Done')
+          const tValidOrder = tPriorityOrder.filter(id => activeTasks.some(t => t.id === id))
           const tAssigned = new Set(tValidOrder)
-          const tUnassigned = tasks.filter(t => !tAssigned.has(t.id))
+          const tUnassigned = activeTasks.filter(t => !tAssigned.has(t.id))
           return (
             <div>
               {/* Unassigned */}

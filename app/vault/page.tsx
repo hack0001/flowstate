@@ -389,9 +389,10 @@ export default function VaultPage() {
       <div style={{ maxWidth:'1000px', margin:'0 auto', padding:'1.5rem 2rem' }}>
         {/* View toggle */}
         {(() => {
-          const vValidOrder = vPriorityOrder.filter(id => items.some(it => it.id === id))
+          const activeItems = items.filter(it => it.status !== 'Done' && it.status !== 'Read')
+          const vValidOrder = vPriorityOrder.filter(id => activeItems.some(it => it.id === id))
           const vAssignedSet = new Set(vValidOrder)
-          const vUnassignedCount = items.filter(it => !vAssignedSet.has(it.id)).length
+          const vUnassignedCount = activeItems.filter(it => !vAssignedSet.has(it.id)).length
           return (
             <div style={{ display:'flex', gap:'0.5rem', marginBottom:'1.25rem' }}>
               <button onClick={() => setPriorityView(false)} style={{ padding:'0.4rem 1rem', borderRadius:'0.625rem', border:'1px solid '+(priorityView ? C.border : C.purple), background:priorityView ? 'transparent' : 'rgba(139,92,246,0.12)', color:priorityView ? C.muted : C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
@@ -409,9 +410,10 @@ export default function VaultPage() {
 
         {/* Priority view */}
         {priorityView && (() => {
-          const vValidOrder = vPriorityOrder.filter(id => items.some(it => it.id === id))
+          const activeItems = items.filter(it => it.status !== 'Done' && it.status !== 'Read')
+          const vValidOrder = vPriorityOrder.filter(id => activeItems.some(it => it.id === id))
           const vAssignedSet = new Set(vValidOrder)
-          const vUnassigned = items.filter(it => !vAssignedSet.has(it.id))
+          const vUnassigned = activeItems.filter(it => !vAssignedSet.has(it.id))
 
           function vHandleDragStart(id: string, from: 'unassigned'|'priority') {
             setVDragId(id); setVDragFrom(from)
