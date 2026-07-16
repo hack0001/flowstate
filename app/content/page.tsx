@@ -32,6 +32,11 @@ const STAGE_KEYS  = ALL_STAGES.map(s => s.key)
 
 const FORMATS = ['Long-form', 'Short', 'Both', 'Podcast clip']
 
+// Which funnel role a video plays — from Dave Jeltema / Shane Hummus content-system videos:
+// how-tos pull search traffic, listicles are passive top-of-funnel, case studies build
+// authority, testimonials/interviews convert. Optional — leave blank if it doesn't apply.
+const VIDEO_TYPES = ['How-To', 'Listicle', 'Case Study', 'Explainer', 'Testimonial/Interview']
+
 type ContentItem = {
   id: string
   notion_id: string | null
@@ -46,6 +51,9 @@ type ContentItem = {
   notes: string | null
   notion_url: string | null
   created_at?: string
+  video_type: string | null
+  unique_angle: string | null
+  revenue_note: string | null
 }
 
 type View = 'ideas' | 'pipeline' | 'list'
@@ -96,16 +104,18 @@ function MoveModal({ item, onMove, onClose }: { item:ContentItem; onMove:(s:stri
 }
 
 // ── Add idea modal ──────────────────────────────────────────────────────────
-function AddIdeaModal({ onAdd, onClose }: { onAdd:(title:string,format:string,notes:string)=>Promise<void>; onClose:()=>void }) {
+function AddIdeaModal({ onAdd, onClose }: { onAdd:(title:string,format:string,notes:string,videoType:string,uniqueAngle:string)=>Promise<void>; onClose:()=>void }) {
   const [title,  setTitle]  = useState('')
   const [format, setFormat] = useState('Long-form')
   const [notes,  setNotes]  = useState('')
+  const [videoType, setVideoType] = useState('')
+  const [uniqueAngle, setUniqueAngle] = useState('')
   const [saving, setSaving] = useState(false)
 
   async function submit() {
     if (!title.trim()) return
     setSaving(true)
-    await onAdd(title.trim(), format, notes.trim())
+    await onAdd(title.trim(), format, notes.trim(), videoType, uniqueAngle.trim())
     setSaving(false)
   }
 
@@ -143,6 +153,27 @@ function AddIdeaModal({ onAdd, onClose }: { onAdd:(title:string,format:string,no
           </div>
 
           <div>
+            <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>Video type <span style={{ fontWeight:400 }}>(optional — which funnel role this plays)</span></label>
+            <div style={{ display:'flex', gap:'0.35rem', flexWrap:'wrap' as const }}>
+              {VIDEO_TYPES.map(v => (
+                <button key={v} onClick={() => setVideoType(videoType===v?'':v)} style={{ padding:'0.35rem 0.75rem', background:videoType===v?'rgba(139,92,246,0.12)':C.card, border:'1px solid '+(videoType===v?C.purple:C.border), borderRadius:'9999px', color:videoType===v?C.purple:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700 }}>
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>Alpha check <span style={{ fontWeight:400 }}>— what does this have that a generic AI answer or the top existing videos don&apos;t?</span></label>
+            <textarea
+              value={uniqueAngle} onChange={e => setUniqueAngle(e.target.value)} rows={2}
+              placeholder="e.g. original data pull, contrarian take, historical parallel nobody else has used, a real number nobody else calculated..."
+              style={{ width:'100%', padding:'0.6rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none', resize:'vertical' as const, boxSizing:'border-box' as const }}
+            />
+            <p style={{ fontSize:'0.68rem', color:C.muted, margin:'0.35rem 0 0' }}>If you can&apos;t fill this in, the idea is probably a recipe &mdash; something AI or a search engine already answers well. Find the edge before you validate it.</p>
+          </div>
+
+          <div>
             <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>Notes / angle / hook idea <span style={{ fontWeight:400 }}>(optional)</span></label>
             <textarea
               value={notes} onChange={e => setNotes(e.target.value)} rows={3}
@@ -167,17 +198,31 @@ function AddIdeaModal({ onAdd, onClose }: { onAdd:(title:string,format:string,no
 }
 
 // ── Pipeline card ───────────────────────────────────────────────────────────
-function PipelineCard({ item, onMove }: { item:ContentItem; onMove:()=>void }) {
+function PipelineCard({ item, onMove, onSaveRevenue }: { item:ContentItem; onMove:()=>void; onSaveRevenue:(note:string)=>void }) {
   const s = stageStyle(item.pipeline_stage)
+  const [revenue, setRevenue] = useState(item.revenue_note ?? '')
+  const isPostPublished = item.pipeline_stage === '📊 Post-Published'
   return (
     <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', padding:'0.75rem', marginBottom:'0.4rem' }}>
       <p style={{ fontSize:'0.82rem', fontWeight:700, color:C.text, margin:'0 0 0.4rem', lineHeight:1.35 }}>{item.title}</p>
       <div style={{ display:'flex', alignItems:'center', gap:'0.3rem', flexWrap:'wrap' as const, marginBottom:'0.4rem' }}>
         {item.format && <span style={{ fontSize:'0.6rem', color:C.muted, background:C.surface, border:'1px solid '+C.border, borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.format}</span>}
+        {item.video_type && <span style={{ fontSize:'0.6rem', color:C.purple, background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.video_type}</span>}
         {item.tag && <span style={{ fontSize:'0.6rem', color:C.amber, background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.tag}</span>}
         {item.notion_url && <a href={item.notion_url} target="_blank" rel="noopener noreferrer" style={{ color:C.muted, display:'flex', marginLeft:'auto' }}><ExternalLink size={10}/></a>}
       </div>
+      {item.unique_angle && <p style={{ fontSize:'0.65rem', color:C.purple, margin:'0 0 0.3rem', lineHeight:1.4 }}>&#9889; {item.unique_angle.slice(0,90)}{item.unique_angle.length>90?'…':''}</p>}
       {item.notes && <p style={{ fontSize:'0.68rem', color:C.sec, margin:'0 0 0.4rem', lineHeight:1.45, fontStyle:'italic' }}>{item.notes.slice(0,80)}{item.notes.length>80?'…':''}</p>}
+      {isPostPublished && (
+        <div style={{ marginBottom:'0.4rem' }}>
+          <label style={{ display:'block', fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, marginBottom:'0.2rem' }}>Revenue attribution</label>
+          <input
+            value={revenue} onChange={e => setRevenue(e.target.value)} onBlur={() => onSaveRevenue(revenue)}
+            placeholder="e.g. $210 AdSense in 30d, or link clicks from UTM"
+            style={{ width:'100%', padding:'0.35rem 0.5rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.68rem', outline:'none', boxSizing:'border-box' as const }}
+          />
+        </div>
+      )}
       <button onClick={onMove} style={{ width:'100%', padding:'0.3rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.25rem' }}>
         Move stage <ChevronRight size={10}/>
       </button>
@@ -212,14 +257,19 @@ export default function ContentPage() {
     await supabase.from('content_items').update({ pipeline_stage: stage }).eq('id', item.id)
   }
 
-  async function addIdea(title: string, format: string, notes: string) {
+  async function addIdea(title: string, format: string, notes: string, videoType: string, uniqueAngle: string) {
     const { data } = await supabase
       .from('content_items')
-      .insert({ title, pipeline_stage:'💡 Idea', format, notes: notes || null, status:'active', archived: false })
+      .insert({ title, pipeline_stage:'💡 Idea', format, notes: notes || null, video_type: videoType || null, unique_angle: uniqueAngle || null, status:'active', archived: false })
       .select()
       .single()
     if (data) setItems(prev => [data, ...prev])
     setShowAdd(false)
+  }
+
+  async function saveRevenueNote(item: ContentItem, note: string) {
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, revenue_note: note } : i))
+    await supabase.from('content_items').update({ revenue_note: note || null }).eq('id', item.id)
   }
 
   async function promoteToValidated(item: ContentItem) {
@@ -317,7 +367,7 @@ export default function ContentPage() {
                 <table style={{ width:'100%', borderCollapse:'collapse' as const, fontSize:'0.82rem' }}>
                   <thead>
                     <tr style={{ borderBottom:'1px solid '+C.border }}>
-                      {['Title','Format','Notes / Angle','Added','Actions'].map(h => (
+                      {['Title','Type','Format','Alpha (unique angle)','Notes / Angle','Added','Actions'].map(h => (
                         <th key={h} style={{ padding:'0.5rem 0.875rem', textAlign:'left' as const, fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase' as const, color:C.muted, whiteSpace:'nowrap' as const }}>{h}</th>
                       ))}
                     </tr>
@@ -325,18 +375,26 @@ export default function ContentPage() {
                   <tbody>
                     {ideas.map(item => (
                       <tr key={item.id} style={{ borderBottom:'1px solid '+C.border+'60' }}>
-                        <td style={{ padding:'0.75rem 0.875rem', fontWeight:700, color:C.text, maxWidth:'280px' }}>
+                        <td style={{ padding:'0.75rem 0.875rem', fontWeight:700, color:C.text, maxWidth:'240px' }}>
                           <div style={{ display:'flex', alignItems:'flex-start', gap:'0.4rem' }}>
                             <span style={{ lineHeight:1.4 }}>{item.title}</span>
                             {item.notion_url && <a href={item.notion_url} target="_blank" rel="noopener noreferrer" style={{ color:C.muted, flexShrink:0, marginTop:'2px' }}><ExternalLink size={10}/></a>}
                           </div>
                         </td>
                         <td style={{ padding:'0.75rem 0.875rem', whiteSpace:'nowrap' as const }}>
+                          {item.video_type
+                            ? <span style={{ fontSize:'0.65rem', color:C.purple, background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.2)', borderRadius:'9999px', padding:'0.15rem 0.5rem', fontWeight:700 }}>{item.video_type}</span>
+                            : <span style={{ color:C.muted, fontSize:'0.72rem' }}>—</span>}
+                        </td>
+                        <td style={{ padding:'0.75rem 0.875rem', whiteSpace:'nowrap' as const }}>
                           {item.format
                             ? <span style={{ fontSize:'0.68rem', color:C.cyan, background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:'9999px', padding:'0.15rem 0.5rem', fontWeight:700 }}>{item.format}</span>
                             : <span style={{ color:C.muted, fontSize:'0.72rem' }}>—</span>}
                         </td>
-                        <td style={{ padding:'0.75rem 0.875rem', color:C.sec, maxWidth:'320px' }}>
+                        <td style={{ padding:'0.75rem 0.875rem', color:C.purple, maxWidth:'260px' }}>
+                          <span style={{ lineHeight:1.5 }}>{item.unique_angle || <span style={{ color:C.muted }}>—</span>}</span>
+                        </td>
+                        <td style={{ padding:'0.75rem 0.875rem', color:C.sec, maxWidth:'260px' }}>
                           <span style={{ lineHeight:1.5 }}>{item.notes || <span style={{ color:C.muted }}>—</span>}</span>
                         </td>
                         <td style={{ padding:'0.75rem 0.875rem', color:C.muted, whiteSpace:'nowrap' as const, fontSize:'0.72rem' }}>
@@ -380,7 +438,7 @@ export default function ContentPage() {
                   {stage.items.length === 0 ? (
                     <p style={{ fontSize:'0.65rem', color:C.muted, textAlign:'center', padding:'0.75rem 0', margin:0 }}>empty</p>
                   ) : (
-                    stage.items.map(item => <PipelineCard key={item.id} item={item} onMove={() => setMoveTarget(item)}/>)
+                    stage.items.map(item => <PipelineCard key={item.id} item={item} onMove={() => setMoveTarget(item)} onSaveRevenue={note => saveRevenueNote(item, note)}/>)
                   )}
                 </div>
               ))}

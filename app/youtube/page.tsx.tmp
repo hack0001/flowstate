@@ -49,25 +49,23 @@ const SHORTS_CHECKLIST = [
 const LS_SHORTS = 'flowstate_yt_shorts'
 
 // ---- Production SOPs ----
-// Groups: 'setup' runs once (new channel / channel-wide), 'production' runs every single
-// video and is numbered to match the Content Pipeline stages in app/content/page.tsx 1-for-1.
-type SOP = { id: string; icon: string; title: string; tagline: string; steps: string[]; group: 'setup' | 'production' }
+type SOP = { id: string; icon: string; title: string; tagline: string; steps: string[] }
 
 const SOPS: SOP[] = [
   {
-    id:'00', icon:'&#128293;', title:'Channel Warm-Up', group:'setup',
-    tagline:'Never upload to a cold account. Spend 5 days building a real human profile first. Run once, before your first-ever upload.',
+    id:'00', icon:'&#128293;', title:'Channel Warm-Up',
+    tagline:'Never upload to a cold account. Spend 5 days building a real human profile first.',
     steps:[
       '<strong>Days 1&ndash;3 (repeat daily):</strong> Watch 30 minutes of content in your niche, like a handful of videos per session, leave 2&ndash;3 genuine comments, and subscribe to 3&ndash;5 channels in your niche.',
       '<strong>Why this works:</strong> YouTube&apos;s algorithm is learning what this account cares about before you upload anything. You are building the profile of a real, engaged human. Most people create an account and upload 10 minutes later &mdash; the algorithm has no context and flags it as potential spam. This removes that risk.',
-      '<strong>Day 4:</strong> Upload your banner and logo, set your channel name, and write the channel description. The channel should look like a real, intentional presence before a single video appears on it. (Cross-reference: this overlaps with the one-time &ldquo;Channel Creation&rdquo; checklist on the Checklists tab &mdash; do both together.)',
+      '<strong>Day 4:</strong> Upload your banner and logo, set your channel name, and write the channel description. The channel should look like a real, intentional presence before a single video appears on it.',
       '<strong>Day 5:</strong> Upload your first video. You are now uploading into a warmed account with niche context &mdash; not a blank slate the algorithm is suspicious of.',
-      '<strong>Make the first video count:</strong> The algorithm gives new channels a genuine push on early uploads &mdash; your first video gets a real shot at reaching people outside your subscribers. Publishing without planning used to be fine when channels needed 25&ndash;50 videos to find their niche. That is no longer true. Wasting the first upload on an unplanned video is the single biggest mistake a new channel makes. Run the full production SOP sequence below (01&ndash;10) before Day 5.',
+      '<strong>Make the first video count:</strong> The algorithm gives new channels a genuine push on early uploads &mdash; your first video gets a real shot at reaching people outside your subscribers. Publishing without planning used to be fine when channels needed 25&ndash;50 videos to find their niche. That is no longer true. Wasting the first upload on an unplanned video is the single biggest mistake a new channel makes. Run the full production SOP before Day 5.',
     ],
   },
   {
-    id:'01', icon:'&#128161;', title:'Idea & Validation', group:'production',
-    tagline:'Commit only to topics that have demand, a clear angle, and meme/story potential. Pipeline stages: 💡 Idea → ✅ Validated.',
+    id:'01', icon:'&#128161;', title:'Idea & Validation',
+    tagline:'Commit only to topics that have demand, a clear angle, and meme/story potential.',
     steps:[
       'Brain-dump 3&ndash;5 ideas &mdash; economics in the news, trending Reddit threads (r/economics, r/wallstreetbets), Financial Times headlines',
       'Search YouTube for each idea. Watch the top 3 results. Ask: what&apos;s missing? Too dry? Too shallow? No humour? That&apos;s your opening.',
@@ -76,15 +74,12 @@ const SOPS: SOP[] = [
       'Write the one-line pitch: &ldquo;This video explains X by showing Y.&rdquo; If you can&apos;t do it in one line, it&apos;s probably two videos.',
       'Confirm format: long-form deep-dive or Short hook/punchline?',
       'Check whether there&apos;s a Short hiding inside the long-form topic &mdash; one stat, one absurd fact, one wild historical moment.',
-      '<strong>Alpha check:</strong> could ChatGPT or a 5-minute Google search already answer this well? If yes, don&apos;t make the video as-is &mdash; find the thing AI can&apos;t easily give: original data you pulled yourself, a contrarian take, a historical parallel nobody else has used, a real number nobody else calculated. Write that unique angle down. If you can&apos;t fill it in, the idea is a recipe, not a video.',
-      '<strong>Revenue-tier check:</strong> is this topic mass-market explainer territory (lower pay per view) or a sharper, higher-value angle within sound money/economics (higher pay per view)? You don&apos;t have to chase the highest tier every time, but know which one you&apos;re picking and why.',
       'Name the project and create the folder: <code>/videos/YYYY-MM_topic-name/</code>',
-      'Move the idea to <strong>✅ Validated</strong> in the Content Pipeline once the angle, pitch, unique angle and format are confirmed.',
     ],
   },
   {
-    id:'02', icon:'&#128218;', title:'Research', group:'production',
-    tagline:'Build the facts, stories, rabbit holes and meme potential before you write a word. Pipeline stage: 📚 Research.',
+    id:'02', icon:'&#128218;', title:'Research',
+    tagline:'Build the facts, stories, rabbit holes and meme potential before you write a word.',
     steps:[
       'Spend 60&ndash;90 min reading deeply: Wikipedia (follow footnotes), academic papers, news archives, Google Scholar for stats',
       'Find 2&ndash;3 wild statistics or counterintuitive facts &mdash; these become your hook and most shareable moments',
@@ -96,18 +91,7 @@ const SOPS: SOP[] = [
     ],
   },
   {
-    id:'03', icon:'&#127919;', title:'Holy Trifecta (Concept)', group:'production',
-    tagline:'Decide the click before you write a word of script. Title, thumbnail concept and hook must all pull in the same direction. Pipeline stage: 🎯 Holy Trifecta.',
-    steps:[
-      '<strong>Thumbnail + title create a journey together:</strong> They are not two separate tasks. Someone sees the thumbnail first, the title completes the thought. Both must pull in the same direction toward curiosity.',
-      '<strong>4 thumbnail types &mdash; always combine at least 2:</strong> (1) Subject next to something bigger &mdash; creates scale and context. (2) Comparison &mdash; before/after, cheap vs expensive, old vs new. (3) Blur or obscure the main result &mdash; force the click to reveal it. (4) Big number or stat &mdash; creates instant curiosity. Single-formula thumbnails are average. Stack them. Pick the combo now &mdash; the final image gets built later in Thumbnail & SEO once you have real footage.',
-      '<strong>Title formula:</strong> [Wild Stat or Claim] + [The Surprising Reason] &mdash; write 3 options, pick the strongest curiosity gap.',
-      'Sanity-check the hook you&apos;ll open the script with against the title and thumbnail concept &mdash; all three should promise the exact same payoff, or the video will feel like a bait-and-switch.',
-      'Lock the direction and move on &mdash; this stage is a fast decision, not a design session. The actual thumbnail asset gets produced later once you have real footage/b-roll (see Thumbnail & SEO SOP).',
-    ],
-  },
-  {
-    id:'04', icon:'&#128221;', title:'Scripting', group:'production',
+    id:'03', icon:'&#128221;', title:'Scripting',
     tagline:'Plan before you write. The script is your production blueprint.',
     steps:[
       '<strong>Step 1 &mdash; Common Goal:</strong> Before a single word of script, write down what the viewer actually wants &mdash; not what the video is about, but what they are trying to feel or achieve. (e.g. &ldquo;feel informed and not fooled by mainstream financial news&rdquo;)',
@@ -127,8 +111,8 @@ const SOPS: SOP[] = [
     ],
   },
   {
-    id:'05', icon:'&#127912;', title:'Asset Gathering', group:'production',
-    tagline:'Have every meme, b-roll clip, and chart ready before you record. Pipeline stage: 🎨 Assets.',
+    id:'04', icon:'&#127912;', title:'Asset Gathering',
+    tagline:'Have every meme, b-roll clip, and chart ready before you record.',
     steps:[
       '<strong>Memes:</strong> imgflip, giphy, Twitter/X, Reddit, Know Your Meme &mdash; save to <code>/assets/memes/</code> with descriptive filenames',
       '<strong>B-roll (free):</strong> Pexels, Pixabay, Coverr, Archive.org (great for historical footage) &mdash; save to <code>/assets/broll/</code>',
@@ -142,8 +126,8 @@ const SOPS: SOP[] = [
     ],
   },
   {
-    id:'06', icon:'&#127908;', title:'Voiceover Recording', group:'production',
-    tagline:'Your voice is the whole performance. Capture it with energy, clarity, and pace. Pipeline stage: 🎙️ Voiceover.',
+    id:'05', icon:'&#127908;', title:'Voiceover Recording',
+    tagline:'Your voice is the whole performance. Capture it with energy, clarity, and pace.',
     steps:[
       '<strong>Setup:</strong> Remove echo with blankets, heavy curtains, or record inside a wardrobe full of clothes',
       'Do a 30-second test and listen back &mdash; check for hiss, echo, room noise, and levels',
@@ -156,8 +140,8 @@ const SOPS: SOP[] = [
     ],
   },
   {
-    id:'07', icon:'&#9986;', title:'Editing (Fast-Cut Faceless)', group:'production',
-    tagline:'Build the dense, fast, funny visual style that defines this format. Pipeline stage: ✂️ Editing.',
+    id:'06', icon:'&#9986;', title:'Editing (Fast-Cut Faceless)',
+    tagline:'Build the dense, fast, funny visual style that defines this format.',
     steps:[
       '<strong>Golden rules:</strong> VO goes on first. Everything hangs off it. The viewer should never see a blank or static shot.',
       'Memes land on the punchline, not before it. Timing is everything.',
@@ -181,22 +165,24 @@ const SOPS: SOP[] = [
     ],
   },
   {
-    id:'08', icon:'&#128444;', title:'Thumbnail & SEO (Production)', group:'production',
-    tagline:'Build the real thumbnail from the concept you locked in Holy Trifecta, and finalise the SEO metadata. Pipeline stage: 🖼️ Thumbnail & SEO.',
+    id:'07', icon:'&#128444;', title:'Thumbnail & SEO',
+    tagline:'Win the click before they watch. The thumbnail IS the brand identity.',
     steps:[
-      '<strong>Thumbnail:</strong> Build the actual image using the type-combo you picked in Holy Trifecta. Bold graphic, minimal text (max 5 words), high contrast &mdash; check at 120px wide (mobile grid). High-quality source images matter more than most creators admit.',
+      '<strong>Thumbnail + title create a journey together:</strong> They are not two separate tasks. Someone sees the thumbnail first, the title completes the thought. Both must pull in the same direction toward curiosity.',
+      '<strong>4 thumbnail types &mdash; always combine at least 2:</strong> (1) Subject next to something bigger &mdash; creates scale and context. (2) Comparison &mdash; before/after, cheap vs expensive, old vs new. (3) Blur or obscure the main result &mdash; force the click to reveal it. (4) Big number or stat &mdash; creates instant curiosity. Single-formula thumbnails are average. Stack them.',
+      '<strong>Thumbnail:</strong> Bold graphic, minimal text (max 5 words), high contrast &mdash; check at 120px wide (mobile grid). High-quality source images matter more than most creators admit.',
       'No face &mdash; use charts, money visuals, bold typography, or dramatic imagery.',
       'Consistent visual brand: same fonts, same colour palette, same layout style across every thumbnail so the audience recognises SoundMoney in the feed without reading the channel name.',
       'A/B test: can someone identify the topic in 2 seconds without reading the title?',
-      'Finalise the title from the 3 options drafted in Holy Trifecta &mdash; pick the one that best matches the finished thumbnail.',
+      '<strong>Title formula:</strong> [Wild Stat or Claim] + [The Surprising Reason] &mdash; write 3 options, pick the strongest curiosity gap.',
       '<strong>Description:</strong> First 2 lines are indexed by Google &mdash; hook sentence + primary keyword before &ldquo;show more&rdquo;.',
       'Add timestamps as chapters (every 2&ndash;3 minutes) + links: sources, socials, related videos.',
       '<strong>Tags:</strong> 3 broad topic tags, 5 specific niche tags, 5 long-tail question-style tags &mdash; research with TubeBuddy or vidIQ.',
     ],
   },
   {
-    id:'09', icon:'&#9729;', title:'Upload & Publish', group:'production',
-    tagline:'Get it live and set up right before anyone sees it. Pipeline stages: ☁️ Scheduled → 📣 Live.',
+    id:'08', icon:'&#9729;', title:'Upload & Publish',
+    tagline:'Get it live and set up right before anyone sees it.',
     steps:[
       'Upload to YouTube Studio, set to Private while setting up',
       'Paste title, description, tags, chapters',
@@ -210,8 +196,8 @@ const SOPS: SOP[] = [
     ],
   },
   {
-    id:'10', icon:'&#128226;', title:'Post-Publish & Growth', group:'production',
-    tagline:"The video doesn't stop working when you hit publish. Pipeline stage: 📊 Post-Published.",
+    id:'09', icon:'&#128226;', title:'Post-Publish & Growth',
+    tagline:"The video doesn't stop working when you hit publish.",
     steps:[
       'Community tab: post a wild stat from the video + the link within 30 min of going live',
       'Clip the funniest or most shocking 30&ndash;60 seconds as a Short (if long form)',
@@ -222,7 +208,6 @@ const SOPS: SOP[] = [
       '<strong>Universe building:</strong> In the description and pinned comment, reference at least one other SoundMoney video that connects to this topic. Add an info card at the relevant moment in the edit. Every video reinforces the universe &mdash; viewers who stay in it push &ldquo;average views per viewer&rdquo; above 1.',
       'Check analytics at 48 hrs: CTR, average view duration, impressions, traffic source.',
       'CTR under 4% = thumbnail/title problem. Retention drop in first 30 sec = hook problem.',
-      '<strong>Revenue attribution, not just views:</strong> views alone don&apos;t tell you what actually paid. Log what this video actually earned (AdSense for that video, or clicks/signups if you&apos;re linking anywhere) in the Pipeline&apos;s Revenue attribution field on the card. A handful of low-view, high-intent videos can out-earn a viral one &mdash; you only see that if you track revenue per video, not just views per video.',
       '<strong>One-improvement rule:</strong> Pick the single weakest element from this video. Write it down. That is the only thing to fix next time. Trying to improve everything at once fixes nothing.',
       'Log the video in the Content Tracker.',
     ],
@@ -514,9 +499,6 @@ export default function YouTubePage() {
                 <h2 style={{ fontSize:'1.05rem', fontWeight:800, margin:'0 0 0.15rem' }}>Brand Setup &mdash; Do This First</h2>
                 <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>Before your first Short goes live</p>
               </div>
-              <div style={{ padding:'0.75rem 1rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.875rem', marginBottom:'0.625rem' }}>
-                <p style={{ fontSize:'0.72rem', color:C.muted, margin:0, lineHeight:1.5 }}>Shorts move through the same Content Pipeline stages and the same numbered SOPs (01&ndash;10) on the Production SOPs tab as long-form &mdash; the sections below are the Short-specific swaps at Scripting, Editing and Thumbnail &amp; SEO, not a separate process.</p>
-              </div>
               <div style={{ padding:'0.875rem 1rem', background:'rgba(0,255,136,0.04)', border:'1px solid rgba(0,255,136,0.15)', borderRadius:'0.875rem', marginBottom:'0.625rem' }}>
                 <p style={{ fontSize:'0.78rem', color:C.green, fontWeight:700, margin:'0 0 0.5rem' }}>Treat the channel as a brand from day one.</p>
                 <p style={{ fontSize:'0.75rem', color:C.sec, margin:0, lineHeight:1.6 }}>Decide your fonts, colours, logo, and banner before posting anything. Posting without this means building an audience on a channel that doesn&apos;t look like a real brand &mdash; and it shows.</p>
@@ -673,18 +655,11 @@ export default function YouTubePage() {
             <div style={{ marginBottom:'1.5rem', padding:'0.875rem 1rem', background:'rgba(255,184,0,0.05)', border:'1px solid rgba(255,184,0,0.15)', borderRadius:'0.875rem', display:'flex', alignItems:'center', gap:'0.75rem' }}>
               <span style={{ fontSize:'1rem' }}>&#128214;</span>
               <p style={{ fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5 }}>
-                Permanent reference for the finance brand format. SOPs 01&ndash;10 are numbered to match the Content Pipeline stages in order &mdash; open the one matching whatever stage a video is sitting in. You don&apos;t need to re-read this every video.
+                Permanent reference for the finance brand format. Open the relevant toggle when you need it &mdash; you don&apos;t need to re-read this every video.
               </p>
             </div>
-
-            <p style={{ fontSize:'0.68rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>Setup &mdash; run once</p>
-            <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', marginBottom:'1.5rem' }}>
-              {SOPS.filter(s => s.group === 'setup').map(sop => <SOPCard key={sop.id} sop={sop} />)}
-            </div>
-
-            <p style={{ fontSize:'0.68rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>Per-video production &mdash; run in order, every video</p>
             <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
-              {SOPS.filter(s => s.group === 'production').map(sop => <SOPCard key={sop.id} sop={sop} />)}
+              {SOPS.map(sop => <SOPCard key={sop.id} sop={sop} />)}
             </div>
           </div>
         )}
