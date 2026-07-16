@@ -377,7 +377,10 @@ export default function VaultPage() {
       from_vault: true,
     })
     if (!error) {
-      setToast('Added to tasks: ' + item.title.slice(0, 40))
+      await supabase.from('vault_items').delete().eq('id', item.id)
+      setItems(prev => prev.filter(i => i.id !== item.id))
+      if (expanded === item.id) setExpanded(null)
+      setToast('Moved to tasks: ' + item.title.slice(0, 40))
       setTimeout(() => setToast(null), 3000)
     }
   }
