@@ -18,21 +18,33 @@ const ALLOWED_MODELS: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { systemPrompt, userPrompt, model } = await req.json()
+    const { systemPrompt, userPrompt, model, webSearch } = await req.json()
     const resolvedModel = ALLOWED_MODELS[model] ?? ALLOWED_MODELS['claude-haiku-4-5-20251001']
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY ?? '',
+      'anthropic-version': '2023-06-01',
+    }
+    const body: Record<string, unknown> = {
+      model: resolvedModel,
+      max_tokens: webSearch ? 2500 : 1500,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    }
+    // Idea validation opts into Claude's native web search tool so it can
+    // actually look up comparable YouTube videos and comment themes instead
+    // of guessing. Only requested when the caller explicitly asks for it
+    // (the validation flow) — everything else is unaffected.
+    if (webSearch) {
+      headers['anthropic-beta'] = 'web-search-2025-03-05'
+      body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }]
+    }
+
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY ?? '',
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: resolvedModel,
-        max_tokens: 1500,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
+      headers,
+      body: JSON.stringify(body),
     })
     const data = await res.json()
     return NextResponse.json(data)

@@ -6,9 +6,22 @@ import { sopForStage, IDEA_VALIDATION_CHECKS } from '@/lib/sops'
 import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check } from 'lucide-react'
 
 const IDEA_VALIDATION_SOP_ID = 'idea_validation'
+// Manual log of a Claude-chat consult (copy prompt -> paste into Claude ->
+// paste the reply back here) — separate from IDEA_VALIDATION_SOP_ID, which
+// stores the structured result of the in-app automated call.
+const IDEA_LOG_SOP_ID = 'idea_validation_log'
+type IdeaLog = { reply: string; nextSteps: string; loggedAt: string }
 
 type ValidationCheckResult = { key: string; status: 'pass' | 'fail' | 'needs_research'; note: string }
-type ValidationResult = { verdict: 'Viable' | 'Needs More Research' | 'Not Viable'; summary: string; checks: ValidationCheckResult[]; model?: string }
+type ValidationAlternative = { title: string; why: string; evidence: string }
+type ValidationResult = {
+  verdict: 'Viable' | 'Needs More Research' | 'Not Viable'
+  summary: string
+  checks: ValidationCheckResult[]
+  model?: string
+  researched?: boolean
+  alternatives?: ValidationAlternative[]
+}
 
 // Models available for the "Validate" consult call — value is the exact
 // Anthropic model string (whitelisted server-side in
@@ -29,8 +42,24 @@ function consultModelLabel(value: string): string {
 // is fully self-contained (no app context needed) so it can be pasted into
 // Claude Code, claude.ai, or any other Claude surface for a deeper manual
 // pass, including running it through a skill if one applies.
+//
+// The method below is spelled out in full rather than referenced by name —
+// "outlier evidence" and "comment-mined gap" specifically require finding
+// and reading real YouTube videos/comments, not guessing from priors.
+const VALIDATION_METHOD = `Validate this YouTube video idea using the following method, step by step:
+1. PITCH — Can the idea be stated as one clear sentence a viewer could repeat back? If it takes a paragraph to explain, it's not ready.
+2. ANGLE — Does the framing use a proven high-CTR pattern (a specific number, a contrarian claim, a curiosity gap, a direct named benefit, a before/after)? Vague or generic framing fails this.
+3. ALPHA CHECK — Does this idea contain something a generic AI answer or a quick search wouldn't already give a viewer? If not, it's a "recipe" video with no edge.
+4. OUTLIER EVIDENCE — Search YouTube for existing videos on this exact topic and closely adjacent topics in this niche. Identify videos that clearly overperformed relative to their channel's typical view count (outliers), note their approximate view counts, channel names, and how recent they are. This tells you whether there is proven audience demand, not just supply.
+5. COMMENT-MINED GAP — Read the comments on the outlier videos found in step 4 (or the closest available videos in the niche). Look for repeated questions, complaints, or requests that existing videos do NOT answer well. That unmet demand is the gap this new video should fill.
+6. VIDEO TYPE / FUNNEL FIT — Does the format (how-to, listicle, case study, explainer, testimonial/interview) match a sensible role in the content funnel — how-tos and explainers pull search traffic, listicles are passive top-of-funnel reach, case studies build authority, testimonials/interviews convert?
+7. REVENUE-TIER AWARENESS — Is this idea aligned with a monetizable tier appropriate to the channel's current stage (ads, affiliate, product, service, community), or is it pure vanity content with no path to revenue?
+
+Tool use: if you have live web/YouTube search available in this environment, you MUST actually use it for steps 4 and 5 — search, open real results, and cite what you found (approximate titles, view counts, channel names, and specific comment themes) in your notes for those checks. Only mark a check "needs_research" if you genuinely have no search capability here — never fabricate statistics, video titles, or comments.`
+
 function buildValidationPrompt(item: ContentItem): { systemPrompt: string; userPrompt: string; combined: string } {
-  const systemPrompt = 'You are a strict YouTube idea validator for SoundMoney, a channel on Austrian economics and sound money, applying Shane Hummus\'s idea-validation method. Evaluate ONLY the information given in the user message — never invent outlier video statistics, comment data, or facts that were not provided. If a check needs evidence that is not present, mark it needs_research rather than guessing. Return ONLY valid JSON matching the schema described, no markdown fences, no commentary outside the JSON.'
+  const systemPrompt = 'You are a strict YouTube idea validator for SoundMoney, a channel on Austrian economics and sound money. ' + VALIDATION_METHOD +
+    '\n\nNever invent outlier video statistics, comment data, or facts you did not actually find. Return ONLY valid JSON matching the schema described, no markdown fences, no commentary outside the JSON.'
   const userPrompt = `Video idea title: ${item.title}\n` +
     (item.video_type ? `Video type: ${item.video_type}\n` : '') +
     (item.format ? `Format: ${item.format}\n` : '') +
@@ -38,10 +67,37 @@ function buildValidationPrompt(item: ContentItem): { systemPrompt: string; userP
     (item.notes ? `Notes (may include outlier stats, comment research, pitch, etc.): ${item.notes}\n` : '') +
     `\nEvaluate this idea against exactly these checks, in this order:\n` +
     IDEA_VALIDATION_CHECKS.map((c, i) => `${i + 1}. [${c.key}] ${c.label} — ${c.hint}`).join('\n') +
-    `\n\nReturn JSON exactly in this shape:\n{"verdict":"Viable"|"Needs More Research"|"Not Viable","summary":"one or two sentences","checks":[{"key":"pitch","status":"pass"|"fail"|"needs_research","note":"one sentence"}, ... one entry per check above, same order, same keys]}\n\nVerdict rule: "Not Viable" only if the core idea is fundamentally weak (no angle, already well-covered with nothing new, pitch doesn't hold together). "Needs More Research" if the idea itself is sound but one or more checks are needs_research (e.g. missing outlier stats or comment data). "Viable" only if nothing is needs_research or failing.`
+    `\n\nReturn JSON exactly in this shape:\n` +
+    `{"researched":true|false,"verdict":"Viable"|"Needs More Research"|"Not Viable","summary":"one or two sentences","checks":[{"key":"pitch","status":"pass"|"fail"|"needs_research","note":"one sentence, cite what you found if you searched"}, ... one entry per check above, same order, same keys],"alternatives":[{"title":"an alternative idea title","why":"why this angle is more likely to work","evidence":"the specific outlier video, comment theme, or proven pattern this is based on — or say 'no live search available, based on established niche patterns' if you could not research"}]}\n\n` +
+    `"researched" should be true only if you actually used live web/YouTube search for steps 4 and 5, false if you had no search capability and relied on general knowledge.\n\n` +
+    `Verdict rule: "Not Viable" only if the core idea is fundamentally weak (no angle, already well-covered with nothing new, pitch doesn't hold together). "Needs More Research" if the idea itself is sound but one or more checks are needs_research (e.g. missing outlier stats or comment data). "Viable" only if nothing is needs_research or failing.\n\n` +
+    `Alternatives rule: if verdict is NOT "Viable", "alternatives" is REQUIRED — give 2 to 4 concrete alternative angles or ideas, similar to the original topic, that are more likely to work based on what you found (or, absent search, on well-established patterns in this niche). Each alternative must have real "evidence" backing it, not a generic guess. If verdict IS "Viable", you may return an empty alternatives array.`
   const combined = systemPrompt + '\n\n---\n\n' + userPrompt +
-    '\n\nGo deeper than a quick pass — actually research outlier videos and existing comment sections for this topic if you have the tools to (web search, a research skill, etc.), rather than marking those needs_research by default. Reply with the JSON described above, plus a short plain-English explanation underneath it.'
+    '\n\nUse whatever research tools you have (web search, YouTube search, a research skill) to actually complete steps 4 and 5 rather than guessing — that is the whole point of running this through a Claude surface with tools attached. Reply with the JSON described above only.'
   return { systemPrompt, userPrompt, combined }
+}
+
+// Short prompt for the "Copy prompt" button — meant to be pasted into a
+// Claude chat (Claude Code, claude.ai, Cowork) that has the installed
+// "youtube-idea-validator" skill. Rather than re-deriving the checklist
+// inline (which can drift from the actual skill and doesn't get Claude's
+// real research tools reliably invoked), this just names the skill and
+// hands over the idea's details — the skill itself carries the full method,
+// the research requirement, and the evidence-backed-alternatives rule.
+function buildSkillInvokePrompt(item: ContentItem): string {
+  const lines = [
+    'Use the youtube-idea-validator skill to validate this YouTube video idea.',
+    '',
+    'Channel: SoundMoney — Austrian economics and sound money, roughly 15k subscribers.',
+    `Title: ${item.title}`,
+  ]
+  if (item.video_type) lines.push(`Video type: ${item.video_type}`)
+  if (item.format) lines.push(`Format: ${item.format}`)
+  if (item.unique_angle) lines.push(`Unique angle / alpha so far: ${item.unique_angle}`)
+  lines.push(`Description: ${item.notes?.trim() ? item.notes : '(nothing written yet — work from the title alone and flag that in the report)'}`)
+  lines.push('')
+  lines.push('Actually search for comparable videos and read their comments rather than estimating — give me the full report with a verdict, the checklist, and evidence-backed alternatives if you don\'t land on Viable.')
+  return lines.join('\n')
 }
 
 const C = {
@@ -146,8 +202,14 @@ function MoveModal({ item, onMove, onClose }: { item:ContentItem; onMove:(s:stri
 
 // ── Idea detail + validate modal ────────────────────────────────────────────
 // Click an idea to open this: title + description up top (editable, saved
-// on blur), then Validate runs it through the Hummus checklist via Claude —
-// model choice and prompt come from CONSULT_MODELS / buildValidationPrompt above.
+// on blur). Two ways to get it checked:
+//  1. Consult Claude directly (primary) — copy a prompt that invokes the
+//     installed "youtube-idea-validator" skill, paste it into a Claude chat
+//     with real research tools, then paste the reply + your next steps back
+//     here so there's a saved log against the idea.
+//  2. Quick automated check (secondary, collapsed by default) — calls
+//     Claude from inside the app itself. Faster, but has less room to
+//     actually browse than a full Claude Code/chat session does.
 
 const VERDICT_STYLE: Record<ValidationResult['verdict'], { color: string; bg: string; border: string }> = {
   'Viable':              { color:'#22c55e', bg:'rgba(34,197,94,0.1)',  border:'rgba(34,197,94,0.3)' },
@@ -161,26 +223,39 @@ function CheckIcon({ status }: { status: ValidationCheckResult['status'] }) {
   return <HelpCircle size={13} color={C.amber}/>
 }
 
-function IdeaDetailModal({ item, result, loading, msg, onSaveField, onRun, onPromote, onClose }: {
+function IdeaDetailModal({ item, result, loading, msg, ideaLog, ideaLogMsg, onSaveField, onSaveLog, onRun, onPromote, onClose }: {
   item: ContentItem; result: ValidationResult | null; loading: boolean; msg: string | null
+  ideaLog: IdeaLog | null; ideaLogMsg: string | null
   onSaveField: (patch: Partial<Pick<ContentItem, 'title' | 'notes'>>) => void
-  onRun: (model: string) => void; onPromote: () => void; onClose: () => void
+  onSaveLog: (reply: string, nextSteps: string) => void
+  onRun: (model: string, webSearch: boolean) => void; onPromote: () => void; onClose: () => void
 }) {
   const vs = result ? VERDICT_STYLE[result.verdict] : null
   const [title, setTitle] = useState(item.title)
   const [description, setDescription] = useState(item.notes ?? '')
   const [modelKey, setModelKey] = useState(result?.model ?? DEFAULT_CONSULT_MODEL)
+  const [webSearch, setWebSearch] = useState(true)
   const [copied, setCopied] = useState(false)
+  const [showAutoCheck, setShowAutoCheck] = useState(false)
+  const [replyDraft, setReplyDraft] = useState(ideaLog?.reply ?? '')
+  const [nextStepsDraft, setNextStepsDraft] = useState(ideaLog?.nextSteps ?? '')
+  const [logSaved, setLogSaved] = useState(false)
 
   async function copyPrompt() {
-    const { combined } = buildValidationPrompt({ ...item, title, notes: description })
+    const prompt = buildSkillInvokePrompt({ ...item, title, notes: description })
     try {
-      await navigator.clipboard.writeText(combined)
+      await navigator.clipboard.writeText(prompt)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
       // clipboard blocked — nothing we can do silently, leave copied state off
     }
+  }
+
+  function saveLog() {
+    onSaveLog(replyDraft, nextStepsDraft)
+    setLogSaved(true)
+    setTimeout(() => setLogSaved(false), 2000)
   }
 
   return (
@@ -211,6 +286,48 @@ function IdeaDetailModal({ item, result, loading, msg, onSaveField, onRun, onPro
           />
         </div>
 
+        {/* ── Consult Claude (primary flow) ── */}
+        <div style={{ marginBottom:'1.5rem', padding:'1rem', background:'rgba(0,212,255,0.04)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.875rem' }}>
+          <h4 style={{ fontSize:'0.78rem', fontWeight:800, color:C.text, margin:'0 0 0.35rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+            <Sparkles size={13} color={C.cyan}/>Consult Claude
+          </h4>
+          <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0 0 0.75rem', lineHeight:1.5 }}>
+            Copy the prompt, paste it into a Claude chat (Claude Code, claude.ai, Cowork) — it invokes the installed <strong>youtube-idea-validator</strong> skill, which actually searches YouTube and reads comments and gives you evidence-backed alternatives if it disagrees. Paste the reply back below to keep a log against this idea.
+          </p>
+          <button onClick={copyPrompt} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:copied?'rgba(34,197,94,0.12)':C.card, border:'1px solid '+(copied?'rgba(34,197,94,0.4)':C.border), borderRadius:'0.625rem', color:copied?'#22c55e':C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700, marginBottom:'0.875rem' }}>
+            {copied ? <Check size={13}/> : <Copy size={13}/>}{copied ? 'Copied — go paste it into Claude' : 'Copy prompt for Claude'}
+          </button>
+
+          <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>Claude&apos;s reply</label>
+          <textarea
+            value={replyDraft} onChange={e => setReplyDraft(e.target.value)}
+            rows={6} placeholder="Paste Claude's full validation report here..."
+            style={{ width:'100%', padding:'0.6rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', outline:'none', resize:'vertical' as const, boxSizing:'border-box' as const, lineHeight:1.5, marginBottom:'0.75rem' }}
+          />
+
+          <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>Next steps — how to move forward</label>
+          <textarea
+            value={nextStepsDraft} onChange={e => setNextStepsDraft(e.target.value)}
+            rows={3} placeholder="e.g. go with alternative #2, needs comment research before greenlighting, promote to Validated..."
+            style={{ width:'100%', padding:'0.6rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', outline:'none', resize:'vertical' as const, boxSizing:'border-box' as const, lineHeight:1.5, marginBottom:'0.75rem' }}
+          />
+
+          {ideaLogMsg && <p style={{ fontSize:'0.7rem', color:C.amber, margin:'0 0 0.5rem' }}>{ideaLogMsg}</p>}
+          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+            <button onClick={saveLog} disabled={!replyDraft.trim() && !nextStepsDraft.trim()} style={{ padding:'0.45rem 0.9rem', background:logSaved?'rgba(34,197,94,0.12)':'rgba(0,212,255,0.1)', border:'1px solid '+(logSaved?'rgba(34,197,94,0.4)':'rgba(0,212,255,0.3)'), borderRadius:'0.5rem', color:logSaved?'#22c55e':C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.74rem', fontWeight:700 }}>
+              {logSaved ? 'Saved' : 'Save log'}
+            </button>
+            {ideaLog && <span style={{ fontSize:'0.65rem', color:C.muted }}>Last logged {new Date(ideaLog.loggedAt).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}</span>}
+          </div>
+        </div>
+
+        {/* ── Quick automated check (secondary, collapsed) ── */}
+        <button onClick={() => setShowAutoCheck(v => !v)} style={{ display:'flex', alignItems:'center', gap:'0.35rem', background:'none', border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, padding:0, marginBottom: showAutoCheck ? '0.75rem' : '1.25rem' }}>
+          <ChevronDown size={12} style={{ transform: showAutoCheck ? 'rotate(0deg)' : 'rotate(-90deg)', transition:'transform 0.15s' }}/>
+          Or run a quick automated check in-app instead
+        </button>
+
+        {showAutoCheck && (<>
         {msg && <p style={{ fontSize:'0.72rem', color:C.amber, margin:'0 0 0.75rem', lineHeight:1.4 }}>{msg}</p>}
 
         {/* Model picker — which Claude model runs the Validate call */}
@@ -225,16 +342,22 @@ function IdeaDetailModal({ item, result, loading, msg, onSaveField, onRun, onPro
           </select>
         </div>
 
+        {/* Web search toggle — lets Claude actually look up comparable YouTube videos + comments */}
+        <label style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'1rem', cursor:loading?'not-allowed':'pointer', fontSize:'0.76rem', color:C.sec }}>
+          <input type="checkbox" checked={webSearch} onChange={e => setWebSearch(e.target.checked)} disabled={loading} style={{ width:'0.9rem', height:'0.9rem' }}/>
+          Search the web while validating (finds comparable YouTube videos + reads their comments for steps 4 &amp; 5)
+        </label>
+
         {!result && !loading && (
           <p style={{ fontSize:'0.78rem', color:C.muted, margin:'0 0 1rem', lineHeight:1.5 }}>
-            Validate checks this against Hummus&apos;s idea-validation criteria — pitch, angle, alpha check, outlier evidence, comment-mined gap, video type/funnel fit, and revenue tier — using {consultModelLabel(modelKey)}. Prefer a deeper, evidence-backed pass instead? Use &quot;Copy prompt&quot; below and paste it into Claude Code or another Claude surface with research tools (a skill, if one applies).
+            Validate runs the full 7-step method — pitch, angle, alpha check, outlier evidence, comment-mined gap, video type/funnel fit, revenue tier — using {consultModelLabel(modelKey)}{webSearch ? ', with live web search for the outlier and comment checks' : ''}. If it doesn&apos;t agree the idea is viable it will suggest evidence-backed alternatives. For deeper research than this app can do itself, use Consult Claude above instead.
           </p>
         )}
 
         {loading && (
           <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', color:C.muted, padding:'1.5rem 0', justifyContent:'center' }}>
             <div style={{ width:'16px', height:'16px', border:'2px solid '+C.muted, borderTopColor:C.cyan, borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
-            Consulting {consultModelLabel(modelKey)}…
+            {webSearch ? 'Searching YouTube and consulting ' : 'Consulting '}{consultModelLabel(modelKey)}…
           </div>
         )}
 
@@ -244,7 +367,12 @@ function IdeaDetailModal({ item, result, loading, msg, onSaveField, onRun, onPro
               <p style={{ fontSize:'0.85rem', fontWeight:800, color:vs!.color, margin:'0 0 0.25rem' }}>{result.verdict}</p>
               <p style={{ fontSize:'0.75rem', color:C.sec, margin:0, lineHeight:1.4 }}>{result.summary}</p>
             </div>
-            <p style={{ fontSize:'0.62rem', color:C.muted, margin:'0 0 1rem' }}>Checked with {consultModelLabel(result.model ?? modelKey)}</p>
+            <p style={{ fontSize:'0.62rem', color:C.muted, margin:'0 0 1rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+              Checked with {consultModelLabel(result.model ?? modelKey)}
+              {result.researched
+                ? <span style={{ color:'#22c55e', fontWeight:700 }}>&bull; used live web search</span>
+                : <span style={{ color:C.amber, fontWeight:700 }}>&bull; no live search — outlier/comment checks are estimates, verify with Consult Claude above</span>}
+            </p>
             <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem', marginBottom:'1.25rem' }}>
               {IDEA_VALIDATION_CHECKS.map(c => {
                 const r = result.checks.find(x => x.key === c.key)
@@ -259,17 +387,39 @@ function IdeaDetailModal({ item, result, loading, msg, onSaveField, onRun, onPro
                 )
               })}
             </div>
+
+            {result.verdict !== 'Viable' && (
+              <div style={{ marginBottom:'1.25rem' }}>
+                <p style={{ fontSize:'0.68rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase', color:C.amber, margin:'0 0 0.5rem' }}>
+                  &#9889; Alternatives more likely to work
+                </p>
+                {(!result.alternatives || result.alternatives.length === 0) ? (
+                  <p style={{ fontSize:'0.74rem', color:C.muted, margin:0, lineHeight:1.4 }}>No alternatives returned — re-run with web search on to get evidence-backed suggestions.</p>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+                    {result.alternatives.map((a, i) => (
+                      <div key={i} style={{ padding:'0.6rem 0.75rem', background:'rgba(255,184,0,0.06)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'0.5rem' }}>
+                        <p style={{ fontSize:'0.78rem', fontWeight:700, color:C.text, margin:'0 0 0.2rem' }}>{a.title}</p>
+                        <p style={{ fontSize:'0.72rem', color:C.sec, margin:'0 0 0.3rem', lineHeight:1.4 }}>{a.why}</p>
+                        <p style={{ fontSize:'0.66rem', color:C.amber, margin:0, lineHeight:1.4 }}>Evidence: {a.evidence}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
 
         <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end', flexWrap:'wrap' as const }}>
-          <button onClick={onClose} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Close</button>
-          <button onClick={copyPrompt} title="Copy the full validation prompt — paste into Claude Code or any Claude surface for a deeper, research-backed pass" style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:copied?'#22c55e':C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
-            {copied ? <Check size={13}/> : <Copy size={13}/>}{copied ? 'Copied' : 'Copy prompt'}
-          </button>
-          <button onClick={() => onRun(modelKey)} disabled={loading} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.cyan, cursor:loading?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, opacity:loading?0.5:1 }}>
+          <button onClick={() => onRun(modelKey, webSearch)} disabled={loading} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.cyan, cursor:loading?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, opacity:loading?0.5:1 }}>
             <Sparkles size={13}/>{result ? 'Re-run Validation' : 'Validate'}
           </button>
+        </div>
+        </>)}
+
+        <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end', flexWrap:'wrap' as const, marginTop:'1rem' }}>
+          <button onClick={onClose} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Close</button>
           {result && result.verdict !== 'Not Viable' && item.pipeline_stage !== '✅ Validated' && (
             <button onClick={onPromote} style={{ padding:'0.5rem 1.25rem', background:'linear-gradient(135deg,#22c55e,#16a34a)', border:'none', borderRadius:'0.625rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>
               Mark Validated &rarr;
@@ -535,6 +685,8 @@ export default function ContentPage() {
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null)
   const [validationLoading, setValidationLoading] = useState(false)
   const [validationMsg, setValidationMsg] = useState<string | null>(null)
+  const [ideaLog, setIdeaLog] = useState<IdeaLog | null>(null)
+  const [ideaLogMsg, setIdeaLogMsg] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -603,14 +755,28 @@ export default function ContentPage() {
     setValidatingItem(item)
     setValidationResult(null)
     setValidationMsg(null)
+    setIdeaLog(null)
+    setIdeaLogMsg(null)
     const { output, error } = await getStageNote(item.id, IDEA_VALIDATION_SOP_ID)
-    if (error) { setValidationMsg(error); return }
-    if (output) {
+    if (error) { setValidationMsg(error) } else if (output) {
       try { setValidationResult(JSON.parse(output) as ValidationResult) } catch { /* stale/invalid — ignore, user can re-run */ }
+    }
+    const { output: logOutput, error: logError } = await getStageNote(item.id, IDEA_LOG_SOP_ID)
+    if (logError) { setIdeaLogMsg(logError); return }
+    if (logOutput) {
+      try { setIdeaLog(JSON.parse(logOutput) as IdeaLog) } catch { /* stale/invalid — ignore */ }
     }
   }
 
-  async function runValidation(item: ContentItem, model: string) {
+  async function saveIdeaLog(item: ContentItem, reply: string, nextSteps: string) {
+    const log: IdeaLog = { reply, nextSteps, loggedAt: new Date().toISOString() }
+    const { error } = await saveStageNote(item.id, IDEA_LOG_SOP_ID, JSON.stringify(log))
+    if (error) { setIdeaLogMsg(error); return }
+    setIdeaLog(log)
+    setIdeaLogMsg(null)
+  }
+
+  async function runValidation(item: ContentItem, model: string, webSearch: boolean) {
     setValidationLoading(true)
     setValidationMsg(null)
     const { systemPrompt, userPrompt } = buildValidationPrompt(item)
@@ -618,13 +784,26 @@ export default function ContentPage() {
       const res = await fetch('/api/content/consult', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ systemPrompt, userPrompt, model }),
+        body: JSON.stringify({ systemPrompt, userPrompt, model, webSearch }),
       })
       const data = await res.json()
       if (data?.error) { setValidationMsg('API error: ' + JSON.stringify(data.error)); return }
-      const raw = data?.content?.[0]?.text ?? ''
+      // With web search enabled, Claude's response can include tool_use /
+      // web_search_tool_result blocks alongside the text — concatenate every
+      // text block rather than assuming the answer is in content[0].
+      const raw = (data?.content ?? [])
+        .filter((b: { type: string; text?: string }) => b.type === 'text')
+        .map((b: { text?: string }) => b.text ?? '')
+        .join('\n')
+        .trim()
       if (!raw) { setValidationMsg('Empty response from Claude.'); return }
-      const clean = raw.replace(/```json|```/g, '').trim()
+      let clean = raw.replace(/```json|```/g, '').trim()
+      // If there's commentary around the JSON despite instructions, pull out
+      // the first {...} block rather than failing to parse.
+      if (!clean.startsWith('{')) {
+        const match = clean.match(/\{[\s\S]*\}/)
+        if (match) clean = match[0]
+      }
       const parsed = JSON.parse(clean) as ValidationResult
       const result: ValidationResult = { ...parsed, model }
       setValidationResult(result)
@@ -774,7 +953,7 @@ export default function ContentPage() {
                         </td>
                         <td style={{ padding:'0.75rem 0.875rem', whiteSpace:'nowrap' as const }}>
                           <div style={{ display:'flex', gap:'0.4rem', alignItems:'center' }}>
-                            <button onClick={() => openValidate(item)} title="Run the Hummus idea-validation checklist" style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.65rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.5rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:700 }}>
+                            <button onClick={() => openValidate(item)} title="Open the idea-validation checklist" style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.65rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.5rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:700 }}>
                               <Sparkles size={11}/>Validate
                             </button>
                             <button onClick={() => setMoveTarget(item)} style={{ padding:'0.3rem 0.5rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem' }}>
@@ -856,8 +1035,11 @@ export default function ContentPage() {
           result={validationResult}
           loading={validationLoading}
           msg={validationMsg}
+          ideaLog={ideaLog}
+          ideaLogMsg={ideaLogMsg}
           onSaveField={patch => saveIdeaField(validatingItem, patch)}
-          onRun={model => runValidation(validatingItem, model)}
+          onSaveLog={(reply, nextSteps) => saveIdeaLog(validatingItem, reply, nextSteps)}
+          onRun={(model, webSearch) => runValidation(validatingItem, model, webSearch)}
           onPromote={() => { promoteToValidated(validatingItem); setValidatingItem(null) }}
           onClose={() => setValidatingItem(null)}
         />
