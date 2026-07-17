@@ -1,12 +1,11 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers } from 'lucide-react'
-import { getActiveFocusVideos } from '@/lib/supabase'
+import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers } from 'lucide-react'
+import { getActiveFocusVideos, type ActiveFocusVideo } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
 import { sopForStage } from '@/lib/sops'
 import { useLanguage } from '@/context/LanguageContext'
-import DailyPlanPanel from '@/components/DailyPlanPanel'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -154,6 +153,7 @@ export default function Home() {
   const lateStart = h >= 10 && h < 14
   const veryLate  = h >= 14
 
+  const [focusVideos, setFocusVideos] = useState<ActiveFocusVideo[]>([])
   const [focusError, setFocusError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -191,6 +191,7 @@ export default function Home() {
         .limit(10),
     ])
       .then(([focusResult, routineRes, tasksRes]) => {
+        setFocusVideos(focusResult.videos)
         setFocusError(focusResult.error)
         const done = !!routineRes.data || localDone
         setRoutineDone(done)
@@ -466,10 +467,39 @@ export default function Home() {
                 <p style={{ fontSize:'0.75rem', color:C.amber, margin:0, lineHeight:1.5 }}>{focusError}</p>
               </div>
             )}
-            <div style={{ width:'100%', maxWidth:'32rem' }}>
-              <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Today&apos;s Plan</p>
-              <DailyPlanPanel date={today} editable={false} clickThrough={true}/>
-            </div>
+            {focusVideos.length > 0 ? (
+              <div style={{ width:'100%', maxWidth:'32rem' }}>
+                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+                  {focusVideos.map(v => (
+                    <div key={v.id} onClick={() => router.push('/content-focus')}
+                      style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+(v.is_active_focus?'rgba(255,184,0,0.3)':C.border), borderRadius:'0.875rem', cursor:'pointer' }}>
+                      <div style={{ width:'2rem', height:'2rem', borderRadius:'0.625rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                        <Tv size={14} color={C.sec}/>
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ fontWeight:600, fontSize:'0.85rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{v.title}</p>
+                        <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>{v.pipeline_stage ?? 'Idea'}{v.format ? ' · '+v.format : ''}</p>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', flexShrink:0 }}>
+                        {v.is_active_focus
+                          ? <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', color:C.amber, padding:'0.15rem 0.5rem', borderRadius:'9999px', fontSize:'0.65rem', fontWeight:700 }}><Star size={9} fill="currentColor" />Pinned</span>
+                          : <span style={{ fontSize:'0.62rem', color:C.muted, padding:'0.15rem 0.4rem' }}>auto-filled</span>
+                        }
+                        <ChevronRight size={14} color={C.muted} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ width:'100%', maxWidth:'32rem' }}>
+                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
+                <div onClick={() => router.push('/content')} style={{ padding:'1rem', background:C.card, border:'1px dashed '+C.border, borderRadius:'0.875rem', cursor:'pointer', textAlign:'center' }}>
+                  <p style={{ fontSize:'0.8rem', color:C.sec, margin:0 }}>No videos in the pipeline yet &mdash; add one in Content</p>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           /* ---- Morning card ---- */
@@ -503,10 +533,39 @@ export default function Home() {
                 <p style={{ fontSize:'0.75rem', color:C.amber, margin:0, lineHeight:1.5 }}>{focusError}</p>
               </div>
             )}
-            <div style={{ width:'100%', maxWidth:'32rem' }}>
-              <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Today&apos;s Plan</p>
-              <DailyPlanPanel date={today} editable={false} clickThrough={true}/>
-            </div>
+            {focusVideos.length > 0 ? (
+              <div style={{ width:'100%', maxWidth:'32rem' }}>
+                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+                  {focusVideos.map(v => (
+                    <div key={v.id} onClick={() => router.push('/content-focus')}
+                      style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+(v.is_active_focus?'rgba(255,184,0,0.3)':C.border), borderRadius:'0.875rem', cursor:'pointer' }}>
+                      <div style={{ width:'2rem', height:'2rem', borderRadius:'0.625rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                        <Tv size={14} color={C.sec}/>
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ fontWeight:600, fontSize:'0.85rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{v.title}</p>
+                        <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>{v.pipeline_stage ?? 'Idea'}{v.format ? ' · '+v.format : ''}</p>
+                      </div>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', flexShrink:0 }}>
+                        {v.is_active_focus
+                          ? <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', color:C.amber, padding:'0.15rem 0.5rem', borderRadius:'9999px', fontSize:'0.65rem', fontWeight:700 }}><Star size={9} fill="currentColor" />Pinned</span>
+                          : <span style={{ fontSize:'0.62rem', color:C.muted, padding:'0.15rem 0.4rem' }}>auto-filled</span>
+                        }
+                        <ChevronRight size={14} color={C.muted} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ width:'100%', maxWidth:'32rem' }}>
+                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
+                <div onClick={() => router.push('/content')} style={{ padding:'1rem', background:C.card, border:'1px dashed '+C.border, borderRadius:'0.875rem', cursor:'pointer', textAlign:'center' }}>
+                  <p style={{ fontSize:'0.8rem', color:C.sec, margin:0 }}>No videos in the pipeline yet &mdash; add one in Content</p>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

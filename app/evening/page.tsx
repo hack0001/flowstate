@@ -3,7 +3,6 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, CheckCircle2, Circle, Star, Clock, Moon } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import DailyPlanPanel from '@/components/DailyPlanPanel'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -78,22 +77,17 @@ function PhaseTomorrow({ onNext }: { onNext: () => void }) {
 
   return (
     <div style={{ animation:'fadeInUp 0.35s ease both' }}>
-      <div style={{ textAlign:'center', marginBottom:'1.5rem' }}>
+      <div style={{ textAlign:'center', marginBottom:'2rem' }}>
         <div style={{ fontSize:'2.5rem', marginBottom:'0.5rem' }}>&#127919;</div>
         <h2 style={{ fontSize:'1.4rem', fontWeight:900, color:C.text, margin:'0 0 0.4rem', letterSpacing:'-0.02em' }}>
-          What should tomorrow look like?
+          What is the single most important task tomorrow?
         </h2>
         <p style={{ fontSize:'0.85rem', color:C.sec, margin:0 }}>
-          Weighted across YouTube, Etsy, Tasks, X and Vault — edit, skip, or push anything to another day.
+          Not the longest, or the most urgent — the one that would move the needle most.
         </p>
-      </div>
-
-      <div style={{ marginBottom:'1.75rem' }}>
-        <DailyPlanPanel date={tomorrowStr()} editable={true}/>
-      </div>
-
-      <div style={{ textAlign:'center', marginBottom:'1rem' }}>
-        <p style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:0 }}>Or set one headline task</p>
+        <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.5rem 0 0' }}>
+          Want the fuller weighted plan across YouTube, Etsy, Tasks, X and Vault? Generate it from the Calendar page instead.
+        </p>
       </div>
 
       {/* Suggestions */}

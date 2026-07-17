@@ -1,28 +1,24 @@
 // ============================================================
 // lib/dailyPlan.ts — Weighted daily workflow plan
-// Generates "what tomorrow should look like" by pulling the top
+// Generates "what a given day should look like" by pulling the top
 // not-done items off each section's existing priority list (Vault,
-// Tasks, Etsy, X) or active-focus signal (YouTube), and filling each
-// section's time budget (set in daily_plan_settings) until it runs out.
-// Used by the Evening page (generate + edit) and the Home page (read).
+// Etsy, X), the active-focus signal (YouTube), or the undated backlog
+// (Tasks) — filling each section's time budget (set in
+// daily_plan_settings) until it runs out.
+//
+// Everything lands as ordinary master_tasks rows so the Calendar page
+// (drag-to-reschedule, "Organise" overdue sweep, "Organise Week" type
+// rebalancing) handles amending/moving them for free — there is no
+// separate storage for the plan. Youtube/Etsy/X/Vault picks become new
+// master_tasks tagged with source_section/source_id (so regenerating
+// doesn't duplicate them); Tasks picks are existing undated tasks that
+// simply get a due_date set.
 // ============================================================
 import { supabase, getActiveFocusVideos } from './supabase'
 import { sopForStage } from './sops'
 import { ETSY_TODOS } from './etsy-data'
 
 export type DailyPlanSection = 'youtube' | 'etsy' | 'tasks' | 'x' | 'vault'
-export type DailyPlanStatus = 'planned' | 'done' | 'skipped' | 'rescheduled'
-
-export type DailyPlanItem = {
-  id: string
-  plan_date: string
-  section: DailyPlanSection
-  source_id: string | null
-  title: string
-  minutes: number
-  order_index: number
-  status: DailyPlanStatus
-}
 
 export type DailyPlanSettings = {
   total_minutes: number
@@ -37,14 +33,8 @@ const DEFAULT_SETTINGS: DailyPlanSettings = {
   total_minutes: 360, pct_youtube: 50, pct_etsy: 20, pct_tasks: 15, pct_x: 10, pct_vault: 5,
 }
 
-const SECTION_ORDER: DailyPlanSection[] = ['youtube', 'etsy', 'tasks', 'x', 'vault']
-const SECTION_LABEL: Record<DailyPlanSection, string> = {
+export const SECTION_LABEL: Record<DailyPlanSection, string> = {
   youtube: 'YouTube', etsy: 'Etsy', tasks: 'Tasks', x: 'X / Social', vault: 'Vault',
-}
-export { SECTION_ORDER, SECTION_LABEL }
-
-export function toDateStr(d: Date): string {
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
 }
 
 export async function getDailyPlanSettings(): Promise<DailyPlanSettings> {
@@ -62,17 +52,6 @@ export async function getDailyPlanSettings(): Promise<DailyPlanSettings> {
 
 export async function saveDailyPlanSettings(s: DailyPlanSettings): Promise<void> {
   await supabase.from('daily_plan_settings').upsert({ id: 1, ...s, updated_at: new Date().toISOString() }, { onConflict: 'id' })
-}
-
-export async function getDailyPlan(date: string): Promise<DailyPlanItem[]> {
-  const { data } = await supabase.from('daily_plans').select('*').eq('plan_date', date).order('order_index')
-  return (data ?? []) as DailyPlanItem[]
-}
-
-// Removes every row for a date except ones already rescheduled away or
-// marked done — used before regenerating so a re-run doesn't duplicate.
-export async function clearDailyPlan(date: string): Promise<void> {
-  await supabase.from('daily_plans').delete().eq('plan_date', date).in('status', ['planned', 'skipped'])
 }
 
 // ---- Section adapters — each returns ranked candidate blocks, not yet persisted ----
@@ -114,10 +93,14 @@ async function pullFromPriorityList(key: string, section: DailyPlanSection, budg
   return out
 }
 
+// Tasks is special: the candidates ARE master_tasks rows already (the
+// backlog — anything with no due_date yet), ranked by tasks_priority.
+// generateDailyPlan sets their due_date directly rather than inserting
+// a new row for them (see below).
 async function pullTasks(budget: number): Promise<Draft[]> {
   return pullFromPriorityList('tasks_priority', 'tasks', budget, 30, async () => {
-    const { data } = await supabase.from('master_tasks').select('id,title,status').neq('status', 'Done')
-    return (data ?? []).map((t: { id: string; title: string; status: string }) => ({ id: t.id, title: t.title, done: false }))
+    const { data } = await supabase.from('master_tasks').select('id,title,status,due_date').is('due_date', null).neq('status', 'Done')
+    return (data ?? []).map((t: { id: string; title: string }) => ({ id: t.id, title: t.title, done: false }))
   })
 }
 
@@ -160,7 +143,14 @@ async function pullEtsy(budget: number): Promise<Draft[]> {
 
 // ---- Generation ----
 
-export async function generateDailyPlan(date: string): Promise<DailyPlanItem[]> {
+export type GeneratePlanResult = { created: number; scheduled: number }
+
+// Writes the weighted plan for `date` directly into master_tasks:
+//  - Tasks picks: existing backlog tasks get due_date = date (update)
+//  - Everything else: new master_tasks rows tagged source_section/source_id
+//    (skipped if an active task for that source_id already exists, so
+//    regenerating — or generating for a different day — doesn't duplicate)
+export async function generateDailyPlan(date: string): Promise<GeneratePlanResult> {
   const settings = await getDailyPlanSettings()
   const budgets: Record<DailyPlanSection, number> = {
     youtube: Math.round(settings.total_minutes * settings.pct_youtube / 100),
@@ -178,36 +168,38 @@ export async function generateDailyPlan(date: string): Promise<DailyPlanItem[]> 
     pullVault(budgets.vault),
   ])
 
-  const bySection: Record<DailyPlanSection, Draft[]> = { youtube, etsy, tasks, x, vault }
-  const rows = SECTION_ORDER.flatMap(section => bySection[section]).map((d, i) => ({
-    plan_date: date, section: d.section, source_id: d.source_id, title: d.title,
-    minutes: d.minutes, order_index: i, status: 'planned' as DailyPlanStatus,
-  }))
+  // Tasks: move existing backlog tasks onto this date.
+  let scheduled = 0
+  for (const t of tasks) {
+    if (!t.source_id) continue
+    const { error } = await supabase.from('master_tasks').update({ due_date: date }).eq('id', t.source_id)
+    if (!error) scheduled++
+  }
 
-  if (rows.length === 0) return []
+  // Everything else: insert new tasks, skipping any source_id that
+  // already has an active (not done, not archived) task somewhere.
+  const toInsert = [...youtube, ...etsy, ...x, ...vault]
+  let created = 0
+  if (toInsert.length > 0) {
+    const ids = toInsert.map(d => d.source_id).filter(Boolean) as string[]
+    const { data: existing } = await supabase
+      .from('master_tasks')
+      .select('source_id')
+      .in('source_id', ids)
+      .neq('status', 'Done')
+    const existingIds = new Set((existing ?? []).map((r: { source_id: string | null }) => r.source_id))
+    const rows = toInsert
+      .filter(d => !d.source_id || !existingIds.has(d.source_id))
+      .map(d => ({
+        title: d.title, due_date: date, status: 'Not started', task_type: 'Flow',
+        source_section: d.section, source_id: d.source_id,
+      }))
+    if (rows.length > 0) {
+      const { data, error } = await supabase.from('master_tasks').insert(rows).select()
+      if (error) throw error
+      created = data?.length ?? 0
+    }
+  }
 
-  const { data, error } = await supabase.from('daily_plans').insert(rows).select()
-  if (error) throw error
-  return (data ?? []) as DailyPlanItem[]
-}
-
-// ---- Editing ----
-
-export async function updatePlanItem(id: string, patch: Partial<Pick<DailyPlanItem, 'minutes' | 'order_index' | 'status' | 'title'>>): Promise<void> {
-  await supabase.from('daily_plans').update(patch).eq('id', id)
-}
-
-export async function reorderPlan(items: DailyPlanItem[]): Promise<void> {
-  await Promise.all(items.map((it, i) => it.order_index === i ? Promise.resolve() : supabase.from('daily_plans').update({ order_index: i }).eq('id', it.id)))
-}
-
-// Reschedule an item to a later date (default: tomorrow relative to its
-// current plan_date) and mark the original as 'rescheduled' rather than
-// deleting it, so the evening review keeps a record of what got pushed.
-export async function rescheduleItem(item: DailyPlanItem, toDate: string): Promise<void> {
-  await supabase.from('daily_plans').update({ status: 'rescheduled' }).eq('id', item.id)
-  await supabase.from('daily_plans').insert({
-    plan_date: toDate, section: item.section, source_id: item.source_id,
-    title: item.title, minutes: item.minutes, order_index: 999, status: 'planned',
-  })
+  return { created, scheduled }
 }
