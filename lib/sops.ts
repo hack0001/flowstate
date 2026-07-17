@@ -1,0 +1,241 @@
+// ============================================================
+// lib/sops.ts — Shared Production SOP data
+// Single source of truth for the step-by-step SOP checklists, used by:
+//   - app/youtube/page.tsx        (Channel Hub → SOPs tab, browsable reference)
+//   - app/content-focus/[id]/...  (YouTube-Pipeline-driven focus session)
+//
+// Groups: 'setup' runs once (new channel / channel-wide), 'production' runs
+// every single video and is numbered to match the Content Pipeline stages
+// in app/content/page.tsx 1-for-1 (see STAGE_TO_SOP below).
+// ============================================================
+
+export type SOP = { id: string; icon: string; title: string; tagline: string; steps: string[]; group: 'setup' | 'production' }
+
+export const SOPS: SOP[] = [
+  {
+    id:'00', icon:'&#128293;', title:'Channel Warm-Up', group:'setup',
+    tagline:'Never upload to a cold account. Spend 5 days building a real human profile first. Run once, before your first-ever upload.',
+    steps:[
+      '<strong>Days 1&ndash;3 (repeat daily):</strong> Watch 30 minutes of content in your niche, like a handful of videos per session, leave 2&ndash;3 genuine comments, and subscribe to 3&ndash;5 channels in your niche.',
+      '<strong>Why this works:</strong> YouTube&apos;s algorithm is learning what this account cares about before you upload anything. You are building the profile of a real, engaged human. Most people create an account and upload 10 minutes later &mdash; the algorithm has no context and flags it as potential spam. This removes that risk.',
+      '<strong>Day 4:</strong> Upload your banner and logo, set your channel name, and write the channel description. The channel should look like a real, intentional presence before a single video appears on it. (Cross-reference: this overlaps with the one-time &ldquo;Channel Creation&rdquo; checklist on the Checklists tab &mdash; do both together.)',
+      '<strong>Day 5:</strong> Upload your first video. You are now uploading into a warmed account with niche context &mdash; not a blank slate the algorithm is suspicious of.',
+      '<strong>Make the first video count:</strong> The algorithm gives new channels a genuine push on early uploads &mdash; your first video gets a real shot at reaching people outside your subscribers. Publishing without planning used to be fine when channels needed 25&ndash;50 videos to find their niche. That is no longer true. Wasting the first upload on an unplanned video is the single biggest mistake a new channel makes. Run the full production SOP sequence below (01&ndash;10) before Day 5.',
+    ],
+  },
+  {
+    id:'01', icon:'&#128161;', title:'Idea & Validation', group:'production',
+    tagline:'Commit only to topics that have demand, a clear angle, and meme/story potential. Pipeline stages: 💡 Idea → ✅ Validated.',
+    steps:[
+      'Brain-dump 3&ndash;5 ideas &mdash; economics in the news, trending Reddit threads (r/economics, r/wallstreetbets), Financial Times headlines',
+      'Search YouTube for each idea. Watch the top 3 results. Ask: what&apos;s missing? Too dry? Too shallow? No humour? That&apos;s your opening.',
+      '<strong>Outlier video analysis:</strong> On the top channels in your niche, sort by Most Popular. Find the videos that massively outperformed that channel&apos;s average view count. Those outliers reveal what the algorithm is hungry for right now &mdash; breakout potential, not just steady demand. These are your best topic signals.',
+      'Find your angle &mdash; historical parallel, contrarian take, or absurd analogy. Formula: <em>big topic + unexpected frame</em>',
+      'Write the one-line pitch: &ldquo;This video explains X by showing Y.&rdquo; If you can&apos;t do it in one line, it&apos;s probably two videos.',
+      'Confirm format: long-form deep-dive or Short hook/punchline?',
+      'Check whether there&apos;s a Short hiding inside the long-form topic &mdash; one stat, one absurd fact, one wild historical moment.',
+      '<strong>Alpha check:</strong> could ChatGPT or a 5-minute Google search already answer this well? If yes, don&apos;t make the video as-is &mdash; find the thing AI can&apos;t easily give: original data you pulled yourself, a contrarian take, a historical parallel nobody else has used, a real number nobody else calculated. Write that unique angle down. If you can&apos;t fill it in, the idea is a recipe, not a video.',
+      '<strong>Revenue-tier check:</strong> is this topic mass-market explainer territory (lower pay per view) or a sharper, higher-value angle within sound money/economics (higher pay per view)? You don&apos;t have to chase the highest tier every time, but know which one you&apos;re picking and why.',
+      'Name the project and create the folder: <code>/videos/YYYY-MM_topic-name/</code>',
+      'Move the idea to <strong>✅ Validated</strong> in the Content Pipeline once the angle, pitch, unique angle and format are confirmed.',
+    ],
+  },
+  {
+    id:'02', icon:'&#128218;', title:'Research', group:'production',
+    tagline:'Build the facts, stories, rabbit holes and meme potential before you write a word. Pipeline stage: 📚 Research.',
+    steps:[
+      'Spend 60&ndash;90 min reading deeply: Wikipedia (follow footnotes), academic papers, news archives, Google Scholar for stats',
+      'Find 2&ndash;3 wild statistics or counterintuitive facts &mdash; these become your hook and most shareable moments',
+      'Find at least one historical parallel (Tulip mania, Bretton Woods, South Sea Bubble &mdash; economics repeats itself)',
+      'Identify the &ldquo;villain&rdquo;, &ldquo;hero&rdquo; or turning point &mdash; good economics content always has a character or institution to root for or against',
+      'Write down the one key idea the viewer should leave with. Build back from that.',
+      'Source every fact &mdash; note URLs in a doc so you can sanity-check before publishing',
+      'Scan for meme potential: check Know Your Meme, Twitter/X, Reddit for existing references your audience will already recognise',
+    ],
+  },
+  {
+    id:'03', icon:'&#127919;', title:'Holy Trifecta (Concept)', group:'production',
+    tagline:'Decide the click before you write a word of script. Title, thumbnail concept and hook must all pull in the same direction. Pipeline stage: 🎯 Holy Trifecta.',
+    steps:[
+      '<strong>Thumbnail + title create a journey together:</strong> They are not two separate tasks. Someone sees the thumbnail first, the title completes the thought. Both must pull in the same direction toward curiosity.',
+      '<strong>4 thumbnail types &mdash; always combine at least 2:</strong> (1) Subject next to something bigger &mdash; creates scale and context. (2) Comparison &mdash; before/after, cheap vs expensive, old vs new. (3) Blur or obscure the main result &mdash; force the click to reveal it. (4) Big number or stat &mdash; creates instant curiosity. Single-formula thumbnails are average. Stack them. Pick the combo now &mdash; the final image gets built later in Thumbnail & SEO once you have real footage.',
+      '<strong>Title formula:</strong> [Wild Stat or Claim] + [The Surprising Reason] &mdash; write 3 options, pick the strongest curiosity gap.',
+      'Sanity-check the hook you&apos;ll open the script with against the title and thumbnail concept &mdash; all three should promise the exact same payoff, or the video will feel like a bait-and-switch.',
+      'Lock the direction and move on &mdash; this stage is a fast decision, not a design session. The actual thumbnail asset gets produced later once you have real footage/b-roll (see Thumbnail & SEO SOP).',
+    ],
+  },
+  {
+    id:'04', icon:'&#128221;', title:'Scripting', group:'production',
+    tagline:'Plan before you write. The script is your production blueprint.',
+    steps:[
+      '<strong>Step 1 &mdash; Common Goal:</strong> Before a single word of script, write down what the viewer actually wants &mdash; not what the video is about, but what they are trying to feel or achieve. (e.g. &ldquo;feel informed and not fooled by mainstream financial news&rdquo;)',
+      '<strong>Step 2 &mdash; Deeper Problem:</strong> Beneath that goal, what is the real underlying frustration? (e.g. &ldquo;they feel lied to and confused by noise from institutions they can&apos;t trust&rdquo;) &mdash; this is the emotional hook the whole video is built on.',
+      '<strong>Step 3 &mdash; Audience Avatar:</strong> Write down one specific person in detail &mdash; age, what they already know, what they are struggling with right now. Every line of script is written for that one person.',
+      '<strong>Step 4 &mdash; Outline, then AI roast:</strong> Build the story architecture before writing any script. Once the outline is done, paste it into ChatGPT and ask: &ldquo;Roast this &mdash; what did I miss? What is boring? What should I add, remove, or change? What about a different plot twist?&rdquo; Go back and forth 2&ndash;3 times. Then close the AI and write the script yourself.',
+      '<strong>The Trojan Horse rule:</strong> Nobody wants pure knowledge. The economics insight must be delivered inside a story. The script, editing, and animations are all the horse &mdash; the information is hidden inside. Without the horse, nobody watches to the end.',
+      '<strong>Story arc (use as a lens, not a formula):</strong> Every video benefits from a journey: a character with a problem &rarr; a discovery or turning point &rarr; barriers and tension &rarr; resolution. For SoundMoney: the viewer is the character, the financial system is the world, the discovery is the insight mainstream media missed, and the resolution is clarity. Not a rigid structure &mdash; just ask yourself whether each video has a journey or just information.',
+      '<strong>The format rhythm (Fireship-style):</strong> Intense info &rarr; brief absurd joke &rarr; back to info. Vary constantly. Never let the viewer predict the next beat.',
+      'Write the hook first &mdash; first 15 seconds for long form, first 3 for Short. Open with the wildest stat, a bold claim, or a question that makes stopping feel impossible.',
+      'Build a 5&ndash;8 section outline. Each section = one idea + one beat + one joke or moment.',
+      'Write full script word-for-word &mdash; write how you <em>speak</em>, not how you write. Set a timer and write fast on the first draft &mdash; fix grammar later. Read every line aloud as you go.',
+      '<strong>Script colour-coding:</strong> Once drafted, highlight in 4 types throughout the doc: spoken VO (default/white), <strong style="color:#00d4ff">[B-ROLL: description]</strong> in blue, <strong style="color:#00ff88">[MEME: description]</strong> in green, <strong style="color:#ffb800">[SFX: sound cue]</strong> in amber. This removes guesswork on the timeline and makes the edit significantly faster.',
+      'For Shorts: 60&ndash;80 words max. One topic, one punchline, one twist. No padding.',
+      'Write the CTA conversationally &mdash; not like an ad. <em>&ldquo;If that surprised you, wait for the next one.&rdquo;</em>',
+      'Read the full script aloud and time it. If you&apos;re bored reading it, the viewer is bored watching it. Cut.',
+    ],
+  },
+  {
+    id:'05', icon:'&#127912;', title:'Asset Gathering', group:'production',
+    tagline:'Have every meme, b-roll clip, and chart ready before you record. Pipeline stage: 🎨 Assets.',
+    steps:[
+      '<strong>Memes:</strong> imgflip, giphy, Twitter/X, Reddit, Know Your Meme &mdash; save to <code>/assets/memes/</code> with descriptive filenames',
+      '<strong>B-roll (free):</strong> Pexels, Pixabay, Coverr, Archive.org (great for historical footage) &mdash; save to <code>/assets/broll/</code>',
+      '<strong>B-roll (paid):</strong> Storyblocks, Envato Elements',
+      '<strong>Charts &amp; data visuals:</strong> Datawrapper and Flourish are fast and free &mdash; export as MP4 with build animation, save to <code>/assets/charts/</code>',
+      '<strong>Background music:</strong> Epidemic Sound (primary &mdash; royalty-free, YouTube-safe, large catalogue; download stems to isolate drums or bass separately). Artlist as backup.',
+      '<strong>Sound effects:</strong> Epidemic Sound SFX library (same subscription), Freesound.org for specific one-offs, Zapsplat for category packs &mdash; save all to <code>/assets/sfx/</code>. Build a personal SFX folder and reuse across every video.',
+      'Organise before recording: <code>/memes/</code> <code>/broll/</code> <code>/charts/</code> <code>/audio/</code> <code>/sfx/</code> <code>/vo/</code>',
+      'For Shorts: 3&ndash;5 punchy clips max, each under 3 seconds',
+      'Tidy projects save hours in the edit &mdash; never skip the folder structure',
+    ],
+  },
+  {
+    id:'06', icon:'&#127908;', title:'Voiceover Recording', group:'production',
+    tagline:'Your voice is the whole performance. Capture it with energy, clarity, and pace. Pipeline stage: 🎙️ Voiceover.',
+    steps:[
+      '<strong>Setup:</strong> Remove echo with blankets, heavy curtains, or record inside a wardrobe full of clothes',
+      'Do a 30-second test and listen back &mdash; check for hiss, echo, room noise, and levels',
+      'Warm up your voice &mdash; 5 min speaking aloud before hitting record. Cold voice sounds flat.',
+      'Record section by section &mdash; one script chunk per take. Label files: <code>vo_01_hook.wav</code>, <code>vo_02_section1.wav</code>',
+      'Match your energy to the script: fast sections fast, punchy moments punchy',
+      'Re-record any line that sounds flat or unconvincing. You will hear every weak line a thousand times in the edit.',
+      'For Shorts: record in 1&ndash;2 takes, energy must be immediate from the first word',
+      'Keep any spontaneous ad-libs or jokes you discover during recording &mdash; often your best moments',
+    ],
+  },
+  {
+    id:'07', icon:'&#9986;', title:'Editing (Fast-Cut Faceless)', group:'production',
+    tagline:'Build the dense, fast, funny visual style that defines this format. Pipeline stage: ✂️ Editing.',
+    steps:[
+      '<strong>Golden rules:</strong> VO goes on first. Everything hangs off it. The viewer should never see a blank or static shot.',
+      'Memes land on the punchline, not before it. Timing is everything.',
+      'New visual every 2&ndash;4 seconds on long form. Every 1&ndash;2 on Shorts.',
+      '<strong>Cutting balance:</strong> Cut every second where nothing interesting is happening &mdash; but do not cut so aggressively that you kill the story. Retention pace must serve the narrative, not fight it. If a moment needs a beat to land, keep it. Over-cutting long form is as bad as under-cutting.',
+      'Watch your edit at 2x speed. If it&apos;s boring at 2x, it&apos;s boring at 1x.',
+      'Import and label all assets in bins: VO / BROLL / MEMES / MUSIC / GRAPHICS',
+      'Lay the complete VO on the timeline. Don&apos;t start placing visuals until the VO is final.',
+      'Cut the VO: remove every breath, pause, um, and stumble. Use Premiere auto-transcribe or Descript for speed.',
+      'Place b-roll over every second of the timeline. Dense visual coverage is not optional.',
+      'Add memes at every [MEME] marker. Time the visual to arrive exactly as the joke word lands.',
+      'Add on-screen text captions for key stats and memorable lines &mdash; bold, high-contrast, large.',
+      'For Shorts: burn in full captions for every word &mdash; 85% of Shorts are watched with sound off.',
+      'Add background music &mdash; low under talking, rises on key moments. Music should <em>feel</em>, not be heard. Lower than feels natural.',
+      '<strong>Sound design pass (dedicated):</strong> Mute all other tracks and do sound effects with only the VO playing &mdash; you need to hear exactly what you are adding. Combine multiple SFX together on the same moment rather than using single sounds in isolation. Keep all SFX levels lower than feels natural &mdash; they should enhance, not become noticeable.',
+      'Add sound effects on meme pops, chart animations, key stat reveals, and scene transitions.',
+      'Colour grade: Lumetri on each clip individually to match exposure and tone, then run a LUT across all b-roll to unify clips from different sources.',
+      'Keep experimenting each video &mdash; try one new technique per upload. Channels that repeat the same edit style stop growing.',
+      'Watch full edit at 1x as a viewer. Note every moment where your eyes drift. Cut it.',
+      'Export long form: 1080p or 4K, 30fps, H.264. Short: 1080&times;1920 vertical, 30fps, H.264.',
+    ],
+  },
+  {
+    id:'08', icon:'&#128444;', title:'Thumbnail & SEO (Production)', group:'production',
+    tagline:'Build the real thumbnail from the concept you locked in Holy Trifecta, and finalise the SEO metadata. Pipeline stage: 🖼️ Thumbnail & SEO.',
+    steps:[
+      '<strong>Thumbnail:</strong> Build the actual image using the type-combo you picked in Holy Trifecta. Bold graphic, minimal text (max 5 words), high contrast &mdash; check at 120px wide (mobile grid). High-quality source images matter more than most creators admit.',
+      'No face &mdash; use charts, money visuals, bold typography, or dramatic imagery.',
+      'Consistent visual brand: same fonts, same colour palette, same layout style across every thumbnail so the audience recognises SoundMoney in the feed without reading the channel name.',
+      'A/B test: can someone identify the topic in 2 seconds without reading the title?',
+      'Finalise the title from the 3 options drafted in Holy Trifecta &mdash; pick the one that best matches the finished thumbnail.',
+      '<strong>Description:</strong> First 2 lines are indexed by Google &mdash; hook sentence + primary keyword before &ldquo;show more&rdquo;.',
+      'Add timestamps as chapters (every 2&ndash;3 minutes) + links: sources, socials, related videos.',
+      '<strong>Tags:</strong> 3 broad topic tags, 5 specific niche tags, 5 long-tail question-style tags &mdash; research with TubeBuddy or vidIQ.',
+    ],
+  },
+  {
+    id:'09', icon:'&#9729;', title:'Upload & Publish', group:'production',
+    tagline:'Get it live and set up right before anyone sees it. Pipeline stages: ☁️ Scheduled → 📣 Live.',
+    steps:[
+      'Upload to YouTube Studio, set to Private while setting up',
+      'Paste title, description, tags, chapters',
+      'Upload custom thumbnail',
+      'Add end screens at 20 seconds from the end: subscribe button + next video',
+      'Add info cards at 2&ndash;3 relevant moments',
+      'Set category: Education or News &amp; Politics. Confirm NOT marked &ldquo;made for kids&rdquo;.',
+      'Review auto-captions &mdash; correct any financial terms it gets wrong',
+      'Schedule at your channel&apos;s peak time (check Analytics &rarr; Audience tab)',
+      'Shorts: publish immediately &mdash; they benefit from the initial engagement window',
+    ],
+  },
+  {
+    id:'10', icon:'&#128226;', title:'Post-Publish & Growth', group:'production',
+    tagline:"The video doesn't stop working when you hit publish. Pipeline stage: 📊 Post-Published.",
+    steps:[
+      'Community tab: post a wild stat from the video + the link within 30 min of going live',
+      'Clip the funniest or most shocking 30&ndash;60 seconds as a Short (if long form)',
+      'Twitter/X: post the wildest stat as a thread opener + link',
+      'Reddit: r/economics, r/personalfinance, r/investing &mdash; add a sentence of value first, then the link',
+      'Reply to every comment in the first 90 minutes &mdash; YouTube rewards early engagement signals',
+      'Pin a comment with a provocative question to spark debate',
+      '<strong>Universe building:</strong> In the description and pinned comment, reference at least one other SoundMoney video that connects to this topic. Add an info card at the relevant moment in the edit. Every video reinforces the universe &mdash; viewers who stay in it push &ldquo;average views per viewer&rdquo; above 1.',
+      'Check analytics at 48 hrs: CTR, average view duration, impressions, traffic source.',
+      'CTR under 4% = thumbnail/title problem. Retention drop in first 30 sec = hook problem.',
+      '<strong>Revenue attribution, not just views:</strong> views alone don&apos;t tell you what actually paid. Log what this video actually earned (AdSense for that video, or clicks/signups if you&apos;re linking anywhere) in the Pipeline&apos;s Revenue attribution field on the card. A handful of low-view, high-intent videos can out-earn a viral one &mdash; you only see that if you track revenue per video, not just views per video.',
+      '<strong>One-improvement rule:</strong> Pick the single weakest element from this video. Write it down. That is the only thing to fix next time. Trying to improve everything at once fixes nothing.',
+      'Log the video in the Content Tracker.',
+    ],
+  },
+]
+
+// ── Pipeline-stage ⇄ SOP map ────────────────────────────────────────────────
+// Maps a content_items.pipeline_stage value to the SOP whose checklist is the
+// work-to-do for that stage. Completing every step in that SOP is what
+// qualifies the item to advance to the next pipeline stage (see
+// STAGE_ADVANCE below for where it goes next).
+//
+// Two stages have no dedicated SOP:
+//   - '☁️ Scheduled' is folded into SOP 09 (Upload & Publish), which covers
+//     scheduling AND going live in one checklist — there's no separate
+//     actionable checklist for "waiting to go live", it's just calendar time.
+//   - '📊 Post-Published' is the terminal state — once an item is here there
+//     is no further SOP-driven forward work, so it's excluded from stage-map
+//     lookups (and from active-focus auto-fill, since there's nothing left
+//     to complete).
+export const STAGE_TO_SOP: Record<string, string> = {
+  '💡 Idea':             '01',
+  '✅ Validated':         '02',
+  '📚 Research':          '03',
+  '🎯 Holy Trifecta':     '04',
+  '✍️ Script':            '05',
+  '🎨 Assets':            '06',
+  '🎙️ Voiceover':        '07',
+  '✂️ Editing':           '08',
+  '🖼️ Thumbnail & SEO':  '09',
+  '📣 Live':              '10',
+}
+
+// Where a content item's pipeline_stage moves to once its mapped SOP's
+// checklist is fully checked off. Mirrors PIPELINE_STAGES order in
+// app/content/page.tsx (Idea → Validated → Research → Holy Trifecta →
+// Script → Assets → Voiceover → Editing → Thumbnail & SEO → Scheduled →
+// Live → Post-Published), collapsing the Scheduled step into the
+// Upload & Publish SOP as noted above.
+export const STAGE_ADVANCE: Record<string, string> = {
+  '💡 Idea':             '✅ Validated',
+  '✅ Validated':         '📚 Research',
+  '📚 Research':          '🎯 Holy Trifecta',
+  '🎯 Holy Trifecta':     '✍️ Script',
+  '✍️ Script':            '🎨 Assets',
+  '🎨 Assets':            '🎙️ Voiceover',
+  '🎙️ Voiceover':        '✂️ Editing',
+  '✂️ Editing':           '🖼️ Thumbnail & SEO',
+  '🖼️ Thumbnail & SEO':  '📣 Live',
+  '📣 Live':              '📊 Post-Published',
+}
+
+export function sopForStage(stage: string | null): SOP | null {
+  if (!stage) return null
+  const id = STAGE_TO_SOP[stage]
+  if (!id) return null
+  return SOPS.find(s => s.id === id) ?? null
+}

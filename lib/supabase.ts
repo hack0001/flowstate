@@ -104,3 +104,41 @@ export async function getSessionStats(sessionId: string) {
   if (error) throw error
   return data
 }
+
+// ---- YouTube-Pipeline-driven focus session (Home "Start focus session") ----
+// Up to 2 content_items pinned via is_active_focus in the Content Pipeline,
+// topped up with whichever item(s) have sat longest in their current stage
+// if fewer than 2 are pinned. Shared by the Home page preview and
+// app/content-focus/page.tsx (which runs the actual guided session).
+export type ActiveFocusVideo = {
+  id: string
+  title: string
+  pipeline_stage: string | null
+  format: string | null
+  is_active_focus: boolean
+  updated_at: string | null
+}
+
+export async function getActiveFocusVideos(): Promise<ActiveFocusVideo[]> {
+  const { data: pinnedData } = await supabase
+    .from('content_items')
+    .select('id,title,pipeline_stage,format,is_active_focus,updated_at')
+    .eq('is_active_focus', true)
+    .neq('archived', true)
+  const pinned: ActiveFocusVideo[] = pinnedData ?? []
+
+  let combined = pinned.slice(0, 2)
+  if (combined.length < 2) {
+    const { data: fallbackData } = await supabase
+      .from('content_items')
+      .select('id,title,pipeline_stage,format,is_active_focus,updated_at')
+      .eq('is_active_focus', false)
+      .neq('archived', true)
+      .not('pipeline_stage', 'is', null)
+      .neq('pipeline_stage', '📊 Post-Published')
+      .order('updated_at', { ascending: true })
+      .limit(2 - combined.length)
+    combined = [...combined, ...((fallbackData ?? []) as ActiveFocusVideo[])]
+  }
+  return combined
+}

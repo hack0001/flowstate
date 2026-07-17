@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Plus, X, ExternalLink, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2 } from 'lucide-react'
+import { ChevronLeft, Plus, X, ExternalLink, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -54,6 +54,7 @@ type ContentItem = {
   video_type: string | null
   unique_angle: string | null
   revenue_note: string | null
+  is_active_focus: boolean
 }
 
 type View = 'ideas' | 'pipeline' | 'list'
@@ -197,14 +198,41 @@ function AddIdeaModal({ onAdd, onClose }: { onAdd:(title:string,format:string,no
   )
 }
 
+// ── Focus pin star ──────────────────────────────────────────────────────────
+// Pins up to 2 items as the Home page's "active focus" videos/shorts. Capped
+// at 2 in the app layer (see toggleFocus in the main page component below).
+function FocusStar({ active, atCap, onToggle }: { active:boolean; atCap:boolean; onToggle:()=>void }) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onToggle() }}
+      disabled={!active && atCap}
+      title={active ? 'Unpin from Home focus' : atCap ? 'Already 2 pinned — unpin one first' : 'Pin as active focus on Home'}
+      style={{
+        display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+        width:'1.375rem', height:'1.375rem', borderRadius:'0.4rem',
+        background: active ? 'rgba(255,184,0,0.14)' : 'transparent',
+        border:'1px solid '+(active ? 'rgba(255,184,0,0.4)' : C.border),
+        color: active ? C.amber : C.muted,
+        cursor: (!active && atCap) ? 'not-allowed' : 'pointer',
+        opacity: (!active && atCap) ? 0.4 : 1,
+        padding:0,
+      }}>
+      <Star size={11} fill={active ? 'currentColor' : 'none'}/>
+    </button>
+  )
+}
+
 // ── Pipeline card ───────────────────────────────────────────────────────────
-function PipelineCard({ item, onMove, onSaveRevenue }: { item:ContentItem; onMove:()=>void; onSaveRevenue:(note:string)=>void }) {
+function PipelineCard({ item, onMove, onSaveRevenue, onToggleFocus, focusAtCap }: { item:ContentItem; onMove:()=>void; onSaveRevenue:(note:string)=>void; onToggleFocus:()=>void; focusAtCap:boolean }) {
   const s = stageStyle(item.pipeline_stage)
   const [revenue, setRevenue] = useState(item.revenue_note ?? '')
   const isPostPublished = item.pipeline_stage === '📊 Post-Published'
   return (
-    <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', padding:'0.75rem', marginBottom:'0.4rem' }}>
-      <p style={{ fontSize:'0.82rem', fontWeight:700, color:C.text, margin:'0 0 0.4rem', lineHeight:1.35 }}>{item.title}</p>
+    <div style={{ background:C.card, border:'1px solid '+(item.is_active_focus ? 'rgba(255,184,0,0.35)' : C.border), borderRadius:'0.875rem', padding:'0.75rem', marginBottom:'0.4rem' }}>
+      <div style={{ display:'flex', alignItems:'flex-start', gap:'0.4rem', marginBottom:'0.4rem' }}>
+        <p style={{ fontSize:'0.82rem', fontWeight:700, color:C.text, margin:0, lineHeight:1.35, flex:1 }}>{item.title}</p>
+        <FocusStar active={item.is_active_focus} atCap={focusAtCap} onToggle={onToggleFocus}/>
+      </div>
       <div style={{ display:'flex', alignItems:'center', gap:'0.3rem', flexWrap:'wrap' as const, marginBottom:'0.4rem' }}>
         {item.format && <span style={{ fontSize:'0.6rem', color:C.muted, background:C.surface, border:'1px solid '+C.border, borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.format}</span>}
         {item.video_type && <span style={{ fontSize:'0.6rem', color:C.purple, background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.video_type}</span>}
@@ -270,6 +298,15 @@ export default function ContentPage() {
   async function saveRevenueNote(item: ContentItem, note: string) {
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, revenue_note: note } : i))
     await supabase.from('content_items').update({ revenue_note: note || null }).eq('id', item.id)
+  }
+
+  const focusCount = items.filter(i => i.is_active_focus).length
+
+  async function toggleFocus(item: ContentItem) {
+    if (!item.is_active_focus && focusCount >= 2) return // capped in the UI too, this is a safety net
+    const next = !item.is_active_focus
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, is_active_focus: next } : i))
+    await supabase.from('content_items').update({ is_active_focus: next }).eq('id', item.id)
   }
 
   async function promoteToValidated(item: ContentItem) {
@@ -438,7 +475,7 @@ export default function ContentPage() {
                   {stage.items.length === 0 ? (
                     <p style={{ fontSize:'0.65rem', color:C.muted, textAlign:'center', padding:'0.75rem 0', margin:0 }}>empty</p>
                   ) : (
-                    stage.items.map(item => <PipelineCard key={item.id} item={item} onMove={() => setMoveTarget(item)} onSaveRevenue={note => saveRevenueNote(item, note)}/>)
+                    stage.items.map(item => <PipelineCard key={item.id} item={item} onMove={() => setMoveTarget(item)} onSaveRevenue={note => saveRevenueNote(item, note)} onToggleFocus={() => toggleFocus(item)} focusAtCap={focusCount >= 2}/>)
                   )}
                 </div>
               ))}
@@ -460,7 +497,8 @@ export default function ContentPage() {
                       {stage.key} <span style={{ fontWeight:500, color:C.muted }}>({group.length})</span>
                     </p>
                     {group.map(item => (
-                      <div key={item.id} style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.625rem 0.875rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', marginBottom:'0.25rem' }}>
+                      <div key={item.id} style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.625rem 0.875rem', background:C.card, border:'1px solid '+(item.is_active_focus ? 'rgba(255,184,0,0.35)' : C.border), borderRadius:'0.75rem', marginBottom:'0.25rem' }}>
+                        <FocusStar active={item.is_active_focus} atCap={focusCount >= 2} onToggle={() => toggleFocus(item)}/>
                         <p style={{ flex:1, fontSize:'0.83rem', fontWeight:600, color:C.text, margin:0 }}>{item.title}</p>
                         {item.format && <span style={{ fontSize:'0.65rem', color:C.muted, flexShrink:0 }}>{item.format}</span>}
                         {item.due_date && <span style={{ fontSize:'0.65rem', color:C.muted, flexShrink:0 }}>{item.due_date}</span>}

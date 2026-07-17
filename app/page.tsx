@@ -2,9 +2,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers } from 'lucide-react'
-import { getPrioritySession, getSessions, setPrioritySession } from '@/lib/supabase'
+import { getActiveFocusVideos, type ActiveFocusVideo } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
-import type { WorkflowSession } from '@/types'
 import { useLanguage } from '@/context/LanguageContext'
 
 const C = {
@@ -153,8 +152,7 @@ export default function Home() {
   const lateStart = h >= 10 && h < 14
   const veryLate  = h >= 14
 
-  const [priority, setPriorityState] = useState<WorkflowSession | null>(null)
-  const [sessions, setSessions] = useState<WorkflowSession[]>([])
+  const [focusVideos, setFocusVideos] = useState<ActiveFocusVideo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [routineDone, setRoutineDone] = useState(false)
@@ -178,8 +176,7 @@ export default function Home() {
     } catch {}
 
     Promise.all([
-      getPrioritySession(),
-      getSessions(),
+      getActiveFocusVideos(),
       supabase.from('routine_completions').select('routine_date').eq('routine_date', toDateStr(new Date())).maybeSingle(),
       // Query the tasks table for today's top task (frog first)
       supabase.from('master_tasks')
@@ -190,9 +187,8 @@ export default function Home() {
         .order('is_frog', { ascending:false })
         .limit(10),
     ])
-      .then(([p, all, routineRes, tasksRes]) => {
-        setPriorityState(p)
-        setSessions(all ?? [])
+      .then(([videos, routineRes, tasksRes]) => {
+        setFocusVideos(videos ?? [])
         const done = !!routineRes.data || localDone
         setRoutineDone(done)
         try { if (done) localStorage.setItem('flowstate_routine_done', toDateStr(new Date())) } catch {}
@@ -263,13 +259,7 @@ export default function Home() {
 
   function proceedToFocus() {
     setShowFocusCheck(false)
-    if (priority) router.push('/workflow/' + priority.id + '/focus')
-    else if (sessions.length > 0) router.push('/workflow/' + sessions[0].id + '/focus')
-    else router.push('/workflows')
-  }
-
-  async function setP(s: WorkflowSession) {
-    try { await setPrioritySession(s.id); setPriorityState(s) } catch {}
+    router.push('/content-focus')
   }
 
   const accentColor = routineDone ? C.green : C.cyan
@@ -455,29 +445,36 @@ export default function Home() {
               </div>
             </div>
 
-            {sessions.length > 0 && (
+            {focusVideos.length > 0 ? (
               <div style={{ width:'100%', maxWidth:'32rem' }}>
-                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Workflows</p>
+                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
                 <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-                  {sessions.slice(0,5).map(s => (
-                    <div key={s.id} onClick={() => router.push('/workflow/'+s.id)}
-                      style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', cursor:'pointer' }}>
-                      <div style={{ width:'2rem', height:'2rem', borderRadius:'0.625rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.7rem', fontWeight:700, color:C.sec, flexShrink:0 }}>
-                        {(s.workflow_type?.icon ?? 'WF').slice(0,3)}
+                  {focusVideos.map(v => (
+                    <div key={v.id} onClick={() => router.push('/content-focus')}
+                      style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+(v.is_active_focus?'rgba(255,184,0,0.3)':C.border), borderRadius:'0.875rem', cursor:'pointer' }}>
+                      <div style={{ width:'2rem', height:'2rem', borderRadius:'0.625rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                        <Tv size={14} color={C.sec}/>
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <p style={{ fontWeight:600, fontSize:'0.85rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{s.title}</p>
-                        <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>{s.workflow_type?.name ?? 'Workflow'}</p>
+                        <p style={{ fontWeight:600, fontSize:'0.85rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{v.title}</p>
+                        <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>{v.pipeline_stage ?? 'Idea'}{v.format ? ' · '+v.format : ''}</p>
                       </div>
                       <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', flexShrink:0 }}>
-                        {s.is_priority
-                          ? <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', color:C.amber, padding:'0.15rem 0.5rem', borderRadius:'9999px', fontSize:'0.65rem', fontWeight:700 }}><Star size={9} fill="currentColor" />Priority</span>
-                          : <button style={{ fontSize:'0.65rem', padding:'0.15rem 0.4rem', borderRadius:'0.375rem', background:C.surface, border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit' }} onClick={e => { e.stopPropagation(); setP(s) }}>Set Priority</button>
+                        {v.is_active_focus
+                          ? <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', color:C.amber, padding:'0.15rem 0.5rem', borderRadius:'9999px', fontSize:'0.65rem', fontWeight:700 }}><Star size={9} fill="currentColor" />Pinned</span>
+                          : <span style={{ fontSize:'0.62rem', color:C.muted, padding:'0.15rem 0.4rem' }}>auto-filled</span>
                         }
                         <ChevronRight size={14} color={C.muted} />
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ width:'100%', maxWidth:'32rem' }}>
+                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
+                <div onClick={() => router.push('/content')} style={{ padding:'1rem', background:C.card, border:'1px dashed '+C.border, borderRadius:'0.875rem', cursor:'pointer', textAlign:'center' }}>
+                  <p style={{ fontSize:'0.8rem', color:C.sec, margin:0 }}>No videos in the pipeline yet &mdash; add one in Content</p>
                 </div>
               </div>
             )}
@@ -509,29 +506,36 @@ export default function Home() {
               </div>
             </div>
 
-            {sessions.length > 0 && (
+            {focusVideos.length > 0 ? (
               <div style={{ width:'100%', maxWidth:'32rem' }}>
-                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Workflows</p>
+                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
                 <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-                  {sessions.slice(0,5).map(s => (
-                    <div key={s.id} onClick={() => router.push('/workflow/'+s.id)}
-                      style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', cursor:'pointer' }}>
-                      <div style={{ width:'2rem', height:'2rem', borderRadius:'0.625rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.7rem', fontWeight:700, color:C.sec, flexShrink:0 }}>
-                        {(s.workflow_type?.icon ?? 'WF').slice(0,3)}
+                  {focusVideos.map(v => (
+                    <div key={v.id} onClick={() => router.push('/content-focus')}
+                      style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+(v.is_active_focus?'rgba(255,184,0,0.3)':C.border), borderRadius:'0.875rem', cursor:'pointer' }}>
+                      <div style={{ width:'2rem', height:'2rem', borderRadius:'0.625rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                        <Tv size={14} color={C.sec}/>
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <p style={{ fontWeight:600, fontSize:'0.85rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{s.title}</p>
-                        <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>{s.workflow_type?.name ?? 'Workflow'}</p>
+                        <p style={{ fontWeight:600, fontSize:'0.85rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{v.title}</p>
+                        <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>{v.pipeline_stage ?? 'Idea'}{v.format ? ' · '+v.format : ''}</p>
                       </div>
                       <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', flexShrink:0 }}>
-                        {s.is_priority
-                          ? <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', color:C.amber, padding:'0.15rem 0.5rem', borderRadius:'9999px', fontSize:'0.65rem', fontWeight:700 }}><Star size={9} fill="currentColor" />Priority</span>
-                          : <button style={{ fontSize:'0.65rem', padding:'0.15rem 0.4rem', borderRadius:'0.375rem', background:C.surface, border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit' }} onClick={e => { e.stopPropagation(); setP(s) }}>Set Priority</button>
+                        {v.is_active_focus
+                          ? <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', color:C.amber, padding:'0.15rem 0.5rem', borderRadius:'9999px', fontSize:'0.65rem', fontWeight:700 }}><Star size={9} fill="currentColor" />Pinned</span>
+                          : <span style={{ fontSize:'0.62rem', color:C.muted, padding:'0.15rem 0.4rem' }}>auto-filled</span>
                         }
                         <ChevronRight size={14} color={C.muted} />
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ width:'100%', maxWidth:'32rem' }}>
+                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
+                <div onClick={() => router.push('/content')} style={{ padding:'1rem', background:C.card, border:'1px dashed '+C.border, borderRadius:'0.875rem', cursor:'pointer', textAlign:'center' }}>
+                  <p style={{ fontSize:'0.8rem', color:C.sec, margin:0 }}>No videos in the pipeline yet &mdash; add one in Content</p>
                 </div>
               </div>
             )}
