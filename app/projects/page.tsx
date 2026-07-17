@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Plus, X, Target, ExternalLink } from 'lucide-react'
+import { ChevronLeft, Plus, X, Target } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -242,10 +242,6 @@ export default function ProjectsPage() {
                     <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.6rem' }}>
                       <PriorityDot priority={project.priority}/>
                       <StatusBadge status={project.status}/>
-                      {project.notion_url && (
-                        <a href={project.notion_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                          style={{ marginLeft:'auto', color:C.muted, display:'flex', flexShrink:0 }}><ExternalLink size={12}/></a>
-                      )}
                     </div>
                     <h3 style={{ fontSize:'0.9rem', fontWeight:800, color:C.text, margin:'0 0 0.4rem', lineHeight:1.3 }}>{project.title}</h3>
                     {project.deadline && (

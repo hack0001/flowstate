@@ -55,6 +55,7 @@ export default function ContentFocusPage() {
   const router = useRouter()
 
   const [videos, setVideos] = useState<ActiveFocusVideo[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [videoIdx, setVideoIdx] = useState(0)
   const [stepDone, setStepDone] = useState<Record<string, Set<number>>>({})
@@ -82,8 +83,9 @@ export default function ContentFocusPage() {
   // ---- Load pinned videos (+ fallback fill) and their checklist progress ----
   const load = useCallback(async () => {
     setLoading(true)
-    const combined = await getActiveFocusVideos()
+    const { videos: combined, error } = await getActiveFocusVideos()
     setVideos(combined)
+    setLoadError(error)
 
     if (combined.length > 0) {
       const { data: completions } = await supabase
@@ -219,8 +221,17 @@ export default function ContentFocusPage() {
 
   if (videos.length === 0) return (
     <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:C.bg, color:C.sec, gap:'1rem', padding:'2rem', textAlign:'center' }}>
-      <p style={{ fontSize:'1.1rem', fontWeight:800, color:C.text }}>No active videos yet</p>
-      <p style={{ fontSize:'0.85rem', maxWidth:'26rem', lineHeight:1.6 }}>Pin up to 2 videos or shorts as your active focus from the Content Pipeline, or add an idea to get started.</p>
+      {loadError ? (
+        <>
+          <p style={{ fontSize:'1.1rem', fontWeight:800, color:C.amber }}>Setup needed</p>
+          <p style={{ fontSize:'0.85rem', maxWidth:'28rem', lineHeight:1.6, color:C.sec }}>{loadError}</p>
+        </>
+      ) : (
+        <>
+          <p style={{ fontSize:'1.1rem', fontWeight:800, color:C.text }}>No active videos yet</p>
+          <p style={{ fontSize:'0.85rem', maxWidth:'26rem', lineHeight:1.6 }}>Pin up to 2 videos or shorts as your active focus from the Content Pipeline, or add an idea to get started.</p>
+        </>
+      )}
       <button onClick={() => router.push('/content')} style={{ padding:'0.75rem 1.5rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.875rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
         Go to Content Pipeline
       </button>

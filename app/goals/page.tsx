@@ -80,13 +80,7 @@ function GoalCard({ goal, onDone, onRestore }: { goal: Goal; onDone?: (id: strin
       </h3>
 
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:'0.25rem' }}>
-        {goal.notion_url ? (
-          <a href={goal.notion_url} target="_blank" rel="noreferrer"
-            onClick={e => e.stopPropagation()}
-            style={{ fontSize:'0.6rem', color:C.muted, border:'1px solid '+C.border, borderRadius:'0.25rem', padding:'0.1rem 0.35rem', textDecoration:'none' }}>
-            Notion &#8599;
-          </a>
-        ) : <span />}
+        <span />
 
         {onDone && !isDone && (
           <button

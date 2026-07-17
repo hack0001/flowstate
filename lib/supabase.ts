@@ -119,17 +119,31 @@ export type ActiveFocusVideo = {
   updated_at: string | null
 }
 
-export async function getActiveFocusVideos(): Promise<ActiveFocusVideo[]> {
-  const { data: pinnedData } = await supabase
+export type ActiveFocusResult = { videos: ActiveFocusVideo[]; error: string | null }
+
+// Friendly translation for the specific "column doesn't exist" error you get
+// before 018_content_focus.sql has been run — this is by far the most likely
+// failure mode here, since it's a brand-new column.
+function explainFocusError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('is_active_focus')) {
+    return "Setup needed: run supabase/migrations/018_content_focus.sql against your database — the is_active_focus column doesn't exist yet, so pinning can't be saved."
+  }
+  return message ?? 'Unknown error loading active focus videos.'
+}
+
+export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
+  const { data: pinnedData, error: pinnedErr } = await supabase
     .from('content_items')
     .select('id,title,pipeline_stage,format,is_active_focus,updated_at')
     .eq('is_active_focus', true)
     .neq('archived', true)
-  const pinned: ActiveFocusVideo[] = pinnedData ?? []
 
+  if (pinnedErr) return { videos: [], error: explainFocusError(pinnedErr.message) }
+
+  const pinned: ActiveFocusVideo[] = pinnedData ?? []
   let combined = pinned.slice(0, 2)
   if (combined.length < 2) {
-    const { data: fallbackData } = await supabase
+    const { data: fallbackData, error: fallbackErr } = await supabase
       .from('content_items')
       .select('id,title,pipeline_stage,format,is_active_focus,updated_at')
       .eq('is_active_focus', false)
@@ -138,7 +152,8 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusVideo[]> {
       .neq('pipeline_stage', '📊 Post-Published')
       .order('updated_at', { ascending: true })
       .limit(2 - combined.length)
+    if (fallbackErr) return { videos: combined, error: explainFocusError(fallbackErr.message) }
     combined = [...combined, ...((fallbackData ?? []) as ActiveFocusVideo[])]
   }
-  return combined
+  return { videos: combined, error: null }
 }

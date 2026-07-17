@@ -796,17 +796,6 @@ export default function VaultPage() {
                         >
                           <ClipboardList size={12}/> &#8594; Task
                         </button>
-                        {item.notion_url && (
-                          <a
-                            href={item.notion_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={e => e.stopPropagation()}
-                            style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, textDecoration:'none', fontSize:'0.75rem', fontWeight:700 }}
-                          >
-                            <ExternalLink size={12}/> Notion
-                          </a>
-                        )}
                         <button
                           onClick={e => archiveItem(item.id, e)}
                           style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(255,68,102,0.06)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'0.625rem', color:C.red, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, marginLeft:'auto' }}

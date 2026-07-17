@@ -977,10 +977,12 @@ export default function EtsyPage() {
                       <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{note.name}</p>
                       {note.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.15rem 0 0' }}>{note.notes}</p>}
                     </div>
-                    <a href={note.file_url || note.notion_url} target="_blank" rel="noreferrer" style={lnk(C.purple)}>
-                      <ExternalLink size={11} />
-                      {note.file_url ? 'Open' : 'Notion'}
-                    </a>
+                    {note.file_url && (
+                      <a href={note.file_url} target="_blank" rel="noreferrer" style={lnk(C.purple)}>
+                        <ExternalLink size={11} />
+                        Open
+                      </a>
+                    )}
                   </div>
                 ))}
             </div>
@@ -1023,8 +1025,8 @@ export default function EtsyPage() {
                       <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{tool.name}</p>
                       {tool.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.15rem 0 0', lineHeight:1.5 }}>{tool.notes}</p>}
                     </div>
-                    {(tool.file_url || tool.notion_url) && (
-                      <a href={tool.file_url || tool.notion_url} target="_blank" rel="noreferrer" style={lnk(C.green)}>
+                    {tool.file_url && (
+                      <a href={tool.file_url} target="_blank" rel="noreferrer" style={lnk(C.green)}>
                         <ExternalLink size={11} /> Open
                       </a>
                     )}
@@ -1072,12 +1074,11 @@ export default function EtsyPage() {
                       <p style={{ fontSize:'0.8rem', fontWeight:600, color: td.stage === 'Completed' ? C.muted : C.text, margin:0, textDecoration: td.stage === 'Completed' ? 'line-through' : 'none', opacity: td.stage === 'Completed' ? 0.7 : 1 }}>{td.name}</p>
                       {td.notes && <p style={{ fontSize:'0.67rem', color:C.muted, margin:'0.2rem 0 0', lineHeight:1.5 }}>{td.notes}</p>}
                     </div>
-                    <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'0.35rem', flexShrink:0 }}>
-                      {td.target_date && <span style={{ fontSize:'0.62rem', color:C.muted, whiteSpace:'nowrap' }}>{td.target_date}</span>}
-                      <a href={td.notion_url} target="_blank" rel="noreferrer" style={lnk(C.red)}>
-                        <ExternalLink size={10} />
-                      </a>
-                    </div>
+                    {td.target_date && (
+                      <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'0.35rem', flexShrink:0 }}>
+                        <span style={{ fontSize:'0.62rem', color:C.muted, whiteSpace:'nowrap' }}>{td.target_date}</span>
+                      </div>
+                    )}
                   </div>
                 ))}
             </div>
@@ -1129,9 +1130,6 @@ export default function EtsyPage() {
                         <p style={{ fontSize:'0.67rem', color:C.sec, margin:'0.3rem 0 0' }}>Keyword: {item.seed_keyword}</p>
                       )}
                     </div>
-                    <a href={item.notion_url} target="_blank" rel="noreferrer" style={lnk(C.pink)}>
-                      <ExternalLink size={10} />
-                    </a>
                   </div>
                 ))}
             </div>

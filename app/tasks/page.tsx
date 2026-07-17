@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Search, X, CheckSquare, Download, Plus, Edit3, Trash2, ExternalLink, Zap, TrendingUp, ChevronDown, BookOpen } from 'lucide-react'
+import { ChevronLeft, Search, X, CheckSquare, Download, Plus, Edit3, Trash2, Zap, TrendingUp, ChevronDown, BookOpen } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -1018,17 +1018,6 @@ export default function TasksPage() {
                           >
                             <BookOpen size={12}/> &#8594; Vault
                           </button>
-                          {task.notion_url && (
-                            <a
-                              href={task.notion_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={e => e.stopPropagation()}
-                              style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, textDecoration:'none', fontSize:'0.75rem', fontWeight:700 }}
-                            >
-                              <ExternalLink size={12}/> Notion
-                            </a>
-                          )}
                           <button
                             onClick={e => archiveTask(task.id, e)}
                             style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(255,68,102,0.06)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'0.625rem', color:C.red, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, marginLeft:'auto' }}

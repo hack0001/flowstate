@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers } from 'lucide-react'
 import { getActiveFocusVideos, type ActiveFocusVideo } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
+import { sopForStage } from '@/lib/sops'
 import { useLanguage } from '@/context/LanguageContext'
 
 const C = {
@@ -153,10 +154,12 @@ export default function Home() {
   const veryLate  = h >= 14
 
   const [focusVideos, setFocusVideos] = useState<ActiveFocusVideo[]>([])
+  const [focusError, setFocusError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [routineDone, setRoutineDone] = useState(false)
   const [topTask, setTopTask] = useState<{ title: string; id: string } | null>(null)
+  const [topTaskIsPipeline, setTopTaskIsPipeline] = useState(false)
   const [contentReady, setContentReady] = useState(false)
   const [showFocusCheck, setShowFocusCheck] = useState(false)
   const [showReminder, setShowReminder] = useState(false)
@@ -187,16 +190,30 @@ export default function Home() {
         .order('is_frog', { ascending:false })
         .limit(10),
     ])
-      .then(([videos, routineRes, tasksRes]) => {
-        setFocusVideos(videos ?? [])
+      .then(([focusResult, routineRes, tasksRes]) => {
+        setFocusVideos(focusResult.videos)
+        setFocusError(focusResult.error)
         const done = !!routineRes.data || localDone
         setRoutineDone(done)
         try { if (done) localStorage.setItem('flowstate_routine_done', toDateStr(new Date())) } catch {}
-        const tasks: Array<{ id:string; title:string; urgency:string|null; importance:string|null; task_type:string|null; is_frog:boolean }> = tasksRes.data ?? []
-        const frog   = tasks.find(t => t.is_frog)
-        const urgent = tasks.find(t => t.urgency === 'Urgent' && t.importance === 'Moved the Needle')
-        const top    = frog ?? urgent ?? tasks[0]
-        if (top) setTopTask({ id:top.id, title:top.title })
+
+        // The #1 task should generally point at the Pipeline — if there's an
+        // active focus video, that's the thing to work on today. Only fall
+        // back to a generic master_tasks pick (frog/urgent) when nothing is
+        // pinned or in production.
+        const topVideo = focusResult.videos[0]
+        if (topVideo) {
+          const sop = sopForStage(topVideo.pipeline_stage)
+          setTopTask({ id: topVideo.id, title: sop ? sop.title + ' — ' + topVideo.title : 'Advance "' + topVideo.title + '"' })
+          setTopTaskIsPipeline(true)
+        } else {
+          const tasks: Array<{ id:string; title:string; urgency:string|null; importance:string|null; task_type:string|null; is_frog:boolean }> = tasksRes.data ?? []
+          const frog   = tasks.find(t => t.is_frog)
+          const urgent = tasks.find(t => t.urgency === 'Urgent' && t.importance === 'Moved the Needle')
+          const top    = frog ?? urgent ?? tasks[0]
+          if (top) setTopTask({ id:top.id, title:top.title })
+          setTopTaskIsPipeline(false)
+        }
       })
       .catch(() => setError(true))
       .finally(() => {
@@ -423,13 +440,14 @@ export default function Home() {
                   Time to do<br/>deep work.
                 </h2>
                 {topTask ? (
-                  <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.5rem' }}>
+                  <div onClick={() => topTaskIsPipeline && router.push('/content-focus')}
+                    style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.5rem', cursor: topTaskIsPipeline ? 'pointer' : 'default' }}>
                     <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.green, margin:'0 0 0.3rem' }}>Your #1 task today</p>
                     <p style={{ fontSize:'1rem', fontWeight:700, color:C.text, margin:0, lineHeight:1.35 }}>{topTask.title}</p>
                   </div>
                 ) : (
                   <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.5rem' }}>
-                    <p style={{ fontSize:'0.85rem', color:C.sec, margin:0 }}>No task set &mdash; sync Notion or add tasks in Calendar.</p>
+                    <p style={{ fontSize:'0.85rem', color:C.sec, margin:0 }}>No task set &mdash; pin a video in the Content Pipeline or add tasks in Calendar.</p>
                   </div>
                 )}
                 <button onClick={handleFocusClick} style={{
@@ -445,6 +463,11 @@ export default function Home() {
               </div>
             </div>
 
+            {focusError && (
+              <div style={{ width:'100%', maxWidth:'32rem', marginBottom:'0.75rem', padding:'0.75rem 1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem' }}>
+                <p style={{ fontSize:'0.75rem', color:C.amber, margin:0, lineHeight:1.5 }}>{focusError}</p>
+              </div>
+            )}
             {focusVideos.length > 0 ? (
               <div style={{ width:'100%', maxWidth:'32rem' }}>
                 <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
@@ -506,6 +529,11 @@ export default function Home() {
               </div>
             </div>
 
+            {focusError && (
+              <div style={{ width:'100%', maxWidth:'32rem', marginBottom:'0.75rem', padding:'0.75rem 1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem' }}>
+                <p style={{ fontSize:'0.75rem', color:C.amber, margin:0, lineHeight:1.5 }}>{focusError}</p>
+              </div>
+            )}
             {focusVideos.length > 0 ? (
               <div style={{ width:'100%', maxWidth:'32rem' }}>
                 <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>

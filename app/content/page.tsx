@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Plus, X, ExternalLink, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star } from 'lucide-react'
+import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -237,7 +237,6 @@ function PipelineCard({ item, onMove, onSaveRevenue, onToggleFocus, focusAtCap }
         {item.format && <span style={{ fontSize:'0.6rem', color:C.muted, background:C.surface, border:'1px solid '+C.border, borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.format}</span>}
         {item.video_type && <span style={{ fontSize:'0.6rem', color:C.purple, background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.video_type}</span>}
         {item.tag && <span style={{ fontSize:'0.6rem', color:C.amber, background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.tag}</span>}
-        {item.notion_url && <a href={item.notion_url} target="_blank" rel="noopener noreferrer" style={{ color:C.muted, display:'flex', marginLeft:'auto' }}><ExternalLink size={10}/></a>}
       </div>
       {item.unique_angle && <p style={{ fontSize:'0.65rem', color:C.purple, margin:'0 0 0.3rem', lineHeight:1.4 }}>&#9889; {item.unique_angle.slice(0,90)}{item.unique_angle.length>90?'…':''}</p>}
       {item.notes && <p style={{ fontSize:'0.68rem', color:C.sec, margin:'0 0 0.4rem', lineHeight:1.45, fontStyle:'italic' }}>{item.notes.slice(0,80)}{item.notes.length>80?'…':''}</p>}
@@ -266,6 +265,7 @@ export default function ContentPage() {
   const [view,       setView]       = useState<View>('ideas')
   const [moveTarget, setMoveTarget] = useState<ContentItem | null>(null)
   const [showAdd,    setShowAdd]    = useState(false)
+  const [focusMsg,   setFocusMsg]   = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -306,7 +306,18 @@ export default function ContentPage() {
     if (!item.is_active_focus && focusCount >= 2) return // capped in the UI too, this is a safety net
     const next = !item.is_active_focus
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, is_active_focus: next } : i))
-    await supabase.from('content_items').update({ is_active_focus: next }).eq('id', item.id)
+    const { error } = await supabase.from('content_items').update({ is_active_focus: next }).eq('id', item.id)
+    if (error) {
+      // Revert the optimistic update — most likely cause is migration
+      // 018_content_focus.sql not having been run yet (is_active_focus
+      // column doesn't exist), so surface that clearly instead of failing silently.
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, is_active_focus: !next } : i))
+      setFocusMsg(
+        error.message?.toLowerCase().includes('is_active_focus')
+          ? "Setup needed: run supabase/migrations/018_content_focus.sql against your database before pinning works."
+          : 'Could not save — ' + error.message
+      )
+    }
   }
 
   async function promoteToValidated(item: ContentItem) {
@@ -375,6 +386,12 @@ export default function ContentPage() {
       </div>
 
       <div style={{ padding:'1.5rem 2rem', maxWidth:'1400px', margin:'0 auto' }}>
+        {focusMsg && (
+          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', marginBottom:'1.25rem', padding:'0.75rem 1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem' }}>
+            <p style={{ fontSize:'0.78rem', color:C.amber, margin:0, lineHeight:1.5, flex:1 }}>{focusMsg}</p>
+            <button onClick={() => setFocusMsg(null)} style={{ background:'none', border:'none', color:C.amber, cursor:'pointer', display:'flex', flexShrink:0 }}><X size={14}/></button>
+          </div>
+        )}
         {loading ? (
           <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', color:C.muted, padding:'2rem 0' }}>
             <div style={{ width:'16px', height:'16px', border:'2px solid '+C.muted, borderTopColor:C.orange, borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
@@ -415,7 +432,6 @@ export default function ContentPage() {
                         <td style={{ padding:'0.75rem 0.875rem', fontWeight:700, color:C.text, maxWidth:'240px' }}>
                           <div style={{ display:'flex', alignItems:'flex-start', gap:'0.4rem' }}>
                             <span style={{ lineHeight:1.4 }}>{item.title}</span>
-                            {item.notion_url && <a href={item.notion_url} target="_blank" rel="noopener noreferrer" style={{ color:C.muted, flexShrink:0, marginTop:'2px' }}><ExternalLink size={10}/></a>}
                           </div>
                         </td>
                         <td style={{ padding:'0.75rem 0.875rem', whiteSpace:'nowrap' as const }}>
@@ -503,7 +519,6 @@ export default function ContentPage() {
                         {item.format && <span style={{ fontSize:'0.65rem', color:C.muted, flexShrink:0 }}>{item.format}</span>}
                         {item.due_date && <span style={{ fontSize:'0.65rem', color:C.muted, flexShrink:0 }}>{item.due_date}</span>}
                         <button onClick={() => setMoveTarget(item)} style={{ background:'none', border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', padding:'0.2rem 0.5rem', flexShrink:0 }}>Move</button>
-                        {item.notion_url && <a href={item.notion_url} target="_blank" rel="noopener noreferrer" style={{ color:C.muted, display:'flex', flexShrink:0 }}><ExternalLink size={12}/></a>}
                       </div>
                     ))}
                   </div>
