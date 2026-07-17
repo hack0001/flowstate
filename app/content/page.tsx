@@ -2,8 +2,13 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, getStageNote, saveStageNote } from '@/lib/supabase'
-import { sopForStage } from '@/lib/sops'
-import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles } from 'lucide-react'
+import { sopForStage, IDEA_VALIDATION_CHECKS } from '@/lib/sops'
+import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle } from 'lucide-react'
+
+const IDEA_VALIDATION_SOP_ID = 'idea_validation'
+
+type ValidationCheckResult = { key: string; status: 'pass' | 'fail' | 'needs_research'; note: string }
+type ValidationResult = { verdict: 'Viable' | 'Needs More Research' | 'Not Viable'; summary: string; checks: ValidationCheckResult[] }
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -99,6 +104,88 @@ function MoveModal({ item, onMove, onClose }: { item:ContentItem; onMove:(s:stri
               {item.pipeline_stage === s.key && <span style={{ fontSize:'0.6rem', color:s.color }}>current</span>}
             </button>
           ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Validate idea modal ─────────────────────────────────────────────────────
+const VERDICT_STYLE: Record<ValidationResult['verdict'], { color: string; bg: string; border: string }> = {
+  'Viable':              { color:'#22c55e', bg:'rgba(34,197,94,0.1)',  border:'rgba(34,197,94,0.3)' },
+  'Needs More Research': { color:C.amber,   bg:'rgba(255,184,0,0.1)',  border:'rgba(255,184,0,0.3)' },
+  'Not Viable':          { color:C.red,     bg:'rgba(255,68,102,0.1)', border:'rgba(255,68,102,0.3)' },
+}
+
+function CheckIcon({ status }: { status: ValidationCheckResult['status'] }) {
+  if (status === 'pass') return <CheckCircle2 size={13} color="#22c55e"/>
+  if (status === 'fail') return <XCircle size={13} color={C.red}/>
+  return <HelpCircle size={13} color={C.amber}/>
+}
+
+function ValidateModal({ item, result, loading, msg, onRun, onPromote, onClose }: {
+  item: ContentItem; result: ValidationResult | null; loading: boolean; msg: string | null
+  onRun: () => void; onPromote: () => void; onClose: () => void
+}) {
+  const vs = result ? VERDICT_STYLE[result.verdict] : null
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60, padding:'1rem' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'1.25rem', padding:'1.5rem', width:'100%', maxWidth:'30rem', maxHeight:'85vh', overflowY:'auto' as const }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.5rem' }}>
+          <h3 style={{ fontSize:'0.9rem', fontWeight:800, color:C.text, margin:0, display:'flex', alignItems:'center', gap:'0.4rem' }}><Sparkles size={14} color={C.cyan}/>Validate Idea</h3>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex' }}><X size={16}/></button>
+        </div>
+        <p style={{ fontSize:'0.8rem', color:C.sec, margin:'0 0 1rem', lineHeight:1.4, fontWeight:600 }}>{item.title}</p>
+
+        {msg && <p style={{ fontSize:'0.72rem', color:C.amber, margin:'0 0 0.75rem', lineHeight:1.4 }}>{msg}</p>}
+
+        {!result && !loading && (
+          <p style={{ fontSize:'0.78rem', color:C.muted, margin:'0 0 1rem', lineHeight:1.5 }}>
+            Runs this idea through the Hummus idea-validation checklist — pitch, angle, alpha check, outlier evidence, comment-mined gap, video type/funnel fit, and revenue tier. Add any outlier stats or comment research to the idea&apos;s notes first if you have them, so those checks aren&apos;t flagged as needing research.
+          </p>
+        )}
+
+        {loading && (
+          <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', color:C.muted, padding:'1.5rem 0', justifyContent:'center' }}>
+            <div style={{ width:'16px', height:'16px', border:'2px solid '+C.muted, borderTopColor:C.cyan, borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
+            Checking against the SOP…
+          </div>
+        )}
+
+        {result && !loading && (
+          <>
+            <div style={{ background:vs!.bg, border:'1px solid '+vs!.border, borderRadius:'0.75rem', padding:'0.75rem 1rem', marginBottom:'1rem' }}>
+              <p style={{ fontSize:'0.85rem', fontWeight:800, color:vs!.color, margin:'0 0 0.25rem' }}>{result.verdict}</p>
+              <p style={{ fontSize:'0.75rem', color:C.sec, margin:0, lineHeight:1.4 }}>{result.summary}</p>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem', marginBottom:'1.25rem' }}>
+              {IDEA_VALIDATION_CHECKS.map(c => {
+                const r = result.checks.find(x => x.key === c.key)
+                return (
+                  <div key={c.key} style={{ display:'flex', alignItems:'flex-start', gap:'0.5rem', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem' }}>
+                    <div style={{ marginTop:'0.1rem', flexShrink:0 }}><CheckIcon status={r?.status ?? 'needs_research'}/></div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <p style={{ fontSize:'0.74rem', fontWeight:700, color:C.text, margin:'0 0 0.15rem' }}>{c.label}</p>
+                      <p style={{ fontSize:'0.7rem', color:C.sec, margin:0, lineHeight:1.4 }}>{r?.note ?? 'Not evaluated.'}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+
+        <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end', flexWrap:'wrap' as const }}>
+          <button onClick={onClose} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Close</button>
+          <button onClick={onRun} disabled={loading} style={{ padding:'0.5rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.cyan, cursor:loading?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, opacity:loading?0.5:1 }}>
+            {result ? 'Re-run' : 'Run Validation'}
+          </button>
+          {result && result.verdict !== 'Not Viable' && item.pipeline_stage !== '✅ Validated' && (
+            <button onClick={onPromote} style={{ padding:'0.5rem 1.25rem', background:'linear-gradient(135deg,#22c55e,#16a34a)', border:'none', borderRadius:'0.625rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>
+              Mark Validated &rarr;
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -355,6 +442,10 @@ export default function ContentPage() {
   const [moveTarget, setMoveTarget] = useState<ContentItem | null>(null)
   const [showAdd,    setShowAdd]    = useState(false)
   const [focusMsg,   setFocusMsg]   = useState<string | null>(null)
+  const [validatingItem, setValidatingItem] = useState<ContentItem | null>(null)
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null)
+  const [validationLoading, setValidationLoading] = useState(false)
+  const [validationMsg, setValidationMsg] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -411,6 +502,50 @@ export default function ContentPage() {
 
   async function promoteToValidated(item: ContentItem) {
     await moveStage(item, '✅ Validated')
+  }
+
+  async function openValidate(item: ContentItem) {
+    setValidatingItem(item)
+    setValidationResult(null)
+    setValidationMsg(null)
+    const { output, error } = await getStageNote(item.id, IDEA_VALIDATION_SOP_ID)
+    if (error) { setValidationMsg(error); return }
+    if (output) {
+      try { setValidationResult(JSON.parse(output) as ValidationResult) } catch { /* stale/invalid — ignore, user can re-run */ }
+    }
+  }
+
+  async function runValidation(item: ContentItem) {
+    setValidationLoading(true)
+    setValidationMsg(null)
+    const systemPrompt = 'You are a strict YouTube idea validator for SoundMoney, a channel on Austrian economics and sound money, applying Shane Hummus\'s idea-validation method. Evaluate ONLY the information given in the user message — never invent outlier video statistics, comment data, or facts that were not provided. If a check needs evidence that is not present, mark it needs_research rather than guessing. Return ONLY valid JSON matching the schema described, no markdown fences, no commentary outside the JSON.'
+    const userPrompt = `Video idea title: ${item.title}\n` +
+      (item.video_type ? `Video type: ${item.video_type}\n` : '') +
+      (item.format ? `Format: ${item.format}\n` : '') +
+      (item.unique_angle ? `Unique angle / alpha: ${item.unique_angle}\n` : '') +
+      (item.notes ? `Notes (may include outlier stats, comment research, pitch, etc.): ${item.notes}\n` : '') +
+      `\nEvaluate this idea against exactly these checks, in this order:\n` +
+      IDEA_VALIDATION_CHECKS.map((c, i) => `${i + 1}. [${c.key}] ${c.label} — ${c.hint}`).join('\n') +
+      `\n\nReturn JSON exactly in this shape:\n{"verdict":"Viable"|"Needs More Research"|"Not Viable","summary":"one or two sentences","checks":[{"key":"pitch","status":"pass"|"fail"|"needs_research","note":"one sentence"}, ... one entry per check above, same order, same keys]}\n\nVerdict rule: "Not Viable" only if the core idea is fundamentally weak (no angle, already well-covered with nothing new, pitch doesn't hold together). "Needs More Research" if the idea itself is sound but one or more checks are needs_research (e.g. missing outlier stats or comment data). "Viable" only if nothing is needs_research or failing.`
+    try {
+      const res = await fetch('/api/content/consult', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ systemPrompt, userPrompt }),
+      })
+      const data = await res.json()
+      if (data?.error) { setValidationMsg('API error: ' + JSON.stringify(data.error)); return }
+      const raw = data?.content?.[0]?.text ?? ''
+      if (!raw) { setValidationMsg('Empty response from Claude.'); return }
+      const clean = raw.replace(/```json|```/g, '').trim()
+      const result = JSON.parse(clean) as ValidationResult
+      setValidationResult(result)
+      await saveStageNote(item.id, IDEA_VALIDATION_SOP_ID, JSON.stringify(result))
+    } catch (e) {
+      setValidationMsg('Validation failed: ' + String(e))
+    } finally {
+      setValidationLoading(false)
+    }
   }
 
   const ideas    = items.filter(i => i.pipeline_stage === '💡 Idea' || !i.pipeline_stage || !STAGE_KEYS.includes(i.pipeline_stage ?? ''))
@@ -544,8 +679,8 @@ export default function ContentPage() {
                         </td>
                         <td style={{ padding:'0.75rem 0.875rem', whiteSpace:'nowrap' as const }}>
                           <div style={{ display:'flex', gap:'0.4rem', alignItems:'center' }}>
-                            <button onClick={() => promoteToValidated(item)} title="Move to Validated — begin production" style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.65rem', background:'rgba(34,197,94,0.1)', border:'1px solid rgba(34,197,94,0.3)', borderRadius:'0.5rem', color:'#22c55e', cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:700 }}>
-                              <CheckCircle2 size={11}/>Validate
+                            <button onClick={() => openValidate(item)} title="Run the Hummus idea-validation checklist" style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.65rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.5rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:700 }}>
+                              <Sparkles size={11}/>Validate
                             </button>
                             <button onClick={() => setMoveTarget(item)} style={{ padding:'0.3rem 0.5rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem' }}>
                               Move
@@ -620,6 +755,17 @@ export default function ContentPage() {
 
       {moveTarget && <MoveModal item={moveTarget} onMove={s => moveStage(moveTarget, s)} onClose={() => setMoveTarget(null)}/>}
       {showAdd    && <AddIdeaModal onAdd={addIdea} onClose={() => setShowAdd(false)}/>}
+      {validatingItem && (
+        <ValidateModal
+          item={validatingItem}
+          result={validationResult}
+          loading={validationLoading}
+          msg={validationMsg}
+          onRun={() => runValidation(validatingItem)}
+          onPromote={() => { promoteToValidated(validatingItem); setValidatingItem(null) }}
+          onClose={() => setValidatingItem(null)}
+        />
+      )}
 
       <style>{`@keyframes spin { to { transform:rotate(360deg) } }`}</style>
     </main>

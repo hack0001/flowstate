@@ -13,6 +13,21 @@ export type SOP = { id: string; icon: string; title: string; tagline: string; st
 
 export const SOPS: SOP[] = [
   {
+    id:'00a', icon:'&#129517;', title:'Niche Selector', group:'setup',
+    tagline:'One-time, before your first video (or when pivoting). Shane Hummus&apos;s Niche 2.0 / Hybrid Personal Brand method &mdash; locks a niche hypothesis that can actually make money.',
+    steps:[
+      '<strong>Skill option:</strong> use the cge-niche-validator skill in a Claude Cowork session for the full guided 2-batch interview. It will push back if your idea can&apos;t monetise &mdash; trust that feedback rather than talking yourself past it.',
+      '<strong>Manual Batch 1 &mdash; who you are:</strong> What are you good at? What would others say you are good at? What is your background &mdash; jobs, industries, skills, experience? What do you genuinely enjoy or learn about for fun?',
+      '<strong>Manual Batch 2 &mdash; your edge and goals:</strong> What do you wish you had known 3&ndash;10 years ago that you could teach now? How much time per week can you realistically commit? Do you want your own product (course, coaching) or just ads and affiliates?',
+      '<strong>Write the niche hypothesis:</strong> &ldquo;I help [SPECIFIC PERSON] do [SPECIFIC OUTCOME] by [METHOD].&rdquo; X must be specific &mdash; never &ldquo;everyone&rdquo; or &ldquo;anyone interested in X.&rdquo; Y must be a felt outcome the person wants, not a topic label.',
+      '<strong>Money tier check</strong> &mdash; know which tier you&apos;re in and go in with eyes open if it&apos;s Tier 3: Tier 1 (highest earning) &mdash; finance, business, software/AI, careers, marketing. Tier 2 (solid) &mdash; education, self-improvement, automotive, real estate, health/fitness. Tier 3 (high views, hard money) &mdash; gaming, vlogs, generic entertainment.',
+      '<strong>Monetisation path:</strong> pick 1&ndash;2 beyond AdSense alone &mdash; affiliate, low/mid/high-ticket offer, or a lead magnet. AdSense-only realistically only works in high-RPM niches (Tier 1).',
+      '<strong>Funnel fit check:</strong> does this niche naturally support the full content funnel &mdash; Listicle &rarr; How to &rarr; Case study &rarr; Testimonial/interview &rarr; Offer &mdash; or does it dead-end after top-of-funnel content?',
+      '<strong>Background and longevity fit:</strong> does this credibly fit your real background? Would you still want to be making this content in two years? A profitable niche you resent making videos for will not survive contact with month six.',
+      '<strong>Lock it:</strong> copy the winning hypothesis into your Strategy file (see the Voice, Strategy &amp; Money Files SOP). Don&apos;t revisit the niche decision on a single bad week &mdash; only reconsider if 10+ videos in show the audience genuinely isn&apos;t there.',
+    ],
+  },
+  {
     id:'00', icon:'&#128293;', title:'Channel Warm-Up', group:'setup',
     tagline:'Never upload to a cold account. Spend 5 days building a real human profile first. Run once, before your first-ever upload.',
     steps:[
@@ -266,3 +281,21 @@ export function sopForStage(stage: string | null): SOP | null {
   if (!id) return null
   return SOPS.find(s => s.id === id) ?? null
 }
+
+// ── Idea "Validate" checklist (Content Pipeline Ideas Bank) ────────────────
+// The concrete, checkable version of Hummus's idea-validation method (see
+// SOP 01 above). Fed to Claude as the exact list of things to check when
+// you hit Validate on an idea — keeps the AI honest about only assessing
+// what it can actually see, and flagging the rest as needing research
+// rather than guessing at outlier stats or comment data it wasn't given.
+export type ValidationCheckDef = { key: string; label: string; hint: string }
+
+export const IDEA_VALIDATION_CHECKS: ValidationCheckDef[] = [
+  { key:'pitch', label:'One-line pitch', hint:'"This video explains X by showing Y" as a single sentence. If it takes two sentences, it is probably two videos.' },
+  { key:'angle', label:'Angle formula', hint:'Big topic + unexpected frame — a historical parallel, contrarian take, or absurd analogy, not just a straight explainer.' },
+  { key:'alpha', label:'Alpha check', hint:'Could ChatGPT or a 5-minute Google search already answer this well? If yes, it needs a unique angle — original data, a contrarian take, a historical parallel nobody else has used, or a number nobody else calculated.' },
+  { key:'outlier', label:'Outlier evidence', hint:'Modelled on a real video with 100,000+ views, under 100,000 subscribers on that channel, a 5:1+ view-to-sub ratio, and visibly weak packaging. Needs the actual stats in the notes to confirm — flag as needing research if absent.' },
+  { key:'comments', label:'Comment-mined gap', hint:'A specific unanswered question or frustration pulled from that outlier video\'s comments that this idea fills. Needs research if no comment data is provided.' },
+  { key:'video_type', label:'Video type fits funnel', hint:'Listicle → How to → Case study → Testimonial, matching where this channel currently is in its funnel — not defaulting to the same type every time.' },
+  { key:'revenue_tier', label:'Revenue-tier awareness', hint:'A deliberate choice between mass-market explainer territory (lower pay per view) and a sharper, higher-value angle (higher pay per view) — not an accident.' },
+]
