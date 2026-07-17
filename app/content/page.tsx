@@ -110,7 +110,11 @@ function MoveModal({ item, onMove, onClose }: { item:ContentItem; onMove:(s:stri
   )
 }
 
-// ── Validate idea modal ─────────────────────────────────────────────────────
+// ── Idea detail + validate modal ────────────────────────────────────────────
+// Click an idea to open this: title + description up top (editable, saved
+// on blur), then Validate runs it through the Hummus checklist via Claude.
+const CONSULT_MODEL_LABEL = 'Claude Haiku 4.5'
+
 const VERDICT_STYLE: Record<ValidationResult['verdict'], { color: string; bg: string; border: string }> = {
   'Viable':              { color:'#22c55e', bg:'rgba(34,197,94,0.1)',  border:'rgba(34,197,94,0.3)' },
   'Needs More Research': { color:C.amber,   bg:'rgba(255,184,0,0.1)',  border:'rgba(255,184,0,0.3)' },
@@ -123,42 +127,65 @@ function CheckIcon({ status }: { status: ValidationCheckResult['status'] }) {
   return <HelpCircle size={13} color={C.amber}/>
 }
 
-function ValidateModal({ item, result, loading, msg, onRun, onPromote, onClose }: {
+function IdeaDetailModal({ item, result, loading, msg, onSaveField, onRun, onPromote, onClose }: {
   item: ContentItem; result: ValidationResult | null; loading: boolean; msg: string | null
+  onSaveField: (patch: Partial<Pick<ContentItem, 'title' | 'notes'>>) => void
   onRun: () => void; onPromote: () => void; onClose: () => void
 }) {
   const vs = result ? VERDICT_STYLE[result.verdict] : null
+  const [title, setTitle] = useState(item.title)
+  const [description, setDescription] = useState(item.notes ?? '')
+
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60, padding:'1rem' }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'1.25rem', padding:'1.5rem', width:'100%', maxWidth:'30rem', maxHeight:'85vh', overflowY:'auto' as const }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.5rem' }}>
-          <h3 style={{ fontSize:'0.9rem', fontWeight:800, color:C.text, margin:0, display:'flex', alignItems:'center', gap:'0.4rem' }}><Sparkles size={14} color={C.cyan}/>Validate Idea</h3>
+      <div style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'1.25rem', padding:'1.5rem', width:'100%', maxWidth:'32rem', maxHeight:'85vh', overflowY:'auto' as const }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
+          <h3 style={{ fontSize:'0.9rem', fontWeight:800, color:C.text, margin:0, display:'flex', alignItems:'center', gap:'0.4rem' }}><Lightbulb size={14} color={C.amber}/>Idea</h3>
           <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex' }}><X size={16}/></button>
         </div>
-        <p style={{ fontSize:'0.8rem', color:C.sec, margin:'0 0 1rem', lineHeight:1.4, fontWeight:600 }}>{item.title}</p>
+
+        <div style={{ marginBottom:'0.875rem' }}>
+          <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>Title</label>
+          <input
+            value={title} onChange={e => setTitle(e.target.value)}
+            onBlur={() => { if (title.trim() && title !== item.title) onSaveField({ title: title.trim() }) }}
+            style={{ width:'100%', padding:'0.6rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.9rem', fontWeight:700, outline:'none', boxSizing:'border-box' as const }}
+          />
+        </div>
+
+        <div style={{ marginBottom:'1.25rem' }}>
+          <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>Description — what should this video be about?</label>
+          <textarea
+            value={description} onChange={e => setDescription(e.target.value)}
+            onBlur={() => { if (description !== (item.notes ?? '')) onSaveField({ notes: description }) }}
+            rows={4} placeholder="What it covers, the angle, the hook, any outlier stats or comment research you've already found..."
+            style={{ width:'100%', padding:'0.6rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none', resize:'vertical' as const, boxSizing:'border-box' as const, lineHeight:1.5 }}
+          />
+        </div>
 
         {msg && <p style={{ fontSize:'0.72rem', color:C.amber, margin:'0 0 0.75rem', lineHeight:1.4 }}>{msg}</p>}
 
         {!result && !loading && (
           <p style={{ fontSize:'0.78rem', color:C.muted, margin:'0 0 1rem', lineHeight:1.5 }}>
-            Runs this idea through the Hummus idea-validation checklist — pitch, angle, alpha check, outlier evidence, comment-mined gap, video type/funnel fit, and revenue tier. Add any outlier stats or comment research to the idea&apos;s notes first if you have them, so those checks aren&apos;t flagged as needing research.
+            Validate checks this against Hummus&apos;s idea-validation criteria — pitch, angle, alpha check, outlier evidence, comment-mined gap, video type/funnel fit, and revenue tier — using {CONSULT_MODEL_LABEL}.
           </p>
         )}
 
         {loading && (
           <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', color:C.muted, padding:'1.5rem 0', justifyContent:'center' }}>
             <div style={{ width:'16px', height:'16px', border:'2px solid '+C.muted, borderTopColor:C.cyan, borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
-            Checking against the SOP…
+            Consulting {CONSULT_MODEL_LABEL}…
           </div>
         )}
 
         {result && !loading && (
           <>
-            <div style={{ background:vs!.bg, border:'1px solid '+vs!.border, borderRadius:'0.75rem', padding:'0.75rem 1rem', marginBottom:'1rem' }}>
+            <div style={{ background:vs!.bg, border:'1px solid '+vs!.border, borderRadius:'0.75rem', padding:'0.75rem 1rem', marginBottom:'0.5rem' }}>
               <p style={{ fontSize:'0.85rem', fontWeight:800, color:vs!.color, margin:'0 0 0.25rem' }}>{result.verdict}</p>
               <p style={{ fontSize:'0.75rem', color:C.sec, margin:0, lineHeight:1.4 }}>{result.summary}</p>
             </div>
+            <p style={{ fontSize:'0.62rem', color:C.muted, margin:'0 0 1rem' }}>Checked with {CONSULT_MODEL_LABEL}</p>
             <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem', marginBottom:'1.25rem' }}>
               {IDEA_VALIDATION_CHECKS.map(c => {
                 const r = result.checks.find(x => x.key === c.key)
@@ -178,8 +205,8 @@ function ValidateModal({ item, result, loading, msg, onRun, onPromote, onClose }
 
         <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end', flexWrap:'wrap' as const }}>
           <button onClick={onClose} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Close</button>
-          <button onClick={onRun} disabled={loading} style={{ padding:'0.5rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.cyan, cursor:loading?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, opacity:loading?0.5:1 }}>
-            {result ? 'Re-run' : 'Run Validation'}
+          <button onClick={onRun} disabled={loading} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.cyan, cursor:loading?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, opacity:loading?0.5:1 }}>
+            <Sparkles size={13}/>{result ? 'Re-run Validation' : 'Validate'}
           </button>
           {result && result.verdict !== 'Not Viable' && item.pipeline_stage !== '✅ Validated' && (
             <button onClick={onPromote} style={{ padding:'0.5rem 1.25rem', background:'linear-gradient(135deg,#22c55e,#16a34a)', border:'none', borderRadius:'0.625rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>
@@ -504,6 +531,12 @@ export default function ContentPage() {
     await moveStage(item, '✅ Validated')
   }
 
+  async function saveIdeaField(item: ContentItem, patch: Partial<Pick<ContentItem, 'title' | 'notes'>>) {
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i))
+    setValidatingItem(prev => prev && prev.id === item.id ? { ...prev, ...patch } : prev)
+    await supabase.from('content_items').update(patch).eq('id', item.id)
+  }
+
   async function openValidate(item: ContentItem) {
     setValidatingItem(item)
     setValidationResult(null)
@@ -654,8 +687,15 @@ export default function ContentPage() {
                     {ideas.map(item => (
                       <tr key={item.id} style={{ borderBottom:'1px solid '+C.border+'60' }}>
                         <td style={{ padding:'0.75rem 0.875rem', fontWeight:700, color:C.text, maxWidth:'240px' }}>
-                          <div style={{ display:'flex', alignItems:'flex-start', gap:'0.4rem' }}>
-                            <span style={{ lineHeight:1.4 }}>{item.title}</span>
+                          <div
+                            onClick={() => openValidate(item)}
+                            title="Open idea — view/edit and validate"
+                            style={{ display:'flex', alignItems:'flex-start', gap:'0.4rem', cursor:'pointer' }}
+                          >
+                            <span style={{ lineHeight:1.4, textDecoration:'underline', textDecorationColor:'transparent' }}
+                              onMouseEnter={e => (e.currentTarget.style.textDecorationColor = C.muted)}
+                              onMouseLeave={e => (e.currentTarget.style.textDecorationColor = 'transparent')}
+                            >{item.title}</span>
                           </div>
                         </td>
                         <td style={{ padding:'0.75rem 0.875rem', whiteSpace:'nowrap' as const }}>
@@ -756,11 +796,12 @@ export default function ContentPage() {
       {moveTarget && <MoveModal item={moveTarget} onMove={s => moveStage(moveTarget, s)} onClose={() => setMoveTarget(null)}/>}
       {showAdd    && <AddIdeaModal onAdd={addIdea} onClose={() => setShowAdd(false)}/>}
       {validatingItem && (
-        <ValidateModal
+        <IdeaDetailModal
           item={validatingItem}
           result={validationResult}
           loading={validationLoading}
           msg={validationMsg}
+          onSaveField={patch => saveIdeaField(validatingItem, patch)}
           onRun={() => runValidation(validatingItem)}
           onPromote={() => { promoteToValidated(validatingItem); setValidatingItem(null) }}
           onClose={() => setValidatingItem(null)}
