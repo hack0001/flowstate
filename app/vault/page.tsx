@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Search, ExternalLink, X, BookOpen, Wrench, Lightbulb, Film, FileText, Headphones, ShoppingCart, Star, Plus, Edit3, Trash2, ClipboardList, RotateCcw } from 'lucide-react'
+import { ChevronLeft, Search, ExternalLink, X, BookOpen, Wrench, Lightbulb, Film, FileText, Headphones, ShoppingCart, Star, Plus, Edit3, Trash2, ClipboardList, RotateCcw, Layers } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -255,6 +255,7 @@ export default function VaultPage() {
   const [vDragId, setVDragId] = useState<string|null>(null)
   const [vDragOver, setVDragOver] = useState<string|null>(null)
   const [vDragFrom, setVDragFrom] = useState<'unassigned'|'priority'|null>(null)
+  const [vGroupByType, setVGroupByType] = useState(false)
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -496,8 +497,10 @@ export default function VaultPage() {
                           style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', cursor:'grab', opacity: vDragId === it.id ? 0.4 : 1 }}>
                           <span style={{ color:C.muted, fontSize:'0.75rem' }}>&#9776;</span>
                           <span style={{ fontSize:'0.82rem', fontWeight:600, color:C.text, flex:1 }}>{it.title}</span>
-                          {it.category && meta && (
+                          {it.category && meta ? (
                             <span style={{ fontSize:'0.65rem', fontWeight:700, color:meta.color, background:meta.color+'15', border:'1px solid '+meta.color+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem' }}>{meta.icon}{it.category}</span>
+                          ) : (
+                            <span style={{ fontSize:'0.65rem', fontWeight:700, color:C.amber, background:C.amber+'15', border:'1px solid '+C.amber+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem' }}>No type</span>
                           )}
                           <button type="button" draggable={false} onClick={e => convertToTask(it, e)} style={{ background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', color:C.cyan, cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.68rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.25rem' }} title="Convert to Task">
                             <ClipboardList size={11}/> Task
@@ -511,10 +514,18 @@ export default function VaultPage() {
 
               {/* Priority order */}
               <div>
-                <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.75rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.75rem', flexWrap:'wrap' as const }}>
                   <span style={{ fontSize:'0.7rem', fontWeight:800, textTransform:'uppercase' as const, letterSpacing:'0.08em', color:'#ff6b35' }}>Priority Order</span>
-                  <span style={{ fontSize:'0.65rem', color:C.muted }}>drag to reorder</span>
+                  <span style={{ fontSize:'0.65rem', color:C.muted }}>{vGroupByType ? 'grouped by type' : 'drag to reorder'}</span>
+                  <button type="button" onClick={() => setVGroupByType(g => !g)} style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.7rem', borderRadius:'0.5rem', border:'1px solid '+(vGroupByType ? C.purple : C.border), background:vGroupByType ? 'rgba(139,92,246,0.12)' : 'transparent', color:vGroupByType ? C.purple : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:700 }}>
+                    <Layers size={11}/> Group by type
+                  </button>
                 </div>
+                {vGroupByType && vValidOrder.some(id => { const it = items.find(x=>x.id===id); return it && !it.category }) && (
+                  <div style={{ marginBottom:'0.6rem', fontSize:'0.68rem', color:C.amber }}>
+                    &#9888; Some items in this list have no category assigned &mdash; see &ldquo;No type assigned&rdquo; group below.
+                  </div>
+                )}
                 {vValidOrder.length === 0 ? (
                   <div
                     onDragOver={e => { e.preventDefault(); setVDragOver('__bottom__') }}
@@ -523,54 +534,92 @@ export default function VaultPage() {
                     style={{ padding:'2rem', background:C.card, borderRadius:'0.75rem', border:'2px dashed '+(vDragOver === '__bottom__' ? '#ff6b35' : C.border), color:C.muted, fontSize:'0.8rem', textAlign:'center', transition:'border-color 0.15s' }}>
                     Drag items here to set priority
                   </div>
-                ) : (
-                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0' }}>
-                    {vValidOrder.map((id, idx) => {
-                      const it = items.find(x => x.id === id)
-                      if (!it) return null
-                      const meta = it.category ? CAT_META[it.category] : null
-                      const isOver = vDragOver === id
-                      return (
-                        <div key={id}>
-                          {isOver && vDragFrom !== 'unassigned' && (
-                            <div style={{ height:'2px', background:'#ff6b35', borderRadius:'1px', margin:'0 0 2px 0' }}/>
+                ) : (() => {
+                  const renderRow = (id: string, idx: number, draggableOn: boolean) => {
+                    const it = items.find(x => x.id === id)
+                    if (!it) return null
+                    const meta = it.category ? CAT_META[it.category] : null
+                    const isOver = vDragOver === id
+                    return (
+                      <div key={id}>
+                        {draggableOn && isOver && vDragFrom !== 'unassigned' && (
+                          <div style={{ height:'2px', background:'#ff6b35', borderRadius:'1px', margin:'0 0 2px 0' }}/>
+                        )}
+                        <div
+                          draggable={draggableOn}
+                          onDragStart={draggableOn ? () => vHandleDragStart(id, 'priority') : undefined}
+                          onDragEnd={draggableOn ? vHandleDragEnd : undefined}
+                          onDragOver={draggableOn ? (e => { e.preventDefault(); setVDragOver(id) }) : undefined}
+                          onDragLeave={draggableOn ? (e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setVDragOver(null) }) : undefined}
+                          onDrop={draggableOn ? (() => vHandleDropOnPriority(id)) : undefined}
+                          style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', background:C.card, border:'1px solid '+(draggableOn && isOver ? '#ff6b35' : C.border), borderRadius:'0.75rem', cursor: draggableOn ? 'grab' : 'default', opacity: draggableOn && vDragId === id ? 0.4 : 1, marginBottom:'0.4rem', transition:'border-color 0.15s' }}>
+                          <span style={{ fontSize:'0.65rem', fontWeight:800, color:'#ff6b35', minWidth:'1.5rem', textAlign:'center' }}>#{idx+1}</span>
+                          {draggableOn && <span style={{ color:C.muted, fontSize:'0.75rem' }}>&#9776;</span>}
+                          <span style={{ fontSize:'0.82rem', fontWeight:600, color:C.text, flex:1 }}>{it.title}</span>
+                          {it.category && meta ? (
+                            <span style={{ fontSize:'0.65rem', fontWeight:700, color:meta.color, background:meta.color+'15', border:'1px solid '+meta.color+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem' }}>{meta.icon}{it.category}</span>
+                          ) : (
+                            <span style={{ fontSize:'0.65rem', fontWeight:700, color:C.amber, background:C.amber+'15', border:'1px solid '+C.amber+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem' }}>No type</span>
                           )}
-                          <div
-                            draggable
-                            onDragStart={() => vHandleDragStart(id, 'priority')}
-                            onDragEnd={vHandleDragEnd}
-                            onDragOver={e => { e.preventDefault(); setVDragOver(id) }}
-                            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setVDragOver(null) }}
-                            onDrop={() => vHandleDropOnPriority(id)}
-                            style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', background:C.card, border:'1px solid '+(isOver ? '#ff6b35' : C.border), borderRadius:'0.75rem', cursor:'grab', opacity: vDragId === id ? 0.4 : 1, marginBottom:'0.4rem', transition:'border-color 0.15s' }}>
-                            <span style={{ fontSize:'0.65rem', fontWeight:800, color:'#ff6b35', minWidth:'1.5rem', textAlign:'center' }}>#{idx+1}</span>
-                            <span style={{ color:C.muted, fontSize:'0.75rem' }}>&#9776;</span>
-                            <span style={{ fontSize:'0.82rem', fontWeight:600, color:C.text, flex:1 }}>{it.title}</span>
-                            {it.category && meta && (
-                              <span style={{ fontSize:'0.65rem', fontWeight:700, color:meta.color, background:meta.color+'15', border:'1px solid '+meta.color+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem' }}>{meta.icon}{it.category}</span>
-                            )}
-                            <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([id, ...vValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
-                            <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([...vValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
-                            <button type="button" draggable={false} onClick={e => convertToTask(it, e)} style={{ background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', color:C.cyan, cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.68rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.25rem' }} title="Convert to Task">
-                              <ClipboardList size={11}/> Task
-                            </button>
-                            <button onClick={() => vHandleRemove(id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', padding:'0.15rem', borderRadius:'0.25rem' }}>
-                              <X size={13}/>
-                            </button>
-                          </div>
+                          <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([id, ...vValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
+                          <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveVPriority([...vValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                          <button type="button" draggable={false} onClick={e => convertToTask(it, e)} style={{ background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', color:C.cyan, cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.68rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.25rem' }} title="Convert to Task">
+                            <ClipboardList size={11}/> Task
+                          </button>
+                          <button onClick={() => vHandleRemove(id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', padding:'0.15rem', borderRadius:'0.25rem' }}>
+                            <X size={13}/>
+                          </button>
                         </div>
-                      )
-                    })}
-                    {/* Bottom drop zone */}
-                    <div
-                      onDragOver={e => { e.preventDefault(); setVDragOver('__bottom__') }}
-                      onDragLeave={() => setVDragOver(null)}
-                      onDrop={() => { vHandleDropOnBottom(); setVDragOver(null) }}
-                      style={{ height:'2.5rem', borderRadius:'0.75rem', border:'2px dashed '+(vDragOver === '__bottom__' ? '#ff6b35' : 'transparent'), display:'flex', alignItems:'center', justifyContent:'center', transition:'border-color 0.15s' }}>
-                      {vDragOver === '__bottom__' && <span style={{ fontSize:'0.7rem', color:'#ff6b35' }}>Drop to add last</span>}
+                      </div>
+                    )
+                  }
+
+                  if (vGroupByType) {
+                    const groups: Record<string, string[]> = {}
+                    const order: string[] = []
+                    vValidOrder.forEach(id => {
+                      const it = items.find(x => x.id === id)
+                      const key = it?.category || 'No type assigned'
+                      if (!groups[key]) { groups[key] = []; order.push(key) }
+                      groups[key].push(id)
+                    })
+                    order.sort((a, b) => a === 'No type assigned' ? -1 : b === 'No type assigned' ? 1 : 0)
+                    return (
+                      <div style={{ display:'flex', flexDirection:'column' as const, gap:'1.1rem' }}>
+                        {order.map(key => {
+                          const meta = key !== 'No type assigned' ? CAT_META[key] : null
+                          const color = meta ? meta.color : C.amber
+                          return (
+                            <div key={key}>
+                              <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.5rem' }}>
+                                {meta && <span style={{ color }}>{meta.icon}</span>}
+                                <span style={{ fontSize:'0.68rem', fontWeight:800, color, textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>{key}</span>
+                                <span style={{ fontSize:'0.62rem', color:C.muted }}>({groups[key].length})</span>
+                              </div>
+                              <div style={{ display:'flex', flexDirection:'column' as const, gap:'0' }}>
+                                {groups[key].map(id => renderRow(id, vValidOrder.indexOf(id), false))}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div style={{ display:'flex', flexDirection:'column' as const, gap:'0' }}>
+                      {vValidOrder.map((id, idx) => renderRow(id, idx, true))}
+                      {/* Bottom drop zone */}
+                      <div
+                        onDragOver={e => { e.preventDefault(); setVDragOver('__bottom__') }}
+                        onDragLeave={() => setVDragOver(null)}
+                        onDrop={() => { vHandleDropOnBottom(); setVDragOver(null) }}
+                        style={{ height:'2.5rem', borderRadius:'0.75rem', border:'2px dashed '+(vDragOver === '__bottom__' ? '#ff6b35' : 'transparent'), display:'flex', alignItems:'center', justifyContent:'center', transition:'border-color 0.15s' }}>
+                        {vDragOver === '__bottom__' && <span style={{ fontSize:'0.7rem', color:'#ff6b35' }}>Drop to add last</span>}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )
+                })()}
               </div>
             </div>
           )

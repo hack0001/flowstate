@@ -367,6 +367,7 @@ export default function TasksPage() {
   const [toast, setToast] = useState<string|null>(null)
   const [priorityView, setPriorityView] = useState(false)
   const [tPriorityOrder, setTPriorityOrder] = useState<string[]>([])
+  const [tGroupByType, setTGroupByType] = useState(false)
   const [tDragId, setTDragId] = useState<string|null>(null)
   const [tDragOver, setTDragOver] = useState<string|null>(null)
   const [tDragFrom, setTDragFrom] = useState<'unassigned'|'priority'|null>(null)
@@ -766,7 +767,7 @@ export default function TasksPage() {
                             <div style={{ display:'flex', gap:'0.3rem', marginTop:'0.2rem', flexWrap:'wrap' }}>
                               {task.from_vault && <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', fontSize:'0.55rem', fontWeight:800, color:C.purple, background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}><BookOpen size={8}/>Vault</span>}
                               {needsSetup && <span style={{ fontSize:'0.55rem', fontWeight:800, color:C.amber, background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>Needs setup</span>}
-                              {task.task_type && <TypeBadge type={task.task_type}/>}
+                              {task.task_type ? <TypeBadge type={task.task_type}/> : !needsSetup && <span style={{ fontSize:'0.55rem', fontWeight:800, color:C.amber, background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>No type</span>}
                               <StatusBadge status={task.status}/>
                               {task.urgency === 'Urgent' && <span style={{ fontSize:'0.58rem', color:C.red, border:'1px solid '+C.red+'40', borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>Urgent</span>}
                             </div>
@@ -783,10 +784,18 @@ export default function TasksPage() {
 
               {/* Priority list */}
               <div>
-                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem', flexWrap:'wrap' as const }}>
                   <h2 style={{ fontSize:'0.72rem', fontWeight:800, color:'#ff6b35', margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Priority Order</h2>
-                  <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>{tValidOrder.length} tasks ranked</p>
+                  <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>{tValidOrder.length} tasks ranked{tGroupByType ? ' — grouped by type' : ''}</p>
+                  <button type="button" onClick={() => setTGroupByType(g => !g)} style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.7rem', borderRadius:'0.5rem', border:'1px solid '+(tGroupByType ? C.purple : C.border), background:tGroupByType ? 'rgba(139,92,246,0.12)' : 'transparent', color:tGroupByType ? C.purple : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:700 }}>
+                    Group by type
+                  </button>
                 </div>
+                {tGroupByType && tValidOrder.some(id => { const t = tasks.find(x=>x.id===id); return t && !t.task_type }) && (
+                  <div style={{ marginBottom:'0.6rem', fontSize:'0.68rem', color:C.amber }}>
+                    &#9888; Some tasks in this list have no type assigned &mdash; see &ldquo;No type assigned&rdquo; group below.
+                  </div>
+                )}
                 {tValidOrder.length === 0 ? (
                   <div style={{ padding:'2.5rem 1.5rem', textAlign:'center', border:'2px dashed '+(tDragOver==='t-priority-empty' ? '#ff6b35' : C.border), borderRadius:'0.875rem', background:tDragOver==='t-priority-empty'?'rgba(255,107,53,0.05)':'transparent', transition:'all 0.15s' }}
                     onDragOver={e => { e.preventDefault(); setTDragOver('t-priority-empty') }}
@@ -794,49 +803,83 @@ export default function TasksPage() {
                     onDrop={e => { e.preventDefault(); if (tDragFrom==='unassigned'&&tDragId) saveTPriority([tDragId]); setTDragId(null); setTDragOver(null); setTDragFrom(null) }}>
                     <p style={{ fontSize:'0.78rem', color:C.muted, margin:0 }}>Drag tasks here to set priority order</p>
                   </div>
-                ) : (
-                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}>
-                    {tValidOrder.map((id, idx) => {
+                ) : (() => {
+                  const renderRow = (id: string, idx: number, draggableOn: boolean) => {
+                    const task = tasks.find(t => t.id === id)
+                    if (!task) return null
+                    const needsSetup = task.from_vault && !task.task_type && !task.urgency && !task.priority
+                    return (
+                      <div key={id}>
+                        {draggableOn && tDragOver === id && <div style={{ height:'2px', background:'#ff6b35', borderRadius:'1px', margin:'0 0 0.25rem', opacity:0.8 }} />}
+                        <div draggable={draggableOn}
+                          onDragStart={draggableOn ? (() => { setTDragId(id); setTDragFrom('priority') }) : undefined}
+                          onDragEnd={draggableOn ? (() => { setTDragId(null); setTDragOver(null); setTDragFrom(null) }) : undefined}
+                          onDragOver={draggableOn ? (e => { e.preventDefault(); setTDragOver(id) }) : undefined}
+                          onDragLeave={draggableOn ? (e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && tDragOver===id) setTDragOver(null) }) : undefined}
+                          onDrop={draggableOn ? (e => {
+                            e.preventDefault()
+                            if (tDragFrom==='unassigned'&&tDragId) { const o=[...tValidOrder]; o.splice(idx,0,tDragId); saveTPriority(o) }
+                            else if (tDragFrom==='priority'&&tDragId&&tDragId!==id) { const w=tValidOrder.filter(i=>i!==tDragId); w.splice(w.indexOf(id),0,tDragId); saveTPriority(w) }
+                            setTDragId(null); setTDragOver(null); setTDragFrom(null)
+                          }) : undefined}
+                          style={{ background:C.card, border:'1px solid '+(draggableOn && tDragId===id?'#ff6b3555':needsSetup?C.amber+'50':C.border), borderRadius:'0.75rem', padding:'0.65rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem', cursor: draggableOn ? 'grab' : 'default', opacity:draggableOn && tDragId===id?0.4:1, transition:'all 0.1s' }}>
+                          <span style={{ fontSize:'0.65rem', fontWeight:900, color:'#ff6b35', minWidth:'1.4rem', textAlign:'center' as const, flexShrink:0 }}>#{idx+1}</span>
+                          {draggableOn && <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>}
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{task.title}</p>
+                            <div style={{ display:'flex', gap:'0.3rem', marginTop:'0.2rem', flexWrap:'wrap' }}>
+                              {task.from_vault && <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', fontSize:'0.55rem', fontWeight:800, color:C.purple, background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}><BookOpen size={8}/>Vault</span>}
+                              {needsSetup && <span style={{ fontSize:'0.55rem', fontWeight:800, color:C.amber, background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>Needs setup</span>}
+                              {task.task_type ? <TypeBadge type={task.task_type}/> : !needsSetup && <span style={{ fontSize:'0.55rem', fontWeight:800, color:C.amber, background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>No type</span>}
+                              <StatusBadge status={task.status}/>
+                              {task.urgency === 'Urgent' && <span style={{ fontSize:'0.58rem', color:C.red, border:'1px solid '+C.red+'40', borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>Urgent</span>}
+                            </div>
+                          </div>
+                          <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([id, ...tValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
+                          <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([...tValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                          <button type="button" draggable={false} onClick={e => convertToVault(task, e)} style={{ background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)', color:C.purple, cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.68rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.25rem' }} title="Send to Vault">
+                            <BookOpen size={10}/> Vault
+                          </button>
+                          <button onClick={e => { e.stopPropagation(); saveTPriority(tValidOrder.filter(i=>i!==id)) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0 }}>x</button>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  if (tGroupByType) {
+                    const groups: Record<string, string[]> = {}
+                    const order: string[] = []
+                    tValidOrder.forEach(id => {
                       const task = tasks.find(t => t.id === id)
-                      if (!task) return null
-                      const needsSetup = task.from_vault && !task.task_type && !task.urgency && !task.priority
-                      return (
-                        <div key={id}>
-                          {tDragOver === id && <div style={{ height:'2px', background:'#ff6b35', borderRadius:'1px', margin:'0 0 0.25rem', opacity:0.8 }} />}
-                          <div draggable
-                            onDragStart={() => { setTDragId(id); setTDragFrom('priority') }}
-                            onDragEnd={() => { setTDragId(null); setTDragOver(null); setTDragFrom(null) }}
-                            onDragOver={e => { e.preventDefault(); setTDragOver(id) }}
-                            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && tDragOver===id) setTDragOver(null) }}
-                            onDrop={e => {
-                              e.preventDefault()
-                              if (tDragFrom==='unassigned'&&tDragId) { const o=[...tValidOrder]; o.splice(idx,0,tDragId); saveTPriority(o) }
-                              else if (tDragFrom==='priority'&&tDragId&&tDragId!==id) { const w=tValidOrder.filter(i=>i!==tDragId); w.splice(w.indexOf(id),0,tDragId); saveTPriority(w) }
-                              setTDragId(null); setTDragOver(null); setTDragFrom(null)
-                            }}
-                            style={{ background:C.card, border:'1px solid '+(tDragId===id?'#ff6b3555':needsSetup?C.amber+'50':C.border), borderRadius:'0.75rem', padding:'0.65rem 0.875rem', display:'flex', alignItems:'center', gap:'0.625rem', cursor:'grab', opacity:tDragId===id?0.4:1, transition:'all 0.1s' }}>
-                            <span style={{ fontSize:'0.65rem', fontWeight:900, color:'#ff6b35', minWidth:'1.4rem', textAlign:'center' as const, flexShrink:0 }}>#{idx+1}</span>
-                            <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0 }}>{task.title}</p>
-                              <div style={{ display:'flex', gap:'0.3rem', marginTop:'0.2rem', flexWrap:'wrap' }}>
-                                {task.from_vault && <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', fontSize:'0.55rem', fontWeight:800, color:C.purple, background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}><BookOpen size={8}/>Vault</span>}
-                                {needsSetup && <span style={{ fontSize:'0.55rem', fontWeight:800, color:C.amber, background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>Needs setup</span>}
-                                {task.task_type && <TypeBadge type={task.task_type}/>}
-                                <StatusBadge status={task.status}/>
-                                {task.urgency === 'Urgent' && <span style={{ fontSize:'0.58rem', color:C.red, border:'1px solid '+C.red+'40', borderRadius:'0.25rem', padding:'0.1rem 0.3rem', lineHeight:1.5 }}>Urgent</span>}
+                      const key = task?.task_type || 'No type assigned'
+                      if (!groups[key]) { groups[key] = []; order.push(key) }
+                      groups[key].push(id)
+                    })
+                    order.sort((a, b) => a === 'No type assigned' ? -1 : b === 'No type assigned' ? 1 : 0)
+                    return (
+                      <div style={{ display:'flex', flexDirection:'column' as const, gap:'1.1rem' }}>
+                        {order.map(key => {
+                          const meta = key !== 'No type assigned' ? TYPE_META[key] : null
+                          const color = meta ? meta.color : C.amber
+                          return (
+                            <div key={key}>
+                              <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', marginBottom:'0.5rem' }}>
+                                <span style={{ fontSize:'0.68rem', fontWeight:800, color, textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>{key}</span>
+                                <span style={{ fontSize:'0.62rem', color:C.muted }}>({groups[key].length})</span>
+                              </div>
+                              <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}>
+                                {groups[key].map(id => renderRow(id, tValidOrder.indexOf(id), false))}
                               </div>
                             </div>
-                            <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([id, ...tValidOrder.filter(i=>i!==id)]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
-                            <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveTPriority([...tValidOrder.filter(i=>i!==id), id]) }} style={{ background:'rgba(255,107,53,0.1)', border:'1px solid rgba(255,107,53,0.3)', color:'#ff6b35', cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
-                            <button type="button" draggable={false} onClick={e => convertToVault(task, e)} style={{ background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)', color:C.purple, cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.68rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.25rem' }} title="Send to Vault">
-                              <BookOpen size={10}/> Vault
-                            </button>
-                            <button onClick={e => { e.stopPropagation(); saveTPriority(tValidOrder.filter(i=>i!==id)) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0 }}>x</button>
-                          </div>
-                        </div>
-                      )
-                    })}
+                          )
+                        })}
+                      </div>
+                    )
+                  }
+
+                  return (
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}>
+                    {tValidOrder.map((id, idx) => renderRow(id, idx, true))}
                     <div style={{ height:'2.75rem', border:'2px dashed '+(tDragOver==='t-bottom'?'#ff6b35':C.border), borderRadius:'0.75rem', display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.15s', background:tDragOver==='t-bottom'?'rgba(255,107,53,0.05)':'transparent' }}
                       onDragOver={e => { e.preventDefault(); setTDragOver('t-bottom') }}
                       onDragLeave={() => { if (tDragOver==='t-bottom') setTDragOver(null) }}
@@ -849,7 +892,8 @@ export default function TasksPage() {
                       <p style={{ fontSize:'0.67rem', color:tDragOver==='t-bottom'?'#ff6b35':C.muted, margin:0 }}>Drop here to add at end</p>
                     </div>
                   </div>
-                )}
+                  )
+                })()}
               </div>
             </div>
           )
