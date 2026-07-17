@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, Zap, Copy, Check, ExternalLink, ChevronDown, CheckCircle2, Circle, Calendar, Trash2, Plus, Search, TrendingUp } from 'lucide-react'
+import { ChevronLeft, Zap, Copy, Check, ExternalLink, ChevronDown, CheckCircle2, Circle, Calendar, Trash2, Plus, Search, TrendingUp, ListOrdered } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -239,7 +240,7 @@ const WORKFLOW: {
 
 export default function XPage() {
   const router = useRouter()
-  const [tab, setTab]         = useState<'generate'|'workflow'|'outliers'>('workflow')
+  const [tab, setTab]         = useState<'generate'|'workflow'|'outliers'|'ideas'>('workflow')
   const [format, setFormat]   = useState('results-post')
   const [topic, setTopic]     = useState('inflation')
   const [tone, setTone]       = useState('authentic')
@@ -269,6 +270,69 @@ export default function XPage() {
   const [addFollowers, setAddFollowers] = useState(0)
   const [addCat, setAddCat]           = useState('inflation')
   const [addAnalysis, setAddAnalysis] = useState<{hookPattern:string;formatType:string;whyItWorked:string;soundMoneyAlternative:string}|null>(null)
+
+  // Ideas backlog + priority order (feeds the cross-section daily plan)
+  const [xIdeas, setXIdeas]           = useState<{id:string; text:string; status:string}[]>([])
+  const [xPriorityOrder, setXPriorityOrder] = useState<string[]>([])
+  const [xDragId, setXDragId]         = useState<string|null>(null)
+  const [xDragOver, setXDragOver]     = useState<string|null>(null)
+  const [newIdeaText, setNewIdeaText] = useState('')
+
+  useEffect(() => {
+    supabase.from('x_ideas').select('*').eq('archived', false).order('created_at', { ascending: false }).then(({ data }) => setXIdeas(data ?? []))
+    let plLoaded = false
+    let localIds: string[] = []
+    try {
+      const raw = localStorage.getItem('fs_p_x')
+      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setXPriorityOrder(ids); plLoaded = true; localIds = ids } }
+    } catch {}
+    supabase.from('priority_lists').select('ordered_ids').eq('key', 'x_priority').single().then(({ data }) => {
+      if (data?.ordered_ids && Array.isArray(data.ordered_ids) && (data.ordered_ids as string[]).length > 0) {
+        const ids = data.ordered_ids as string[]
+        setXPriorityOrder(ids)
+        try { localStorage.setItem('fs_p_x', JSON.stringify(ids)) } catch {}
+      } else if (plLoaded) {
+        supabase.from('priority_lists').upsert({ key: 'x_priority', ordered_ids: localIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+      }
+    })
+  }, [])
+
+  function saveXPriority(order: string[]) {
+    setXPriorityOrder(order)
+    try { localStorage.setItem('fs_p_x', JSON.stringify(order)) } catch {}
+    supabase.from('priority_lists').upsert({ key: 'x_priority', ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+  }
+
+  async function addXIdea() {
+    const text = newIdeaText.trim()
+    if (!text) return
+    setNewIdeaText('')
+    const { data } = await supabase.from('x_ideas').insert({ text, status:'todo', archived:false }).select().single()
+    if (data) {
+      setXIdeas(prev => [data, ...prev])
+      saveXPriority([data.id, ...xPriorityOrder])
+    }
+  }
+
+  async function toggleXIdeaDone(idea: {id:string; status:string}) {
+    const next = idea.status === 'done' ? 'todo' : 'done'
+    setXIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, status: next } : i))
+    await supabase.from('x_ideas').update({ status: next }).eq('id', idea.id)
+  }
+
+  async function deleteXIdea(id: string) {
+    setXIdeas(prev => prev.filter(i => i.id !== id))
+    saveXPriority(xPriorityOrder.filter(pid => pid !== id))
+    await supabase.from('x_ideas').update({ archived: true }).eq('id', id)
+  }
+
+  function moveXIdea(id: string, overId: string) {
+    if (id === overId) return
+    const order = xPriorityOrder.filter(x => x !== id)
+    const idx = order.indexOf(overId)
+    order.splice(idx, 0, id)
+    saveXPriority(order)
+  }
 
   useEffect(() => {
     try {
@@ -477,6 +541,9 @@ export default function XPage() {
               <TrendingUp size={12}/>Tweet Models
               {models.length > 0 && <span style={{ background:C.cyan+'22', border:'1px solid '+C.cyan+'44', borderRadius:'9999px', padding:'0 0.35rem', fontSize:'0.62rem', fontWeight:900, color:C.cyan }}>{models.length}</span>}
             </button>
+            <button onClick={() => setTab('ideas')} style={{ padding:'0.35rem 0.85rem', background:tab==='ideas' ? 'rgba(0,255,136,0.12)' : 'none', border:tab==='ideas' ? '1px solid rgba(0,255,136,0.3)' : '1px solid transparent', borderRadius:'9999px', color:tab==='ideas' ? C.green : C.muted, fontWeight:700, fontSize:'0.73rem', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'0.35rem' }}>
+              <ListOrdered size={12}/>Ideas
+            </button>
           </div>
         </div>
       </div>
@@ -507,6 +574,72 @@ export default function XPage() {
       </div>
 
       <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.5rem 2rem' }}>
+
+        {tab === 'ideas' && (() => {
+          const activeXIdeas = xIdeas.filter(i => i.status !== 'done')
+          const orderedXIdeas = [
+            ...xPriorityOrder.map(id => activeXIdeas.find(i => i.id === id)).filter(Boolean) as typeof activeXIdeas,
+            ...activeXIdeas.filter(i => !xPriorityOrder.includes(i.id)),
+          ]
+          const doneXIdeas = xIdeas.filter(i => i.status === 'done')
+          return (
+            <div>
+              <p style={{ fontSize:'0.8rem', color:C.sec, margin:'0 0 1rem' }}>Tweet, thread, and video ideas — ranked so the daily plan knows what to pull first.</p>
+              <div style={{ display:'flex', gap:'0.5rem', marginBottom:'1.25rem' }}>
+                <input
+                  value={newIdeaText} onChange={e => setNewIdeaText(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') addXIdea() }}
+                  placeholder="New tweet/thread idea..."
+                  style={{ flex:1, padding:'0.55rem 0.8rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.6rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', boxSizing:'border-box' as const }}
+                />
+                <button onClick={addXIdea} style={{ padding:'0.55rem 1rem', background:'rgba(0,255,136,0.1)', border:'1px solid rgba(0,255,136,0.3)', borderRadius:'0.6rem', color:C.green, fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                  <Plus size={14}/>Add
+                </button>
+              </div>
+
+              <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>Priority order &mdash; drag to reorder ({orderedXIdeas.length})</p>
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem', marginBottom:'1.5rem' }}>
+                {orderedXIdeas.length === 0 && <p style={{ fontSize:'0.75rem', color:C.muted }}>No ideas yet &mdash; add one above.</p>}
+                {orderedXIdeas.map((idea, i) => (
+                  <div key={idea.id} draggable
+                    onDragStart={() => setXDragId(idea.id)}
+                    onDragOver={e => { e.preventDefault(); setXDragOver(idea.id) }}
+                    onDrop={() => { if (xDragId) moveXIdea(xDragId, idea.id); setXDragId(null); setXDragOver(null) }}
+                    onDragEnd={() => { setXDragId(null); setXDragOver(null) }}
+                    style={{ display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.6rem 0.75rem', background:C.card, border:'1px solid '+(xDragOver===idea.id ? C.green : C.border), borderRadius:'0.65rem', cursor:'grab' }}>
+                    <span style={{ fontSize:'0.65rem', color:C.muted, fontWeight:800, width:'1.1rem', flexShrink:0 }}>{i+1}</span>
+                    <button onClick={() => toggleXIdeaDone(idea)} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', color:C.muted, padding:0, flexShrink:0 }}>
+                      <Circle size={15}/>
+                    </button>
+                    <span style={{ fontSize:'0.8rem', color:C.text, flex:1 }}>{idea.text}</span>
+                    <button onClick={() => deleteXIdea(idea.id)} style={{ background:'none', border:'none', cursor:'pointer', color:C.muted, display:'flex', padding:0, flexShrink:0 }}>
+                      <Trash2 size={13}/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {doneXIdeas.length > 0 && (
+                <>
+                  <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>Done ({doneXIdeas.length})</p>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+                    {doneXIdeas.map(idea => (
+                      <div key={idea.id} style={{ display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.75rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.65rem', opacity:0.5 }}>
+                        <button onClick={() => toggleXIdeaDone(idea)} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', color:C.green, padding:0 }}>
+                          <CheckCircle2 size={15}/>
+                        </button>
+                        <span style={{ fontSize:'0.8rem', color:C.text, flex:1, textDecoration:'line-through' }}>{idea.text}</span>
+                        <button onClick={() => deleteXIdea(idea.id)} style={{ background:'none', border:'none', cursor:'pointer', color:C.muted, display:'flex', padding:0 }}>
+                          <Trash2 size={13}/>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        })()}
 
         {tab === 'generate' && (<>
         {/* Format picker */}

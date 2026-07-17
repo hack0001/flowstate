@@ -1,8 +1,9 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star } from 'lucide-react'
+import { supabase, getStageNote, saveStageNote } from '@/lib/supabase'
+import { sopForStage } from '@/lib/sops'
+import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -227,6 +228,61 @@ function PipelineCard({ item, onMove, onSaveRevenue, onToggleFocus, focusAtCap }
   const s = stageStyle(item.pipeline_stage)
   const [revenue, setRevenue] = useState(item.revenue_note ?? '')
   const isPostPublished = item.pipeline_stage === '📊 Post-Published'
+  const sop = sopForStage(item.pipeline_stage)
+  const [expanded, setExpanded] = useState(false)
+  const [note, setNote] = useState('')
+  const [noteLoaded, setNoteLoaded] = useState(false)
+  const [consulting, setConsulting] = useState(false)
+  const [noteMsg, setNoteMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!expanded || !sop || noteLoaded) return
+    getStageNote(item.id, sop.id).then(({ output, error }) => {
+      if (error) setNoteMsg(error)
+      else setNote(output ?? '')
+      setNoteLoaded(true)
+    })
+  }, [expanded, sop, item.id, noteLoaded])
+
+  async function saveNote(text: string) {
+    if (!sop) return
+    const { error } = await saveStageNote(item.id, sop.id, text)
+    if (error) setNoteMsg(error)
+  }
+
+  async function consultClaude() {
+    if (!sop) return
+    setConsulting(true)
+    setNoteMsg(null)
+    const systemPrompt = 'You are a YouTube production assistant for SoundMoney, a channel on Austrian economics and sound money. You draft concrete, ready-to-use output for one pipeline stage at a time — never generic advice, always specific to the video described. Keep output tight and scannable, using the checklist as your brief. Write in plain text (no markdown headers), short paragraphs or a short list where useful.'
+    const userPrompt = `Video title: ${item.title}\n` +
+      (item.video_type ? `Video type: ${item.video_type}\n` : '') +
+      (item.format ? `Format: ${item.format}\n` : '') +
+      (item.unique_angle ? `Unique angle: ${item.unique_angle}\n` : '') +
+      (item.notes ? `Existing notes: ${item.notes}\n` : '') +
+      (note ? `Work already drafted for this stage:\n${note}\n` : '') +
+      `\nCurrent pipeline stage: ${sop.title}\nWhat this stage needs (checklist, strip the HTML tags mentally):\n` +
+      sop.steps.map((st, i) => (i + 1) + '. ' + st.replace(/<[^>]+>/g, '')).join('\n') +
+      `\n\nDraft the actual output for this stage for this specific video — e.g. if this is Idea & Validation, give the angle/pitch/comment-mining notes; if it's Holy Trifecta, give 3 title options + thumbnail concept + hook; if it's Scripting, give the outline or opening lines. Use what you know about the video above. Where a fact is missing, write [FILL IN: what's needed] rather than inventing it.`
+    try {
+      const res = await fetch('/api/content/consult', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ systemPrompt, userPrompt }),
+      })
+      const data = await res.json()
+      if (data?.error) { setNoteMsg('API error: ' + JSON.stringify(data.error)); return }
+      const raw = data?.content?.[0]?.text ?? ''
+      if (!raw) { setNoteMsg('Empty response from Claude.'); return }
+      setNote(raw)
+      await saveNote(raw)
+    } catch (e) {
+      setNoteMsg('Consult failed: ' + String(e))
+    } finally {
+      setConsulting(false)
+    }
+  }
+
   return (
     <div style={{ background:C.card, border:'1px solid '+(item.is_active_focus ? 'rgba(255,184,0,0.35)' : C.border), borderRadius:'0.875rem', padding:'0.75rem', marginBottom:'0.4rem' }}>
       <div style={{ display:'flex', alignItems:'flex-start', gap:'0.4rem', marginBottom:'0.4rem' }}>
@@ -250,9 +306,42 @@ function PipelineCard({ item, onMove, onSaveRevenue, onToggleFocus, focusAtCap }
           />
         </div>
       )}
-      <button onClick={onMove} style={{ width:'100%', padding:'0.3rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.25rem' }}>
-        Move stage <ChevronRight size={10}/>
-      </button>
+      <div style={{ display:'flex', gap:'0.3rem' }}>
+        <button onClick={onMove} style={{ flex:1, padding:'0.3rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.25rem' }}>
+          Move stage <ChevronRight size={10}/>
+        </button>
+        {sop && (
+          <button onClick={() => setExpanded(e => !e)} style={{ padding:'0.3rem 0.5rem', background: expanded ? 'rgba(139,92,246,0.1)' : 'rgba(255,255,255,0.02)', border:'1px solid '+(expanded ? 'rgba(139,92,246,0.3)' : C.border), borderRadius:'0.5rem', color: expanded ? C.purple : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.25rem' }}>
+            SOP &amp; AI <ChevronDown size={10} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition:'transform 0.15s' }}/>
+          </button>
+        )}
+      </div>
+
+      {expanded && sop && (
+        <div style={{ marginTop:'0.5rem', paddingTop:'0.5rem', borderTop:'1px solid '+C.border }}>
+          <p style={{ fontSize:'0.68rem', fontWeight:700, color:C.purple, margin:'0 0 0.3rem' }}>{sop.icon ? <span dangerouslySetInnerHTML={{ __html: sop.icon + ' ' }}/> : null}{sop.title}</p>
+          <ul style={{ margin:'0 0 0.5rem', paddingLeft:'1rem', display:'flex', flexDirection:'column', gap:'0.15rem' }}>
+            {sop.steps.map((st, i) => (
+              <li key={i} style={{ fontSize:'0.65rem', color:C.sec, lineHeight:1.4 }} dangerouslySetInnerHTML={{ __html: st }}/>
+            ))}
+          </ul>
+
+          <button onClick={consultClaude} disabled={consulting} style={{ width:'100%', marginBottom:'0.4rem', padding:'0.4rem', background: consulting ? C.surface : 'rgba(0,212,255,0.1)', border:'1px solid '+(consulting ? C.border : 'rgba(0,212,255,0.3)'), borderRadius:'0.5rem', color: consulting ? C.muted : C.cyan, fontWeight:700, cursor: consulting ? 'default' : 'pointer', fontFamily:'inherit', fontSize:'0.68rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.35rem' }}>
+            <Sparkles size={11}/>{consulting ? 'Consulting Claude…' : 'Consult Claude'}
+          </button>
+
+          {noteMsg && <p style={{ fontSize:'0.62rem', color:C.amber, margin:'0 0 0.4rem', lineHeight:1.4 }}>{noteMsg}</p>}
+
+          <textarea
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            onBlur={() => saveNote(note)}
+            placeholder="Consult Claude above, or write this stage's notes yourself…"
+            rows={4}
+            style={{ width:'100%', padding:'0.5rem 0.6rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.7rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}
+          />
+        </div>
+      )}
     </div>
   )
 }

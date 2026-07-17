@@ -19,9 +19,9 @@ import FoodProgress from '@/components/FoodProgress'
 // an SOP checklist (lib/sops.ts) — ticking every step advances the item to
 // its next pipeline stage. Session goal: complete 1 stage on each pinned
 // video. Reuses the same focus-mode shell (pomodoro, ambient sound,
-// distraction tracker, Rohn affirmations, food progress) as
-// app/workflow/[id]/focus, just re-pointed at Pipeline + SOP data instead
-// of the generic workflow_sessions/stages/tasks tables.
+// distraction tracker, Rohn affirmations, food progress) that the old
+// generic workflow_sessions/stages/tasks system used, re-pointed at
+// Pipeline + SOP data (that legacy system has since been removed).
 // ============================================================
 
 const C = {
