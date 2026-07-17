@@ -223,11 +223,12 @@ function CheckIcon({ status }: { status: ValidationCheckResult['status'] }) {
   return <HelpCircle size={13} color={C.amber}/>
 }
 
-function IdeaDetailModal({ item, result, loading, msg, ideaLog, ideaLogMsg, onSaveField, onSaveLog, onRun, onPromote, onClose }: {
+function IdeaDetailModal({ item, result, loading, msg, ideaLog, ideaLogMsg, onSaveField, onSaveLog, onCreateIdeaFromAlternative, onRun, onPromote, onClose }: {
   item: ContentItem; result: ValidationResult | null; loading: boolean; msg: string | null
   ideaLog: IdeaLog | null; ideaLogMsg: string | null
   onSaveField: (patch: Partial<Pick<ContentItem, 'title' | 'notes'>>) => void
   onSaveLog: (reply: string, nextSteps: string) => void
+  onCreateIdeaFromAlternative: (alt: ValidationAlternative) => Promise<boolean>
   onRun: (model: string, webSearch: boolean) => void; onPromote: () => void; onClose: () => void
 }) {
   const vs = result ? VERDICT_STYLE[result.verdict] : null
@@ -240,6 +241,13 @@ function IdeaDetailModal({ item, result, loading, msg, ideaLog, ideaLogMsg, onSa
   const [replyDraft, setReplyDraft] = useState(ideaLog?.reply ?? '')
   const [nextStepsDraft, setNextStepsDraft] = useState(ideaLog?.nextSteps ?? '')
   const [logSaved, setLogSaved] = useState(false)
+  const [altStatus, setAltStatus] = useState<Record<number, 'creating' | 'created' | 'error'>>({})
+
+  async function sendAltToIdeas(idx: number, alt: ValidationAlternative) {
+    setAltStatus(prev => ({ ...prev, [idx]: 'creating' }))
+    const ok = await onCreateIdeaFromAlternative(alt)
+    setAltStatus(prev => ({ ...prev, [idx]: ok ? 'created' : 'error' }))
+  }
 
   async function copyPrompt() {
     const prompt = buildSkillInvokePrompt({ ...item, title, notes: description })
@@ -397,13 +405,28 @@ function IdeaDetailModal({ item, result, loading, msg, ideaLog, ideaLogMsg, onSa
                   <p style={{ fontSize:'0.74rem', color:C.muted, margin:0, lineHeight:1.4 }}>No alternatives returned — re-run with web search on to get evidence-backed suggestions.</p>
                 ) : (
                   <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
-                    {result.alternatives.map((a, i) => (
-                      <div key={i} style={{ padding:'0.6rem 0.75rem', background:'rgba(255,184,0,0.06)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'0.5rem' }}>
-                        <p style={{ fontSize:'0.78rem', fontWeight:700, color:C.text, margin:'0 0 0.2rem' }}>{a.title}</p>
-                        <p style={{ fontSize:'0.72rem', color:C.sec, margin:'0 0 0.3rem', lineHeight:1.4 }}>{a.why}</p>
-                        <p style={{ fontSize:'0.66rem', color:C.amber, margin:0, lineHeight:1.4 }}>Evidence: {a.evidence}</p>
-                      </div>
-                    ))}
+                    {result.alternatives.map((a, i) => {
+                      const status = altStatus[i]
+                      return (
+                        <div key={i} style={{ padding:'0.6rem 0.75rem', background:'rgba(255,184,0,0.06)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'0.5rem' }}>
+                          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:'0.5rem' }}>
+                            <p style={{ fontSize:'0.78rem', fontWeight:700, color:C.text, margin:'0 0 0.2rem', flex:1 }}>{a.title}</p>
+                            <button
+                              onClick={() => sendAltToIdeas(i, a)}
+                              disabled={status === 'creating' || status === 'created'}
+                              title="Create this alternative as its own idea in the Ideas Bank"
+                              style={{ display:'flex', alignItems:'center', gap:'0.3rem', flexShrink:0, padding:'0.25rem 0.55rem', background: status === 'created' ? 'rgba(34,197,94,0.12)' : 'rgba(255,184,0,0.1)', border:'1px solid '+(status === 'created' ? 'rgba(34,197,94,0.4)' : 'rgba(255,184,0,0.3)'), borderRadius:'0.4rem', color: status === 'created' ? '#22c55e' : C.amber, cursor: (status === 'creating' || status === 'created') ? 'default' : 'pointer', fontFamily:'inherit', fontSize:'0.64rem', fontWeight:700, whiteSpace:'nowrap' as const }}
+                            >
+                              {status === 'created' ? <Check size={11}/> : <Plus size={11}/>}
+                              {status === 'creating' ? 'Adding…' : status === 'created' ? 'Added to Ideas' : 'Send to Ideas'}
+                            </button>
+                          </div>
+                          <p style={{ fontSize:'0.72rem', color:C.sec, margin:'0 0 0.3rem', lineHeight:1.4 }}>{a.why}</p>
+                          <p style={{ fontSize:'0.66rem', color:C.amber, margin:0, lineHeight:1.4 }}>Evidence: {a.evidence}</p>
+                          {status === 'error' && <p style={{ fontSize:'0.64rem', color:C.red, margin:'0.3rem 0 0' }}>Couldn&apos;t save — try again.</p>}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -714,6 +737,30 @@ export default function ContentPage() {
       .single()
     if (data) setItems(prev => [data, ...prev])
     setShowAdd(false)
+  }
+
+  // Turns one of Claude's validation alternatives into its own idea in the
+  // Ideas Bank — inherits format/video type from the idea it was suggested
+  // under, "why" becomes the description, "evidence" becomes the alpha check
+  // (it's exactly the kind of edge that field is for).
+  async function addIdeaFromAlternative(parent: ContentItem, alt: ValidationAlternative): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('content_items')
+      .insert({
+        title: alt.title,
+        pipeline_stage: '💡 Idea',
+        format: parent.format,
+        notes: alt.why || null,
+        video_type: parent.video_type,
+        unique_angle: alt.evidence || null,
+        status: 'active',
+        archived: false,
+      })
+      .select()
+      .single()
+    if (error || !data) return false
+    setItems(prev => [data, ...prev])
+    return true
   }
 
   async function saveRevenueNote(item: ContentItem, note: string) {
@@ -1039,6 +1086,7 @@ export default function ContentPage() {
           ideaLogMsg={ideaLogMsg}
           onSaveField={patch => saveIdeaField(validatingItem, patch)}
           onSaveLog={(reply, nextSteps) => saveIdeaLog(validatingItem, reply, nextSteps)}
+          onCreateIdeaFromAlternative={alt => addIdeaFromAlternative(validatingItem, alt)}
           onRun={(model, webSearch) => runValidation(validatingItem, model, webSearch)}
           onPromote={() => { promoteToValidated(validatingItem); setValidatingItem(null) }}
           onClose={() => setValidatingItem(null)}
