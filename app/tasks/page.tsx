@@ -29,7 +29,7 @@ const STATUS_CYCLE: Record<string, string> = {
   'Done': 'Not started',
 }
 
-const TYPES    = ['All', 'Flow', 'Personal', 'Admin', 'Quick Task', 'Recurring']
+const TYPES    = ['All', 'No Type', 'Flow', 'Personal', 'Admin', 'Quick Task', 'Recurring']
 const STATUSES = ['All', 'Not started', 'In progress', 'Done']
 const TASK_TYPES = ['Flow', 'Personal', 'Admin', 'Quick Task', 'Recurring']
 const URGENCY_OPTS = ['', 'Urgent', 'Not Urgent']
@@ -518,7 +518,8 @@ export default function TasksPage() {
 
   const filtered = sortTasks(
     tasks.filter(t => {
-      if (typeFilter !== 'All' && t.task_type !== typeFilter) return false
+      if (typeFilter === 'No Type' && t.task_type) return false
+      if (typeFilter !== 'All' && typeFilter !== 'No Type' && t.task_type !== typeFilter) return false
       if (statusFilter !== 'All' && t.status !== statusFilter) return false
       if (search) {
         const q = search.toLowerCase()
@@ -536,6 +537,7 @@ export default function TasksPage() {
 
   const typeCounts: Record<string, number> = {}
   tasks.forEach(t => { if (t.task_type) typeCounts[t.task_type] = (typeCounts[t.task_type] ?? 0) + 1 })
+  typeCounts['No Type'] = tasks.filter(t => !t.task_type).length
   const statusCounts: Record<string, number> = {}
   tasks.forEach(t => { statusCounts[t.status] = (statusCounts[t.status] ?? 0) + 1 })
 
@@ -670,6 +672,20 @@ export default function TasksPage() {
             {TYPES.map(type => {
               const active = typeFilter === type
               const count = type === 'All' ? tasks.length : (typeCounts[type] ?? 0)
+              if (type === 'No Type') {
+                if (count === 0) return null
+                return (
+                  <button key={type} onClick={() => setTypeFilter(type)} style={{
+                    padding:'0.3rem 0.75rem', borderRadius:'9999px', cursor:'pointer', fontFamily:'inherit',
+                    fontSize:'0.72rem', fontWeight:700,
+                    background: active ? C.amber + '18' : C.card,
+                    border: '1px solid ' + (active ? C.amber + '50' : C.amber + '30'),
+                    color: active ? C.amber : C.amber,
+                  }}>
+                    &#9888; {type} <span style={{ opacity:0.6 }}>({count})</span>
+                  </button>
+                )
+              }
               if (type !== 'All' && count === 0) return null
               const m = type !== 'All' ? TYPE_META[type] : null
               return (
