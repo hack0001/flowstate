@@ -959,7 +959,7 @@ export default function ContentPage() {
                 <table style={{ width:'100%', borderCollapse:'collapse' as const, fontSize:'0.82rem' }}>
                   <thead>
                     <tr style={{ borderBottom:'1px solid '+C.border }}>
-                      {['Title','Type','Format','Alpha (unique angle)','Notes / Angle','Added','Actions'].map(h => (
+                      {['Focus','Title','Type','Format','Alpha (unique angle)','Notes / Angle','Added','Actions'].map(h => (
                         <th key={h} style={{ padding:'0.5rem 0.875rem', textAlign:'left' as const, fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase' as const, color:C.muted, whiteSpace:'nowrap' as const }}>{h}</th>
                       ))}
                     </tr>
@@ -967,6 +967,9 @@ export default function ContentPage() {
                   <tbody>
                     {ideas.map(item => (
                       <tr key={item.id} style={{ borderBottom:'1px solid '+C.border+'60' }}>
+                        <td style={{ padding:'0.75rem 0.875rem', whiteSpace:'nowrap' as const }}>
+                          <FocusStar active={item.is_active_focus} atCap={focusCount >= 2} onToggle={() => toggleFocus(item)}/>
+                        </td>
                         <td style={{ padding:'0.75rem 0.875rem', fontWeight:700, color:C.text, maxWidth:'240px' }}>
                           <div
                             onClick={() => openValidate(item)}
