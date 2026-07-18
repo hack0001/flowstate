@@ -100,6 +100,27 @@ function buildSkillInvokePrompt(item: ContentItem): string {
   return lines.join('\n')
 }
 
+// ── "Find Ideas" — generate new ideas rather than validate an existing one ──
+type FoundIdea = { title: string; description: string; video_type: string; format: string; unique_angle: string; rationale: string; researched?: boolean }
+
+function buildFindIdeasPrompt(existingTitles: string[], count: number): { systemPrompt: string; userPrompt: string } {
+  const systemPrompt = 'You are a YouTube idea generator for SoundMoney, a channel on Austrian economics and sound money, roughly 15k subscribers. ' + VALIDATION_METHOD +
+    '\n\nAdditionally, every idea you propose must:\n' +
+    '- Be unambiguous about its topic in the title itself — YouTube\'s search and recommendation system needs to be able to tell what the video is about from the title/description, so a clever or vague hook must still contain a clear topical keyword or claim, not just curiosity with no subject.\n' +
+    '- Genuinely fit this channel\'s niche (Austrian economics, sound money, monetary policy, inflation, gold/hard assets, financial history) — not just "finance" in general.\n' +
+    '- Pass all 7 checks above, especially outlier evidence and comment-mined gap — do not propose an idea you have no real precedent for.\n\n' +
+    'Never invent outlier video statistics, comment data, or facts you did not actually find. Return ONLY valid JSON matching the schema described, no markdown fences, no commentary outside the JSON.'
+  const userPrompt = `Generate ${count} new video ideas for this channel.\n` +
+    (existingTitles.length > 0
+      ? `Do not repeat or closely overlap with these existing ideas already in the bank:\n${existingTitles.map(t => '- ' + t).join('\n')}\n\n`
+      : '') +
+    `For each idea, run through all 7 checks (search for real outlier videos and comments before proposing it, per the instructions above) and only include ideas that would score Viable or at worst Needs More Research — do not include ideas that would fail.\n\n` +
+    `Return JSON exactly in this shape:\n` +
+    `{"ideas":[{"title":"...","description":"one or two sentences on what the video covers","video_type":"${VIDEO_TYPES.join('"|"')}"|"","format":"${FORMATS.join('"|"')}","unique_angle":"the alpha/edge, citing the specific outlier video or comment gap this is based on","rationale":"one or two sentences on why this passes the checklist and fits the channel","researched":true|false}, ... ${count} entries]}\n\n` +
+    `"researched" should be true only if you actually used live web/YouTube search to ground this idea, false if you had no search capability and relied on established niche patterns instead.`
+  return { systemPrompt, userPrompt }
+}
+
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
   cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6',
@@ -583,6 +604,132 @@ function AddIdeaModal({ onAdd, onClose }: { onAdd:(title:string,format:string,no
   )
 }
 
+// ── Find Ideas modal ────────────────────────────────────────────────────────
+// Generates new video ideas from scratch (rather than validating one you
+// already have) — each one is checked against the same 7-step method before
+// it's proposed, grounded in real search where possible, on-topic for the
+// channel, and titled so YouTube can actually tell what it's about.
+function FindIdeasModal({ onGenerate, onAdd, onClose }: {
+  onGenerate: (model: string, webSearch: boolean, count: number) => Promise<{ ideas: FoundIdea[] } | { error: string }>
+  onAdd: (idea: FoundIdea) => Promise<boolean>
+  onClose: () => void
+}) {
+  const [modelKey, setModelKey] = useState(DEFAULT_CONSULT_MODEL)
+  const [webSearch, setWebSearch] = useState(true)
+  const [count, setCount] = useState(5)
+  const [loading, setLoading] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [ideas, setIdeas] = useState<FoundIdea[] | null>(null)
+  const [addStatus, setAddStatus] = useState<Record<number, 'adding' | 'added' | 'error'>>({})
+
+  async function run() {
+    setLoading(true)
+    setMsg(null)
+    const res = await onGenerate(modelKey, webSearch, count)
+    if ('error' in res) setMsg(res.error)
+    else setIdeas(res.ideas)
+    setLoading(false)
+  }
+
+  async function addOne(idx: number, idea: FoundIdea) {
+    setAddStatus(prev => ({ ...prev, [idx]: 'adding' }))
+    const ok = await onAdd(idea)
+    setAddStatus(prev => ({ ...prev, [idx]: ok ? 'added' : 'error' }))
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60, padding:'1rem' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'1.25rem', padding:'1.5rem', width:'100%', maxWidth:'34rem', maxHeight:'85vh', overflowY:'auto' as const }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.5rem' }}>
+          <h3 style={{ fontSize:'0.9rem', fontWeight:800, color:C.text, margin:0, display:'flex', alignItems:'center', gap:'0.4rem' }}><Sparkles size={14} color={C.cyan}/>Find Ideas</h3>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex' }}><X size={16}/></button>
+        </div>
+        <p style={{ fontSize:'0.76rem', color:C.muted, margin:'0 0 1rem', lineHeight:1.5 }}>
+          Generates new ideas that pass the full 7-step checklist, fit the channel&apos;s niche, and are titled so YouTube can tell what they&apos;re about — not just clever hooks with no clear topic. Grounded in real search where possible, and checked against your existing ideas so it doesn&apos;t repeat them.
+        </p>
+
+        <div style={{ display:'flex', gap:'0.6rem', marginBottom:'0.875rem', flexWrap:'wrap' as const }}>
+          <div style={{ flex:'1 1 12rem' }}>
+            <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>Model</label>
+            <select
+              value={modelKey} onChange={e => setModelKey(e.target.value)} disabled={loading}
+              title={CONSULT_MODELS.find(m => m.value === modelKey)?.hint}
+              style={{ width:'100%', padding:'0.55rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', fontWeight:600, outline:'none', boxSizing:'border-box' as const, cursor:loading?'not-allowed':'pointer' }}
+            >
+              {CONSULT_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+          <div style={{ width:'6rem' }}>
+            <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>How many</label>
+            <select
+              value={count} onChange={e => setCount(Number(e.target.value))} disabled={loading}
+              style={{ width:'100%', padding:'0.55rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', fontWeight:600, outline:'none', boxSizing:'border-box' as const, cursor:loading?'not-allowed':'pointer' }}
+            >
+              {[3, 5, 8].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <label style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'1rem', cursor:loading?'not-allowed':'pointer', fontSize:'0.76rem', color:C.sec }}>
+          <input type="checkbox" checked={webSearch} onChange={e => setWebSearch(e.target.checked)} disabled={loading} style={{ width:'0.9rem', height:'0.9rem' }}/>
+          Search the web while generating (finds real outlier videos and comment gaps to ground each idea in)
+        </label>
+
+        {msg && <p style={{ fontSize:'0.72rem', color:C.amber, margin:'0 0 0.75rem', lineHeight:1.4 }}>{msg}</p>}
+
+        {loading && (
+          <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', color:C.muted, padding:'1.5rem 0', justifyContent:'center' }}>
+            <div style={{ width:'16px', height:'16px', border:'2px solid '+C.muted, borderTopColor:C.cyan, borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
+            {webSearch ? 'Searching YouTube and drafting ideas…' : 'Drafting ideas…'}
+          </div>
+        )}
+
+        {ideas && !loading && (
+          <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem', marginBottom:'1rem' }}>
+            {ideas.map((idea, i) => {
+              const status = addStatus[i]
+              return (
+                <div key={i} style={{ padding:'0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem' }}>
+                  <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:'0.5rem', marginBottom:'0.3rem' }}>
+                    <p style={{ fontSize:'0.82rem', fontWeight:700, color:C.text, margin:0, flex:1, lineHeight:1.4 }}>{idea.title}</p>
+                    <button
+                      onClick={() => addOne(i, idea)}
+                      disabled={status === 'adding' || status === 'added'}
+                      style={{ display:'flex', alignItems:'center', gap:'0.3rem', flexShrink:0, padding:'0.3rem 0.6rem', background: status === 'added' ? 'rgba(34,197,94,0.12)' : 'rgba(255,184,0,0.1)', border:'1px solid '+(status === 'added' ? 'rgba(34,197,94,0.4)' : 'rgba(255,184,0,0.3)'), borderRadius:'0.4rem', color: status === 'added' ? '#22c55e' : C.amber, cursor: (status === 'adding' || status === 'added') ? 'default' : 'pointer', fontFamily:'inherit', fontSize:'0.66rem', fontWeight:700, whiteSpace:'nowrap' as const }}
+                    >
+                      {status === 'added' ? <Check size={11}/> : <Plus size={11}/>}
+                      {status === 'adding' ? 'Adding…' : status === 'added' ? 'Added' : 'Add to Ideas'}
+                    </button>
+                  </div>
+                  <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap' as const, marginBottom:'0.35rem' }}>
+                    {idea.video_type && <span style={{ fontSize:'0.6rem', color:C.purple, background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{idea.video_type}</span>}
+                    {idea.format && <span style={{ fontSize:'0.6rem', color:C.cyan, background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{idea.format}</span>}
+                    {idea.researched
+                      ? <span style={{ fontSize:'0.6rem', color:'#22c55e', background:'rgba(34,197,94,0.08)', border:'1px solid rgba(34,197,94,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>searched</span>
+                      : <span style={{ fontSize:'0.6rem', color:C.amber, background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>pattern-based</span>}
+                  </div>
+                  <p style={{ fontSize:'0.74rem', color:C.sec, margin:'0 0 0.3rem', lineHeight:1.4 }}>{idea.description}</p>
+                  <p style={{ fontSize:'0.68rem', color:C.purple, margin:'0 0 0.3rem', lineHeight:1.4 }}>&#9889; {idea.unique_angle}</p>
+                  <p style={{ fontSize:'0.66rem', color:C.muted, margin:0, lineHeight:1.4, fontStyle:'italic' }}>{idea.rationale}</p>
+                  {status === 'error' && <p style={{ fontSize:'0.64rem', color:C.red, margin:'0.3rem 0 0' }}>Couldn&apos;t save — try again.</p>}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end', flexWrap:'wrap' as const }}>
+          <button onClick={onClose} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Close</button>
+          <button onClick={run} disabled={loading} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.cyan, cursor:loading?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700, opacity:loading?0.5:1 }}>
+            <Sparkles size={13}/>{ideas ? 'Find more' : 'Find ideas'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Focus pin star ──────────────────────────────────────────────────────────
 // Pins up to 2 items as the Home page's "active focus" videos/shorts. Capped
 // at 2 in the app layer (see toggleFocus in the main page component below).
@@ -738,6 +885,7 @@ export default function ContentPage() {
   const [view,       setView]       = useState<View>('ideas')
   const [moveTarget, setMoveTarget] = useState<ContentItem | null>(null)
   const [showAdd,    setShowAdd]    = useState(false)
+  const [showFindIdeas, setShowFindIdeas] = useState(false)
   const [focusMsg,   setFocusMsg]   = useState<string | null>(null)
   const [validatingItem, setValidatingItem] = useState<ContentItem | null>(null)
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null)
@@ -788,6 +936,57 @@ export default function ContentPage() {
         notes: alt.why || null,
         video_type: parent.video_type,
         unique_angle: alt.evidence || null,
+        status: 'active',
+        archived: false,
+      })
+      .select()
+      .single()
+    if (error || !data) return false
+    setItems(prev => [data, ...prev])
+    return true
+  }
+
+  // Generates new ideas from scratch — same checklist + research requirement
+  // as validation, just run before an idea exists rather than after.
+  async function runFindIdeas(model: string, webSearch: boolean, count: number): Promise<{ ideas: FoundIdea[] } | { error: string }> {
+    const existingTitles = items.map(i => i.title).slice(0, 60)
+    const { systemPrompt, userPrompt } = buildFindIdeasPrompt(existingTitles, count)
+    try {
+      const res = await fetch('/api/content/consult', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ systemPrompt, userPrompt, model, webSearch }),
+      })
+      const data = await res.json()
+      if (data?.error) return { error: 'API error: ' + JSON.stringify(data.error) }
+      const raw = (data?.content ?? [])
+        .filter((b: { type: string; text?: string }) => b.type === 'text')
+        .map((b: { text?: string }) => b.text ?? '')
+        .join('\n')
+        .trim()
+      if (!raw) return { error: 'Empty response from Claude.' }
+      let clean = raw.replace(/```json|```/g, '').trim()
+      if (!clean.startsWith('{')) {
+        const match = clean.match(/\{[\s\S]*\}/)
+        if (match) clean = match[0]
+      }
+      const parsed = JSON.parse(clean) as { ideas: FoundIdea[] }
+      return { ideas: parsed.ideas ?? [] }
+    } catch (e) {
+      return { error: 'Generation failed: ' + String(e) }
+    }
+  }
+
+  async function addFoundIdea(idea: FoundIdea): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('content_items')
+      .insert({
+        title: idea.title,
+        pipeline_stage: '💡 Idea',
+        format: idea.format || 'Long-form',
+        notes: idea.description || null,
+        video_type: idea.video_type || null,
+        unique_angle: idea.unique_angle || null,
         status: 'active',
         archived: false,
       })
@@ -979,9 +1178,14 @@ export default function ContentPage() {
                 <h2 style={{ fontSize:'1rem', fontWeight:800, margin:'0 0 0.2rem' }}>&#128161; Ideas Bank</h2>
                 <p style={{ fontSize:'0.78rem', color:C.sec, margin:0 }}>{ideas.length} ideas &mdash; validate before moving to production</p>
               </div>
-              <button onClick={() => setShowAdd(true)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.45rem 1rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'0.625rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
-                <Plus size={13}/>Add idea
-              </button>
+              <div style={{ display:'flex', gap:'0.5rem' }}>
+                <button onClick={() => setShowFindIdeas(true)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.45rem 1rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.625rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
+                  <Sparkles size={13}/>Find ideas
+                </button>
+                <button onClick={() => setShowAdd(true)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.45rem 1rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'0.625rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
+                  <Plus size={13}/>Add idea
+                </button>
+              </div>
             </div>
 
             {ideas.length === 0 ? (
@@ -1114,6 +1318,13 @@ export default function ContentPage() {
 
       {moveTarget && <MoveModal item={moveTarget} onMove={s => moveStage(moveTarget, s)} onClose={() => setMoveTarget(null)}/>}
       {showAdd    && <AddIdeaModal onAdd={addIdea} onClose={() => setShowAdd(false)}/>}
+      {showFindIdeas && (
+        <FindIdeasModal
+          onGenerate={runFindIdeas}
+          onAdd={addFoundIdea}
+          onClose={() => setShowFindIdeas(false)}
+        />
+      )}
       {validatingItem && (
         <IdeaDetailModal
           item={validatingItem}
