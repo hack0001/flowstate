@@ -258,7 +258,7 @@ function IdeaDetailModal({ item, result, loading, msg, ideaLog, ideaLogMsg, onSa
   const [format, setFormat] = useState(item.format ?? 'Long-form')
   const [videoType, setVideoType] = useState(item.video_type ?? '')
   const [uniqueAngle, setUniqueAngle] = useState(item.unique_angle ?? '')
-  const [modelKey, setModelKey] = useState(result?.model ?? DEFAULT_CONSULT_MODEL)
+  const [modelKey, setModelKey] = useState<string>(result?.model ?? DEFAULT_CONSULT_MODEL)
   const [webSearch, setWebSearch] = useState(true)
   const [copied, setCopied] = useState(false)
   const [showAutoCheck, setShowAutoCheck] = useState(false)
@@ -614,7 +614,7 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
   onAdd: (idea: FoundIdea) => Promise<boolean>
   onClose: () => void
 }) {
-  const [modelKey, setModelKey] = useState(DEFAULT_CONSULT_MODEL)
+  const [modelKey, setModelKey] = useState<string>(DEFAULT_CONSULT_MODEL)
   const [webSearch, setWebSearch] = useState(true)
   const [count, setCount] = useState(5)
   const [loading, setLoading] = useState(false)
