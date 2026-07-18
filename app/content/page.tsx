@@ -226,7 +226,7 @@ function CheckIcon({ status }: { status: ValidationCheckResult['status'] }) {
 function IdeaDetailModal({ item, result, loading, msg, ideaLog, ideaLogMsg, onSaveField, onSaveLog, onCreateIdeaFromAlternative, onRun, onPromote, onClose }: {
   item: ContentItem; result: ValidationResult | null; loading: boolean; msg: string | null
   ideaLog: IdeaLog | null; ideaLogMsg: string | null
-  onSaveField: (patch: Partial<Pick<ContentItem, 'title' | 'notes'>>) => void
+  onSaveField: (patch: Partial<Pick<ContentItem, 'title' | 'notes' | 'format' | 'video_type' | 'unique_angle'>>) => void
   onSaveLog: (reply: string, nextSteps: string) => void
   onCreateIdeaFromAlternative: (alt: ValidationAlternative) => Promise<boolean>
   onRun: (model: string, webSearch: boolean) => void; onPromote: () => void; onClose: () => void
@@ -234,6 +234,9 @@ function IdeaDetailModal({ item, result, loading, msg, ideaLog, ideaLogMsg, onSa
   const vs = result ? VERDICT_STYLE[result.verdict] : null
   const [title, setTitle] = useState(item.title)
   const [description, setDescription] = useState(item.notes ?? '')
+  const [format, setFormat] = useState(item.format ?? 'Long-form')
+  const [videoType, setVideoType] = useState(item.video_type ?? '')
+  const [uniqueAngle, setUniqueAngle] = useState(item.unique_angle ?? '')
   const [modelKey, setModelKey] = useState(result?.model ?? DEFAULT_CONSULT_MODEL)
   const [webSearch, setWebSearch] = useState(true)
   const [copied, setCopied] = useState(false)
@@ -281,6 +284,38 @@ function IdeaDetailModal({ item, result, loading, msg, ideaLog, ideaLogMsg, onSa
             value={title} onChange={e => setTitle(e.target.value)}
             onBlur={() => { if (title.trim() && title !== item.title) onSaveField({ title: title.trim() }) }}
             style={{ width:'100%', padding:'0.6rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.9rem', fontWeight:700, outline:'none', boxSizing:'border-box' as const }}
+          />
+        </div>
+
+        <div style={{ marginBottom:'0.875rem' }}>
+          <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>Format</label>
+          <div style={{ display:'flex', gap:'0.35rem', flexWrap:'wrap' as const }}>
+            {FORMATS.map(f => (
+              <button key={f} onClick={() => { setFormat(f); onSaveField({ format: f }) }} style={{ padding:'0.35rem 0.75rem', background:format===f?'rgba(0,212,255,0.1)':C.card, border:'1px solid '+(format===f?C.cyan:C.border), borderRadius:'9999px', color:format===f?C.cyan:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700 }}>
+                {f}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginBottom:'0.875rem' }}>
+          <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>Video type <span style={{ fontWeight:400 }}>(optional — which funnel role this plays)</span></label>
+          <div style={{ display:'flex', gap:'0.35rem', flexWrap:'wrap' as const }}>
+            {VIDEO_TYPES.map(v => (
+              <button key={v} onClick={() => { const next = videoType===v?'':v; setVideoType(next); onSaveField({ video_type: next || null }) }} style={{ padding:'0.35rem 0.75rem', background:videoType===v?'rgba(139,92,246,0.12)':C.card, border:'1px solid '+(videoType===v?C.purple:C.border), borderRadius:'9999px', color:videoType===v?C.purple:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700 }}>
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginBottom:'0.875rem' }}>
+          <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>Alpha check <span style={{ fontWeight:400 }}>— what does this have that a generic AI answer or the top existing videos don&apos;t?</span></label>
+          <textarea
+            value={uniqueAngle} onChange={e => setUniqueAngle(e.target.value)}
+            onBlur={() => { if (uniqueAngle !== (item.unique_angle ?? '')) onSaveField({ unique_angle: uniqueAngle || null }) }}
+            rows={2} placeholder="e.g. original data pull, contrarian take, historical parallel nobody else has used, a real number nobody else calculated..."
+            style={{ width:'100%', padding:'0.6rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none', resize:'vertical' as const, boxSizing:'border-box' as const }}
           />
         </div>
 
@@ -792,7 +827,7 @@ export default function ContentPage() {
     await moveStage(item, '✅ Validated')
   }
 
-  async function saveIdeaField(item: ContentItem, patch: Partial<Pick<ContentItem, 'title' | 'notes'>>) {
+  async function saveIdeaField(item: ContentItem, patch: Partial<Pick<ContentItem, 'title' | 'notes' | 'format' | 'video_type' | 'unique_angle'>>) {
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i))
     setValidatingItem(prev => prev && prev.id === item.id ? { ...prev, ...patch } : prev)
     await supabase.from('content_items').update(patch).eq('id', item.id)
