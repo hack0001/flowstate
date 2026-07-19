@@ -670,29 +670,74 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
   const [scanning, setScanning] = useState(false)
   const [scanMsg, setScanMsg] = useState<string | null>(null)
   const [scanResults, setScanResults] = useState<ScannedOutlier[] | null>(null)
+  const [showQueries, setShowQueries] = useState(false)
+  // One query per line, editable per scan and remembered in this browser so a
+  // tuned set survives reloads. Defaults come from the channel brief.
+  const [queryText, setQueryText] = useState(OUTLIER_SEED_QUERIES.join('\n'))
+  const [outlierAddStatus, setOutlierAddStatus] = useState<Record<string, 'adding' | 'added' | 'error'>>({})
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('outlierSeedQueries')
+      if (saved?.trim()) setQueryText(saved)
+    } catch { /* private mode etc. — defaults are fine */ }
+  }, [])
+
+  function saveQueries(text: string) {
+    setQueryText(text)
+    try { localStorage.setItem('outlierSeedQueries', text) } catch { /* ignore */ }
+  }
+
+  const parsedQueries = queryText.split('\n').map(q => q.trim()).filter(Boolean)
 
   // Pull real numbers from the YouTube Data API first (needs YOUTUBE_API_KEY)
   // — the resulting outlier list is handed to Claude as verified evidence so
   // ideas get built on exact view:sub ratios instead of search estimates.
   async function scan() {
+    if (parsedQueries.length === 0) { setScanMsg('Add at least one search topic first.'); return }
     setScanning(true)
     setScanMsg(null)
     try {
       const res = await fetch('/api/content/outliers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ queries: OUTLIER_SEED_QUERIES.slice(0, 6) }),
+        body: JSON.stringify({ queries: parsedQueries.slice(0, 8) }),
       })
       const data = await res.json()
       if (data?.error) { setScanMsg(String(data.error)); return }
       const rows = (data?.outliers ?? []) as ScannedOutlier[]
       setScanResults(rows)
-      if (rows.length === 0) setScanMsg('Scan ran fine but found no qualifying outliers — try again later or loosen the thresholds in the API route.')
+      if (rows.length === 0) setScanMsg('Scan ran fine but found no qualifying outliers — try different topics or loosen the thresholds in the API route.')
     } catch (e) {
       setScanMsg('Scan failed: ' + String(e))
     } finally {
       setScanning(false)
     }
+  }
+
+  // Send a verified outlier straight to the Ideas board — for when the topic
+  // is obviously worth beating and you don't need Claude to package it first.
+  // The idea keeps the outlier's real numbers as evidence; retitle it later.
+  async function addOutlierToIdeas(o: ScannedOutlier) {
+    setOutlierAddStatus(prev => ({ ...prev, [o.videoId]: 'adding' }))
+    const months = Math.max(0, Math.round((Date.now() - new Date(o.publishedAt).getTime()) / (30 * 24 * 3600 * 1000)))
+    const idea: FoundIdea = {
+      title: o.title,
+      description: `Beat this verified outlier (found via "${o.query}"): ${o.url} — same proven topic, sharper SoundMoney version (better packaging + the prescriptive savings ending).`,
+      video_type: '', format: 'Long-form', unique_angle: '', pattern: '', comment_gap: '', why_now: '',
+      rationale: 'Added directly from the YouTube Data API scan — numbers are real, packaging/angle still to be worked out.',
+      researched: true,
+      outlier: {
+        video_title: o.title, channel: o.channel,
+        views: o.views.toLocaleString() + ' views',
+        subscribers: o.subscribers.toLocaleString() + ' subscribers',
+        view_to_sub_ratio: `${o.ratio}:1`,
+        recency: months <= 1 ? 'about a month ago' : `${months} months ago`,
+        packaging_gap: '',
+      },
+    }
+    const ok = await onAdd(idea)
+    setOutlierAddStatus(prev => ({ ...prev, [o.videoId]: ok ? 'added' : 'error' }))
   }
 
   async function run() {
@@ -755,23 +800,58 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
             <p style={{ fontSize:'0.7rem', color:C.sec, margin:0, lineHeight:1.45, flex:'1 1 16rem' }}>
               <strong style={{ color:C.green }}>Scan YouTube first (recommended)</strong> — pulls real view counts and subscriber ratios from the YouTube Data API for the channel&apos;s seed topics, so ideas are built on verified outliers instead of estimates.
             </p>
-            <button onClick={scan} disabled={scanning || loading} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.4rem 0.8rem', background:C.card, border:'1px solid rgba(0,255,136,0.3)', borderRadius:'0.5rem', color:C.green, cursor:(scanning||loading)?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, whiteSpace:'nowrap' as const, opacity:(scanning||loading)?0.5:1 }}>
-              <Zap size={11}/>{scanning ? 'Scanning…' : scanResults ? 'Re-scan' : 'Scan YouTube'}
-            </button>
+            <div style={{ display:'flex', gap:'0.35rem' }}>
+              <button onClick={() => setShowQueries(v => !v)} disabled={scanning} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.4rem 0.7rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:showQueries?C.text:C.sec, cursor:scanning?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, whiteSpace:'nowrap' as const }}>
+                <ChevronDown size={11} style={{ transform: showQueries ? 'rotate(180deg)' : 'none', transition:'transform 0.15s' }}/>Topics ({parsedQueries.length})
+              </button>
+              <button onClick={scan} disabled={scanning || loading} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.4rem 0.8rem', background:C.card, border:'1px solid rgba(0,255,136,0.3)', borderRadius:'0.5rem', color:C.green, cursor:(scanning||loading)?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, whiteSpace:'nowrap' as const, opacity:(scanning||loading)?0.5:1 }}>
+                <Zap size={11}/>{scanning ? 'Scanning…' : scanResults ? 'Re-scan' : 'Scan YouTube'}
+              </button>
+            </div>
           </div>
+          {showQueries && (
+            <div style={{ marginTop:'0.6rem' }}>
+              <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, marginBottom:'0.3rem' }}>
+                Search topics — one per line, first 8 used per scan (each costs ~100 of the 10,000 daily API units). Saved in this browser.
+              </label>
+              <textarea
+                value={queryText} onChange={e => saveQueries(e.target.value)} disabled={scanning}
+                rows={6}
+                style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.72rem', lineHeight:1.5, outline:'none', resize:'vertical' as const, boxSizing:'border-box' as const }}
+              />
+              <button onClick={() => saveQueries(OUTLIER_SEED_QUERIES.join('\n'))} disabled={scanning} style={{ marginTop:'0.3rem', padding:'0.25rem 0.6rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.muted, cursor:scanning?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.64rem', fontWeight:600 }}>
+                Reset to channel defaults
+              </button>
+            </div>
+          )}
           {scanMsg && <p style={{ fontSize:'0.68rem', color:C.amber, margin:'0.5rem 0 0', lineHeight:1.4 }}>{scanMsg}</p>}
           {scanResults && scanResults.length > 0 && (
             <div style={{ marginTop:'0.6rem' }}>
               <p style={{ fontSize:'0.66rem', color:C.green, margin:'0 0 0.35rem', fontWeight:700 }}>
-                {scanResults.length} verified outliers found — they&apos;ll be handed to Claude as evidence when you hit Find ideas.
+                {scanResults.length} verified outliers found — they&apos;ll be handed to Claude as evidence when you hit Find ideas, or add one straight to the board.
               </p>
-              <div style={{ maxHeight:'9rem', overflowY:'auto' as const, display:'flex', flexDirection:'column', gap:'0.25rem' }}>
-                {scanResults.map(o => (
-                  <a key={o.videoId} href={o.url} target="_blank" rel="noreferrer" style={{ fontSize:'0.66rem', color:C.sec, textDecoration:'none', lineHeight:1.4, padding:'0.25rem 0.4rem', background:C.card, borderRadius:'0.35rem', border:'1px solid '+C.border }}>
-                    <span style={{ color:C.text, fontWeight:600 }}>{o.title}</span>
-                    {' '}— {o.channel} · {o.views.toLocaleString()} views / {o.subscribers.toLocaleString()} subs · <span style={{ color:C.cyan, fontWeight:700 }}>{o.ratio}:1</span>
-                  </a>
-                ))}
+              <div style={{ maxHeight:'11rem', overflowY:'auto' as const, display:'flex', flexDirection:'column', gap:'0.25rem' }}>
+                {scanResults.map(o => {
+                  const st = outlierAddStatus[o.videoId]
+                  return (
+                    <div key={o.videoId} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.25rem 0.4rem', background:C.card, borderRadius:'0.35rem', border:'1px solid '+C.border }}>
+                      <a href={o.url} target="_blank" rel="noreferrer" style={{ flex:1, fontSize:'0.66rem', color:C.sec, textDecoration:'none', lineHeight:1.4 }}>
+                        <span style={{ color:C.text, fontWeight:600 }}>{o.title}</span>
+                        {' '}— {o.channel} · {o.views.toLocaleString()} views / {o.subscribers.toLocaleString()} subs · <span style={{ color:C.cyan, fontWeight:700 }}>{o.ratio}:1</span>
+                      </a>
+                      <button
+                        onClick={() => addOutlierToIdeas(o)}
+                        disabled={st === 'adding' || st === 'added'}
+                        title="Add this topic to the Ideas board with its verified numbers attached"
+                        style={{ display:'flex', alignItems:'center', gap:'0.25rem', flexShrink:0, padding:'0.25rem 0.5rem', background: st === 'added' ? 'rgba(34,197,94,0.12)' : 'rgba(255,184,0,0.1)', border:'1px solid '+(st === 'added' ? 'rgba(34,197,94,0.4)' : 'rgba(255,184,0,0.3)'), borderRadius:'0.35rem', color: st === 'added' ? '#22c55e' : C.amber, cursor:(st === 'adding' || st === 'added') ? 'default' : 'pointer', fontFamily:'inherit', fontSize:'0.62rem', fontWeight:700, whiteSpace:'nowrap' as const }}
+                      >
+                        {st === 'added' ? <Check size={10}/> : <Plus size={10}/>}
+                        {st === 'adding' ? 'Adding…' : st === 'added' ? 'Added' : 'Add'}
+                      </button>
+                      {st === 'error' && <span style={{ fontSize:'0.6rem', color:C.red }}>failed</span>}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
