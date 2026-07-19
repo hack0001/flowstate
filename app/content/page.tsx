@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, getStageNote, saveStageNote } from '@/lib/supabase'
 import { sopForStage, IDEA_VALIDATION_CHECKS } from '@/lib/sops'
+import { CHANNEL_BRIEF, OUTLIER_SEED_QUERIES } from '@/lib/channelBrief'
 import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check } from 'lucide-react'
 
 const IDEA_VALIDATION_SOP_ID = 'idea_validation'
@@ -58,7 +59,8 @@ const VALIDATION_METHOD = `Validate this YouTube video idea using the following 
 Tool use: if you have live web/YouTube search available in this environment, you MUST actually use it for steps 4 and 5 — search, open real results, and cite what you found (approximate titles, view counts, channel names, and specific comment themes) in your notes for those checks. Only mark a check "needs_research" if you genuinely have no search capability here — never fabricate statistics, video titles, or comments.`
 
 function buildValidationPrompt(item: ContentItem): { systemPrompt: string; userPrompt: string; combined: string } {
-  const systemPrompt = 'You are a strict YouTube idea validator for SoundMoney, a channel on Austrian economics and sound money. ' + VALIDATION_METHOD +
+  const systemPrompt = 'You are a strict YouTube idea validator for SoundMoney.\n\n' + CHANNEL_BRIEF + '\n\n' + VALIDATION_METHOD +
+    '\n\nBeyond the 7 checks, weigh the idea against the CHANNEL BRIEF above — does it fit the launch focus, use one of the proven packaging patterns, and leave room for the prescriptive "what this means for your savings" ending? Call out any mismatch explicitly in the summary.' +
     '\n\nNever invent outlier video statistics, comment data, or facts you did not actually find. Return ONLY valid JSON matching the schema described, no markdown fences, no commentary outside the JSON.'
   const userPrompt = `Video idea title: ${item.title}\n` +
     (item.video_type ? `Video type: ${item.video_type}\n` : '') +
@@ -88,7 +90,8 @@ function buildSkillInvokePrompt(item: ContentItem): string {
   const lines = [
     'Use the youtube-idea-validator skill to validate this YouTube video idea.',
     '',
-    'Channel: SoundMoney — Austrian economics and sound money, roughly 15k subscribers.',
+    'Channel: SoundMoney — faceless (voiceover + visuals) wealth-protection channel. Niche hypothesis: "I help everyday savers protect their wealth from inflation and a broken money system." Austrian economics is the lens, not the topic.',
+    'Strategy context: launch focus is inflation eating savings (everyday-prices frame), plus gold/hard assets and monetary-history stories. Proven packaging patterns in this niche: anxiety-question titles, history stories with a wealth lesson, contrarian takes, credible how-tos (ex-investment-manager credential). Comment research shows the unmet demand is prescriptive guidance — every video ends with a "what this means for your savings" segment. Target cadence 2-3 uploads/week.',
     `Title: ${item.title}`,
   ]
   if (item.video_type) lines.push(`Video type: ${item.video_type}`)
@@ -115,26 +118,52 @@ type OutlierBreakdown = {
   views: string
   subscribers: string
   view_to_sub_ratio: string
+  recency: string
   packaging_gap: string
 }
-type FoundIdea = { title: string; description: string; video_type: string; format: string; unique_angle: string; rationale: string; researched?: boolean; outlier: OutlierBreakdown | null }
+type FoundIdea = {
+  title: string; description: string; video_type: string; format: string
+  unique_angle: string
+  pattern: string       // which proven packaging pattern this uses (Anxiety Question | History Story | Contrarian Take | Credible How-To)
+  comment_gap: string   // the specific unanswered question/frustration from comments this fills
+  why_now: string       // one sentence on timing — outlier recency, news cycle, seasonality
+  rationale: string
+  researched?: boolean
+  outlier: OutlierBreakdown | null
+}
 
-function buildFindIdeasPrompt(existingTitles: string[], count: number): { systemPrompt: string; userPrompt: string } {
-  const systemPrompt = 'You are a YouTube idea generator for SoundMoney, a channel on Austrian economics and sound money, roughly 15k subscribers. ' + VALIDATION_METHOD +
+// Raw outlier row from /api/content/outliers (YouTube Data API scanner)
+type ScannedOutlier = {
+  videoId: string; title: string; channel: string
+  views: number; subscribers: number; ratio: number
+  publishedAt: string; url: string; query: string
+}
+
+function formatScannedOutliers(rows: ScannedOutlier[]): string {
+  return rows.map(o =>
+    `- "${o.title}" — ${o.channel} · ${o.views.toLocaleString()} views on a ${o.subscribers.toLocaleString()}-subscriber channel (${o.ratio}:1 view:sub) · published ${o.publishedAt.slice(0, 10)} · found via "${o.query}" · ${o.url}`
+  ).join('\n')
+}
+
+function buildFindIdeasPrompt(existingTitles: string[], count: number, scannedOutliers?: ScannedOutlier[]): { systemPrompt: string; userPrompt: string } {
+  const systemPrompt = 'You are a YouTube idea generator for SoundMoney.\n\n' + CHANNEL_BRIEF + '\n\n' + VALIDATION_METHOD +
     '\n\nThe outlier-opportunity method, in detail — this is the core of how ideas get selected, not just one check among many: search YouTube for videos in this niche and find ones that got unusually high views (100,000+) relative to how few subscribers their channel has (well under 100,000 subscribers — ideally a 5:1+ view-to-subscriber ratio), AND whose packaging is mediocre or bad — a weak title, a cluttered or low-effort thumbnail, or a video that clearly underdelivers on its own premise. That combination (proven demand + weak execution) is the opportunity: the topic demonstrably pulls an audience beyond the creator\'s own following, but nobody has made a great version of it yet. A big channel getting big views proves nothing (that\'s just their existing audience). A small channel with a great video getting modest views proves nothing (that\'s just a good video, not necessarily a hungry topic). It has to be both: high views, low subs, weak packaging.\n\n' +
     'Additionally, every idea you propose must:\n' +
     '- Be unambiguous about its topic in the title itself — YouTube\'s search and recommendation system needs to be able to tell what the video is about from the title/description, so a clever or vague hook must still contain a clear topical keyword or claim, not just curiosity with no subject.\n' +
-    '- Genuinely fit this channel\'s niche (Austrian economics, sound money, monetary policy, inflation, gold/hard assets, financial history) — not just "finance" in general.\n' +
+    '- Genuinely fit the CHANNEL BRIEF above — the launch focus (inflation eating savings first, then gold/hard assets, monetary history, how the money system works), one of the 4 proven packaging patterns (name it), and room for the prescriptive "what this means for your savings" ending. Not just "finance" in general.\n' +
     '- Pass all 7 checks above, especially outlier evidence and comment-mined gap — do not propose an idea you have no real outlier video for.\n\n' +
     'Never invent outlier video statistics, comment data, or facts you did not actually find. Return ONLY valid JSON matching the schema described, no markdown fences, no commentary outside the JSON.'
   const userPrompt = `Generate ${count} new video ideas for this channel.\n` +
     (existingTitles.length > 0
       ? `Do not repeat or closely overlap with these existing ideas already in the bank:\n${existingTitles.map(t => '- ' + t).join('\n')}\n\n`
       : '') +
-    `For each idea, search for a real outlier video first (high views, low-subscriber channel, weak packaging — see the method above), then build the idea around beating it. Run through all 7 checks and only include ideas that would score Viable or at worst Needs More Research — do not include ideas that would fail, and do not include an idea if you cannot find a genuine outlier backing it.\n\n` +
+    (scannedOutliers && scannedOutliers.length > 0
+      ? `VERIFIED OUTLIER CANDIDATES — fetched directly from the YouTube Data API, so these view counts, subscriber counts and ratios are REAL, not estimates. Prefer building ideas on these before hunting for others; you may still use web search to judge their packaging and read around them:\n${formatScannedOutliers(scannedOutliers)}\n\n`
+      : '') +
+    `For each idea, ground it in a real outlier video first (high views, low-subscriber channel, weak packaging — see the method above)${scannedOutliers && scannedOutliers.length > 0 ? ', preferably one from the verified list' : ''}, then build the idea around beating it. Run through all 7 checks and only include ideas that would score Viable or at worst Needs More Research — do not include ideas that would fail, and do not include an idea if you cannot find a genuine outlier backing it.\n\n` +
     `Return JSON exactly in this shape:\n` +
-    `{"ideas":[{"title":"...","description":"one or two sentences on what the video covers","video_type":"${VIDEO_TYPES.join('"|"')}"|"","format":"${FORMATS.join('"|"')}","unique_angle":"the alpha/edge — what your version does differently or better than the outlier","rationale":"one or two sentences on why this passes the checklist and fits the channel","researched":true|false,"outlier":{"video_title":"the specific outlier video's title","channel":"its channel name","views":"approx view count, e.g. '180,000 views'","subscribers":"approx subscriber count of that channel, e.g. '8,200 subscribers'","view_to_sub_ratio":"e.g. '22:1'","packaging_gap":"specifically what's weak about its title, thumbnail, or the video itself that your version can beat"} or null if you genuinely could not find a qualifying outlier}, ... ${count} entries]}\n\n` +
-    `"researched" should be true only if you actually used live web/YouTube search to ground this idea, false if you had no search capability and relied on established niche patterns instead. If "researched" is false, "outlier" should be null — do not fabricate view counts or channel names.`
+    `{"ideas":[{"title":"...","description":"one or two sentences on what the video covers","video_type":"${VIDEO_TYPES.join('"|"')}"|"","format":"${FORMATS.join('"|"')}","unique_angle":"the alpha/edge — what your version does differently or better than the outlier","pattern":"Anxiety Question"|"History Story"|"Contrarian Take"|"Credible How-To","comment_gap":"the specific unanswered question or frustration from comments (or the audience insight in the brief) this idea fills — empty string if genuinely unknown","why_now":"one sentence on timing: the outlier's recency, the news cycle, or seasonality that makes this topic hot right now","rationale":"one or two sentences on why this passes the checklist and fits the channel","researched":true|false,"outlier":{"video_title":"the specific outlier video's title","channel":"its channel name","views":"approx view count, e.g. '180,000 views'","subscribers":"approx subscriber count of that channel, e.g. '8,200 subscribers'","view_to_sub_ratio":"e.g. '22:1'","recency":"how old the outlier video is, e.g. '4 months ago'","packaging_gap":"specifically what's weak about its title, thumbnail, or the video itself that your version can beat"} or null if you genuinely could not find a qualifying outlier}, ... ${count} entries]}\n\n` +
+    `"researched" should be true only if you actually used live web/YouTube search or the verified outlier list above to ground this idea, false if you had neither and relied on established niche patterns instead. If "researched" is false, "outlier" should be null — do not fabricate view counts or channel names.`
   return { systemPrompt, userPrompt }
 }
 
@@ -627,7 +656,7 @@ function AddIdeaModal({ onAdd, onClose }: { onAdd:(title:string,format:string,no
 // it's proposed, grounded in real search where possible, on-topic for the
 // channel, and titled so YouTube can actually tell what it's about.
 function FindIdeasModal({ onGenerate, onAdd, onClose }: {
-  onGenerate: (model: string, webSearch: boolean, count: number) => Promise<{ ideas: FoundIdea[] } | { error: string }>
+  onGenerate: (model: string, webSearch: boolean, count: number, scannedOutliers?: ScannedOutlier[]) => Promise<{ ideas: FoundIdea[] } | { error: string }>
   onAdd: (idea: FoundIdea) => Promise<boolean>
   onClose: () => void
 }) {
@@ -638,11 +667,38 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
   const [msg, setMsg] = useState<string | null>(null)
   const [ideas, setIdeas] = useState<FoundIdea[] | null>(null)
   const [addStatus, setAddStatus] = useState<Record<number, 'adding' | 'added' | 'error'>>({})
+  const [scanning, setScanning] = useState(false)
+  const [scanMsg, setScanMsg] = useState<string | null>(null)
+  const [scanResults, setScanResults] = useState<ScannedOutlier[] | null>(null)
+
+  // Pull real numbers from the YouTube Data API first (needs YOUTUBE_API_KEY)
+  // — the resulting outlier list is handed to Claude as verified evidence so
+  // ideas get built on exact view:sub ratios instead of search estimates.
+  async function scan() {
+    setScanning(true)
+    setScanMsg(null)
+    try {
+      const res = await fetch('/api/content/outliers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queries: OUTLIER_SEED_QUERIES.slice(0, 6) }),
+      })
+      const data = await res.json()
+      if (data?.error) { setScanMsg(String(data.error)); return }
+      const rows = (data?.outliers ?? []) as ScannedOutlier[]
+      setScanResults(rows)
+      if (rows.length === 0) setScanMsg('Scan ran fine but found no qualifying outliers — try again later or loosen the thresholds in the API route.')
+    } catch (e) {
+      setScanMsg('Scan failed: ' + String(e))
+    } finally {
+      setScanning(false)
+    }
+  }
 
   async function run() {
     setLoading(true)
     setMsg(null)
-    const res = await onGenerate(modelKey, webSearch, count)
+    const res = await onGenerate(modelKey, webSearch, count, scanResults && scanResults.length > 0 ? scanResults : undefined)
     if ('error' in res) setMsg(res.error)
     else setIdeas(res.ideas)
     setLoading(false)
@@ -688,10 +744,38 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
           </div>
         </div>
 
-        <label style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'1rem', cursor:loading?'not-allowed':'pointer', fontSize:'0.76rem', color:C.sec }}>
+        <label style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.75rem', cursor:loading?'not-allowed':'pointer', fontSize:'0.76rem', color:C.sec }}>
           <input type="checkbox" checked={webSearch} onChange={e => setWebSearch(e.target.checked)} disabled={loading} style={{ width:'0.9rem', height:'0.9rem' }}/>
           Search the web while generating (finds real outlier videos and comment gaps to ground each idea in)
         </label>
+
+        {/* ── YouTube Data API scan — exact numbers before Claude judges ── */}
+        <div style={{ padding:'0.75rem', background:'rgba(0,255,136,0.04)', border:'1px solid rgba(0,255,136,0.15)', borderRadius:'0.75rem', marginBottom:'1rem' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.5rem', flexWrap:'wrap' as const }}>
+            <p style={{ fontSize:'0.7rem', color:C.sec, margin:0, lineHeight:1.45, flex:'1 1 16rem' }}>
+              <strong style={{ color:C.green }}>Scan YouTube first (recommended)</strong> — pulls real view counts and subscriber ratios from the YouTube Data API for the channel&apos;s seed topics, so ideas are built on verified outliers instead of estimates.
+            </p>
+            <button onClick={scan} disabled={scanning || loading} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.4rem 0.8rem', background:C.card, border:'1px solid rgba(0,255,136,0.3)', borderRadius:'0.5rem', color:C.green, cursor:(scanning||loading)?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, whiteSpace:'nowrap' as const, opacity:(scanning||loading)?0.5:1 }}>
+              <Zap size={11}/>{scanning ? 'Scanning…' : scanResults ? 'Re-scan' : 'Scan YouTube'}
+            </button>
+          </div>
+          {scanMsg && <p style={{ fontSize:'0.68rem', color:C.amber, margin:'0.5rem 0 0', lineHeight:1.4 }}>{scanMsg}</p>}
+          {scanResults && scanResults.length > 0 && (
+            <div style={{ marginTop:'0.6rem' }}>
+              <p style={{ fontSize:'0.66rem', color:C.green, margin:'0 0 0.35rem', fontWeight:700 }}>
+                {scanResults.length} verified outliers found — they&apos;ll be handed to Claude as evidence when you hit Find ideas.
+              </p>
+              <div style={{ maxHeight:'9rem', overflowY:'auto' as const, display:'flex', flexDirection:'column', gap:'0.25rem' }}>
+                {scanResults.map(o => (
+                  <a key={o.videoId} href={o.url} target="_blank" rel="noreferrer" style={{ fontSize:'0.66rem', color:C.sec, textDecoration:'none', lineHeight:1.4, padding:'0.25rem 0.4rem', background:C.card, borderRadius:'0.35rem', border:'1px solid '+C.border }}>
+                    <span style={{ color:C.text, fontWeight:600 }}>{o.title}</span>
+                    {' '}— {o.channel} · {o.views.toLocaleString()} views / {o.subscribers.toLocaleString()} subs · <span style={{ color:C.cyan, fontWeight:700 }}>{o.ratio}:1</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {msg && <p style={{ fontSize:'0.72rem', color:C.amber, margin:'0 0 0.75rem', lineHeight:1.4 }}>{msg}</p>}
 
@@ -720,6 +804,7 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
                     </button>
                   </div>
                   <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap' as const, marginBottom:'0.35rem' }}>
+                    {idea.pattern && <span style={{ fontSize:'0.6rem', color:C.orange, background:'rgba(249,115,22,0.08)', border:'1px solid rgba(249,115,22,0.25)', borderRadius:'9999px', padding:'0.1rem 0.4rem', fontWeight:700 }}>{idea.pattern}</span>}
                     {idea.video_type && <span style={{ fontSize:'0.6rem', color:C.purple, background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{idea.video_type}</span>}
                     {idea.format && <span style={{ fontSize:'0.6rem', color:C.cyan, background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{idea.format}</span>}
                     {idea.researched
@@ -743,10 +828,21 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
                         </p>
                         <p style={{ fontSize:'0.68rem', color:C.sec, margin:0, lineHeight:1.4 }}>
                           {idea.outlier.views} on a {idea.outlier.subscribers} channel &nbsp;<span style={{ color:C.cyan, fontWeight:700 }}>({idea.outlier.view_to_sub_ratio} view:sub)</span>
+                          {idea.outlier.recency && <span style={{ color:C.muted }}> &middot; {idea.outlier.recency}</span>}
                         </p>
                         <p style={{ fontSize:'0.68rem', color:C.sec, margin:'0.15rem 0 0', lineHeight:1.4 }}>
                           <span style={{ color:C.amber, fontWeight:700 }}>Packaging gap:</span> {idea.outlier.packaging_gap}
                         </p>
+                        {idea.comment_gap && (
+                          <p style={{ fontSize:'0.68rem', color:C.sec, margin:'0.15rem 0 0', lineHeight:1.4 }}>
+                            <span style={{ color:C.teal, fontWeight:700 }}>Audience gap:</span> {idea.comment_gap}
+                          </p>
+                        )}
+                        {idea.why_now && (
+                          <p style={{ fontSize:'0.68rem', color:C.sec, margin:'0.15rem 0 0', lineHeight:1.4 }}>
+                            <span style={{ color:C.green, fontWeight:700 }}>Why now:</span> {idea.why_now}
+                          </p>
+                        )}
                       </div>
                     ) : (
                       <p style={{ fontSize:'0.7rem', color:C.muted, margin:0, lineHeight:1.4 }}>
@@ -830,7 +926,7 @@ function PipelineCard({ item, onMove, onSaveRevenue, onToggleFocus, focusAtCap }
     if (!sop) return
     setConsulting(true)
     setNoteMsg(null)
-    const systemPrompt = 'You are a YouTube production assistant for SoundMoney, a channel on Austrian economics and sound money. You draft concrete, ready-to-use output for one pipeline stage at a time — never generic advice, always specific to the video described. Keep output tight and scannable, using the checklist as your brief. Write in plain text (no markdown headers), short paragraphs or a short list where useful.'
+    const systemPrompt = 'You are a YouTube production assistant for SoundMoney.\n\n' + CHANNEL_BRIEF + '\n\nYou draft concrete, ready-to-use output for one pipeline stage at a time — never generic advice, always specific to the video described, always consistent with the CHANNEL BRIEF above (packaging patterns, prescriptive ending, faceless format). Keep output tight and scannable, using the checklist as your brief. Write in plain text (no markdown headers), short paragraphs or a short list where useful.'
     const userPrompt = `Video title: ${item.title}\n` +
       (item.video_type ? `Video type: ${item.video_type}\n` : '') +
       (item.format ? `Format: ${item.format}\n` : '') +
@@ -993,9 +1089,9 @@ export default function ContentPage() {
 
   // Generates new ideas from scratch — same checklist + research requirement
   // as validation, just run before an idea exists rather than after.
-  async function runFindIdeas(model: string, webSearch: boolean, count: number): Promise<{ ideas: FoundIdea[] } | { error: string }> {
+  async function runFindIdeas(model: string, webSearch: boolean, count: number, scannedOutliers?: ScannedOutlier[]): Promise<{ ideas: FoundIdea[] } | { error: string }> {
     const existingTitles = items.map(i => i.title).slice(0, 60)
-    const { systemPrompt, userPrompt } = buildFindIdeasPrompt(existingTitles, count)
+    const { systemPrompt, userPrompt } = buildFindIdeasPrompt(existingTitles, count, scannedOutliers)
     try {
       const res = await fetch('/api/content/consult', {
         method: 'POST',
@@ -1028,9 +1124,12 @@ export default function ContentPage() {
     // evidence that field is for, and keeps it visible once the idea is a
     // normal Ideas Bank row.
     const outlierNote = idea.outlier
-      ? `Outlier: "${idea.outlier.video_title}" (${idea.outlier.channel}) — ${idea.outlier.views} on a ${idea.outlier.subscribers} channel (${idea.outlier.view_to_sub_ratio} view:sub). Packaging gap: ${idea.outlier.packaging_gap}`
+      ? `Outlier: "${idea.outlier.video_title}" (${idea.outlier.channel}) — ${idea.outlier.views} on a ${idea.outlier.subscribers} channel (${idea.outlier.view_to_sub_ratio} view:sub)${idea.outlier.recency ? ', ' + idea.outlier.recency : ''}. Packaging gap: ${idea.outlier.packaging_gap}`
       : null
-    const uniqueAngle = [idea.unique_angle, outlierNote].filter(Boolean).join('\n\n') || null
+    const patternNote = idea.pattern ? `Pattern: ${idea.pattern}` : null
+    const gapNote = idea.comment_gap ? `Comment gap: ${idea.comment_gap}` : null
+    const whyNowNote = idea.why_now ? `Why now: ${idea.why_now}` : null
+    const uniqueAngle = [idea.unique_angle, patternNote, outlierNote, gapNote, whyNowNote].filter(Boolean).join('\n\n') || null
     const { data, error } = await supabase
       .from('content_items')
       .insert({
