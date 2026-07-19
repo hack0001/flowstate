@@ -101,23 +101,40 @@ function buildSkillInvokePrompt(item: ContentItem): string {
 }
 
 // ── "Find Ideas" — generate new ideas rather than validate an existing one ──
-type FoundIdea = { title: string; description: string; video_type: string; format: string; unique_angle: string; rationale: string; researched?: boolean }
+// Shane Hummus's opportunity-finding method, spelled out: an idea is worth
+// making when there's a real video that (a) got unusually high views for
+// how few subscribers its channel has — proof the topic itself pulls an
+// audience, not just the creator's existing fans — AND (b) its packaging
+// (title, thumbnail, or the video itself) is mediocre or bad, meaning a
+// sharper version of the same topic has real headroom to outperform it.
+// High views + weak execution, together, is the signal — one without the
+// other isn't an opportunity (just a big channel, or just an obscure video).
+type OutlierBreakdown = {
+  video_title: string
+  channel: string
+  views: string
+  subscribers: string
+  view_to_sub_ratio: string
+  packaging_gap: string
+}
+type FoundIdea = { title: string; description: string; video_type: string; format: string; unique_angle: string; rationale: string; researched?: boolean; outlier: OutlierBreakdown | null }
 
 function buildFindIdeasPrompt(existingTitles: string[], count: number): { systemPrompt: string; userPrompt: string } {
   const systemPrompt = 'You are a YouTube idea generator for SoundMoney, a channel on Austrian economics and sound money, roughly 15k subscribers. ' + VALIDATION_METHOD +
-    '\n\nAdditionally, every idea you propose must:\n' +
+    '\n\nThe outlier-opportunity method, in detail — this is the core of how ideas get selected, not just one check among many: search YouTube for videos in this niche and find ones that got unusually high views (100,000+) relative to how few subscribers their channel has (well under 100,000 subscribers — ideally a 5:1+ view-to-subscriber ratio), AND whose packaging is mediocre or bad — a weak title, a cluttered or low-effort thumbnail, or a video that clearly underdelivers on its own premise. That combination (proven demand + weak execution) is the opportunity: the topic demonstrably pulls an audience beyond the creator\'s own following, but nobody has made a great version of it yet. A big channel getting big views proves nothing (that\'s just their existing audience). A small channel with a great video getting modest views proves nothing (that\'s just a good video, not necessarily a hungry topic). It has to be both: high views, low subs, weak packaging.\n\n' +
+    'Additionally, every idea you propose must:\n' +
     '- Be unambiguous about its topic in the title itself — YouTube\'s search and recommendation system needs to be able to tell what the video is about from the title/description, so a clever or vague hook must still contain a clear topical keyword or claim, not just curiosity with no subject.\n' +
     '- Genuinely fit this channel\'s niche (Austrian economics, sound money, monetary policy, inflation, gold/hard assets, financial history) — not just "finance" in general.\n' +
-    '- Pass all 7 checks above, especially outlier evidence and comment-mined gap — do not propose an idea you have no real precedent for.\n\n' +
+    '- Pass all 7 checks above, especially outlier evidence and comment-mined gap — do not propose an idea you have no real outlier video for.\n\n' +
     'Never invent outlier video statistics, comment data, or facts you did not actually find. Return ONLY valid JSON matching the schema described, no markdown fences, no commentary outside the JSON.'
   const userPrompt = `Generate ${count} new video ideas for this channel.\n` +
     (existingTitles.length > 0
       ? `Do not repeat or closely overlap with these existing ideas already in the bank:\n${existingTitles.map(t => '- ' + t).join('\n')}\n\n`
       : '') +
-    `For each idea, run through all 7 checks (search for real outlier videos and comments before proposing it, per the instructions above) and only include ideas that would score Viable or at worst Needs More Research — do not include ideas that would fail.\n\n` +
+    `For each idea, search for a real outlier video first (high views, low-subscriber channel, weak packaging — see the method above), then build the idea around beating it. Run through all 7 checks and only include ideas that would score Viable or at worst Needs More Research — do not include ideas that would fail, and do not include an idea if you cannot find a genuine outlier backing it.\n\n` +
     `Return JSON exactly in this shape:\n` +
-    `{"ideas":[{"title":"...","description":"one or two sentences on what the video covers","video_type":"${VIDEO_TYPES.join('"|"')}"|"","format":"${FORMATS.join('"|"')}","unique_angle":"the alpha/edge, citing the specific outlier video or comment gap this is based on","rationale":"one or two sentences on why this passes the checklist and fits the channel","researched":true|false}, ... ${count} entries]}\n\n` +
-    `"researched" should be true only if you actually used live web/YouTube search to ground this idea, false if you had no search capability and relied on established niche patterns instead.`
+    `{"ideas":[{"title":"...","description":"one or two sentences on what the video covers","video_type":"${VIDEO_TYPES.join('"|"')}"|"","format":"${FORMATS.join('"|"')}","unique_angle":"the alpha/edge — what your version does differently or better than the outlier","rationale":"one or two sentences on why this passes the checklist and fits the channel","researched":true|false,"outlier":{"video_title":"the specific outlier video's title","channel":"its channel name","views":"approx view count, e.g. '180,000 views'","subscribers":"approx subscriber count of that channel, e.g. '8,200 subscribers'","view_to_sub_ratio":"e.g. '22:1'","packaging_gap":"specifically what's weak about its title, thumbnail, or the video itself that your version can beat"} or null if you genuinely could not find a qualifying outlier}, ... ${count} entries]}\n\n` +
+    `"researched" should be true only if you actually used live web/YouTube search to ground this idea, false if you had no search capability and relied on established niche patterns instead. If "researched" is false, "outlier" should be null — do not fabricate view counts or channel names.`
   return { systemPrompt, userPrompt }
 }
 
@@ -709,7 +726,35 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
                       ? <span style={{ fontSize:'0.6rem', color:'#22c55e', background:'rgba(34,197,94,0.08)', border:'1px solid rgba(34,197,94,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>searched</span>
                       : <span style={{ fontSize:'0.6rem', color:C.amber, background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>pattern-based</span>}
                   </div>
-                  <p style={{ fontSize:'0.74rem', color:C.sec, margin:'0 0 0.3rem', lineHeight:1.4 }}>{idea.description}</p>
+                  <p style={{ fontSize:'0.74rem', color:C.sec, margin:'0 0 0.5rem', lineHeight:1.4 }}>{idea.description}</p>
+
+                  {/* Opportunity signal — the Hummus outlier breakdown: high views on a
+                      low-subscriber channel with weak packaging is what makes this an
+                      opportunity, not just a topic guess. Shown plainly so it's obvious
+                      what evidence (or lack of it) each idea actually rests on. */}
+                  <div style={{ padding:'0.55rem 0.65rem', background: idea.outlier ? 'rgba(0,212,255,0.05)' : 'rgba(255,184,0,0.05)', border:'1px solid '+(idea.outlier ? 'rgba(0,212,255,0.18)' : 'rgba(255,184,0,0.18)'), borderRadius:'0.5rem', marginBottom:'0.5rem' }}>
+                    <p style={{ fontSize:'0.6rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase', color: idea.outlier ? C.cyan : C.amber, margin:'0 0 0.35rem' }}>
+                      Opportunity signal
+                    </p>
+                    {idea.outlier ? (
+                      <div style={{ display:'flex', flexDirection:'column', gap:'0.2rem' }}>
+                        <p style={{ fontSize:'0.72rem', color:C.text, margin:0, lineHeight:1.4 }}>
+                          <strong>&#8220;{idea.outlier.video_title}&#8221;</strong> &mdash; {idea.outlier.channel}
+                        </p>
+                        <p style={{ fontSize:'0.68rem', color:C.sec, margin:0, lineHeight:1.4 }}>
+                          {idea.outlier.views} on a {idea.outlier.subscribers} channel &nbsp;<span style={{ color:C.cyan, fontWeight:700 }}>({idea.outlier.view_to_sub_ratio} view:sub)</span>
+                        </p>
+                        <p style={{ fontSize:'0.68rem', color:C.sec, margin:'0.15rem 0 0', lineHeight:1.4 }}>
+                          <span style={{ color:C.amber, fontWeight:700 }}>Packaging gap:</span> {idea.outlier.packaging_gap}
+                        </p>
+                      </div>
+                    ) : (
+                      <p style={{ fontSize:'0.7rem', color:C.muted, margin:0, lineHeight:1.4 }}>
+                        No qualifying outlier found (high views + low subs + weak packaging) — this idea rests on pattern/judgment, not a confirmed precedent. Worth a closer manual check before committing.
+                      </p>
+                    )}
+                  </div>
+
                   <p style={{ fontSize:'0.68rem', color:C.purple, margin:'0 0 0.3rem', lineHeight:1.4 }}>&#9889; {idea.unique_angle}</p>
                   <p style={{ fontSize:'0.66rem', color:C.muted, margin:0, lineHeight:1.4, fontStyle:'italic' }}>{idea.rationale}</p>
                   {status === 'error' && <p style={{ fontSize:'0.64rem', color:C.red, margin:'0.3rem 0 0' }}>Couldn&apos;t save — try again.</p>}
@@ -978,6 +1023,14 @@ export default function ContentPage() {
   }
 
   async function addFoundIdea(idea: FoundIdea): Promise<boolean> {
+    // ContentItem has no dedicated outlier field, so fold the opportunity
+    // breakdown into unique_angle — it's exactly the "why this has an edge"
+    // evidence that field is for, and keeps it visible once the idea is a
+    // normal Ideas Bank row.
+    const outlierNote = idea.outlier
+      ? `Outlier: "${idea.outlier.video_title}" (${idea.outlier.channel}) — ${idea.outlier.views} on a ${idea.outlier.subscribers} channel (${idea.outlier.view_to_sub_ratio} view:sub). Packaging gap: ${idea.outlier.packaging_gap}`
+      : null
+    const uniqueAngle = [idea.unique_angle, outlierNote].filter(Boolean).join('\n\n') || null
     const { data, error } = await supabase
       .from('content_items')
       .insert({
@@ -986,7 +1039,7 @@ export default function ContentPage() {
         format: idea.format || 'Long-form',
         notes: idea.description || null,
         video_type: idea.video_type || null,
-        unique_angle: idea.unique_angle || null,
+        unique_angle: uniqueAngle,
         status: 'active',
         archived: false,
       })
