@@ -9,10 +9,11 @@ import { NextRequest, NextResponse } from 'next/server'
 // verified evidence so Claude builds ideas on real precedents instead of
 // searching from scratch.
 //
-// Needs YOUTUBE_API_KEY in .env.local (Google Cloud console → YouTube Data
-// API v3 → API key, free tier). Quota note: search.list costs 100 units per
-// query and the free quota is 10,000/day — so a full 6-query scan costs
-// ~600+ units; dozens of scans a day are fine, hundreds are not.
+// Needs YOUTUBE_API_KEY (Google Cloud console → YouTube Data API v3 → API
+// key, free tier; set in Vercel env for production). Quota note: search.list
+// costs 100 units per call and each query runs 2 passes, so ~200 units per
+// topic against the free 10,000/day — a 6-topic scan is ~1,200 units; a
+// handful of scans a day is fine, dozens are not.
 
 type ScannedOutlier = {
   videoId: string
@@ -53,21 +54,26 @@ export async function POST(req: NextRequest) {
 
     const publishedAfter = new Date(Date.now() - maxAgeMonths * 30 * 24 * 3600 * 1000).toISOString()
 
-    // 1. search.list per query — collect candidate video ids (dedup across queries)
+    // 1. search.list per query — two passes each (relevance + viewCount) so we
+    // catch both "what YouTube associates with the topic" and "the biggest
+    // videos on the topic" (where the monster small-channel outliers hide).
+    // Costs 200 units per query instead of 100 — worth it for coverage.
     const candidates = new Map<string, { query: string }>()
     for (const q of queries) {
-      const params = new URLSearchParams({
-        key, part: 'id', type: 'video', maxResults: '25',
-        q, publishedAfter, relevanceLanguage: 'en', videoDuration: 'medium',
-      })
-      const res = await fetch(`${YT}/search?${params}`)
-      const data = await res.json()
-      if (data?.error) {
-        return NextResponse.json({ error: 'YouTube API error on search: ' + (data.error?.message ?? JSON.stringify(data.error)) }, { status: 502 })
-      }
-      for (const item of data?.items ?? []) {
-        const id = item?.id?.videoId
-        if (id && !candidates.has(id)) candidates.set(id, { query: q })
+      for (const order of ['relevance', 'viewCount'] as const) {
+        const params = new URLSearchParams({
+          key, part: 'id', type: 'video', maxResults: '50', order,
+          q, publishedAfter, relevanceLanguage: 'en',
+        })
+        const res = await fetch(`${YT}/search?${params}`)
+        const data = await res.json()
+        if (data?.error) {
+          return NextResponse.json({ error: 'YouTube API error on search: ' + (data.error?.message ?? JSON.stringify(data.error)) }, { status: 502 })
+        }
+        for (const item of data?.items ?? []) {
+          const id = item?.id?.videoId
+          if (id && !candidates.has(id)) candidates.set(id, { query: q })
+        }
       }
     }
     if (candidates.size === 0) return NextResponse.json({ outliers: [] })
@@ -124,7 +130,7 @@ export async function POST(req: NextRequest) {
       })
       .filter(o => o.views >= minViews && o.subscribers > 0 && o.subscribers <= maxSubs && o.ratio >= minRatio)
       .sort((a, b) => b.ratio - a.ratio)
-      .slice(0, 20)
+      .slice(0, 30)
 
     return NextResponse.json({ outliers })
   } catch (e) {

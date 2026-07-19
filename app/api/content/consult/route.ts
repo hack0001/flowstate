@@ -28,7 +28,10 @@ export async function POST(req: NextRequest) {
     }
     const body: Record<string, unknown> = {
       model: resolvedModel,
-      max_tokens: webSearch ? 2500 : 1500,
+      // Generous caps — the Find Ideas / validation JSON with the full
+      // opportunity breakdown regularly passed 2,500 tokens and got truncated
+      // mid-array, which surfaced as JSON parse errors in the UI.
+      max_tokens: webSearch ? 8000 : 4000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     }

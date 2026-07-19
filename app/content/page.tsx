@@ -139,6 +139,42 @@ type ScannedOutlier = {
   publishedAt: string; url: string; query: string
 }
 
+// Parse a model reply that should be JSON, surviving markdown fences,
+// commentary around the object, and — the common failure — truncation at the
+// output-token limit. On truncation, walks back to the last complete object/
+// array boundary and closes whatever is still open, so a cut-off "ideas"
+// array yields its complete entries instead of a SyntaxError.
+function parseModelJson<T>(raw: string): T {
+  let clean = raw.replace(/```json|```/g, '').trim()
+  const firstBrace = clean.indexOf('{')
+  if (firstBrace === -1) throw new Error('No JSON found in the response')
+  clean = clean.slice(firstBrace)
+  try { return JSON.parse(clean) as T } catch { /* try truncation repair below */ }
+  const candidates: { pos: number; closers: string }[] = []
+  let inStr = false, esc = false
+  const stack: string[] = []
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean[i]
+    if (inStr) {
+      if (esc) esc = false
+      else if (ch === '\\') esc = true
+      else if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') inStr = true
+    else if (ch === '{') stack.push('}')
+    else if (ch === '[') stack.push(']')
+    else if (ch === '}' || ch === ']') {
+      stack.pop()
+      candidates.push({ pos: i, closers: [...stack].reverse().join('') })
+    }
+  }
+  for (let c = candidates.length - 1, tries = 0; c >= 0 && tries < 40; c--, tries++) {
+    try { return JSON.parse(clean.slice(0, candidates[c].pos + 1) + candidates[c].closers) as T } catch { /* walk further back */ }
+  }
+  throw new Error('Response JSON was truncated beyond repair — try asking for fewer ideas')
+}
+
 function formatScannedOutliers(rows: ScannedOutlier[]): string {
   return rows.map(o =>
     `- "${o.title}" — ${o.channel} · ${o.views.toLocaleString()} views on a ${o.subscribers.toLocaleString()}-subscriber channel (${o.ratio}:1 view:sub) · published ${o.publishedAt.slice(0, 10)} · found via "${o.query}" · ${o.url}`
@@ -690,6 +726,42 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
 
   const parsedQueries = queryText.split('\n').map(q => q.trim()).filter(Boolean)
 
+  const [suggesting, setSuggesting] = useState(false)
+
+  // Ask Claude for fresh search phrases that fit the channel brief — appended
+  // to the topic list (deduped) rather than replacing what's already there.
+  async function suggestTopics() {
+    setSuggesting(true)
+    setScanMsg(null)
+    try {
+      const res = await fetch('/api/content/consult', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemPrompt: 'You generate YouTube search phrases used to hunt for outlier videos.\n\n' + CHANNEL_BRIEF + '\n\nReturn ONLY valid JSON, no markdown fences, no commentary.',
+          userPrompt: `Current seed topics:\n${parsedQueries.join('\n') || '(none)'}\n\nSuggest 10 NEW YouTube search phrases (2-5 words each, lowercase, no punctuation) likely to surface overperforming videos for this channel — spread across the launch focus (inflation/savings) and the secondary lanes (gold/hard assets, monetary history stories, how the money system works), mixing evergreen phrasings with timely angles. Do not repeat or trivially reword the current topics.\n\nReturn JSON exactly: {"topics":["...","..."]}`,
+          model: 'claude-sonnet-5',
+        }),
+      })
+      const data = await res.json()
+      if (data?.error) { setScanMsg('Topic suggestion failed: ' + JSON.stringify(data.error)); return }
+      const raw = (data?.content ?? [])
+        .filter((b: { type: string; text?: string }) => b.type === 'text')
+        .map((b: { text?: string }) => b.text ?? '')
+        .join('\n').trim()
+      const parsed = parseModelJson<{ topics: string[] }>(raw)
+      const existing = new Set(parsedQueries.map(q => q.toLowerCase()))
+      const fresh = (parsed.topics ?? []).map(t => t.trim()).filter(t => t && !existing.has(t.toLowerCase()))
+      if (fresh.length === 0) { setScanMsg('No new topics suggested — try again.'); return }
+      saveQueries([...parsedQueries, ...fresh].join('\n'))
+      setShowQueries(true)
+    } catch (e) {
+      setScanMsg('Topic suggestion failed: ' + String(e))
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
   // Pull real numbers from the YouTube Data API first (needs YOUTUBE_API_KEY)
   // — the resulting outlier list is handed to Claude as verified evidence so
   // ideas get built on exact view:sub ratios instead of search estimates.
@@ -812,16 +884,21 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
           {showQueries && (
             <div style={{ marginTop:'0.6rem' }}>
               <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, marginBottom:'0.3rem' }}>
-                Search topics — one per line, first 8 used per scan (each costs ~100 of the 10,000 daily API units). Saved in this browser.
+                Search topics — one per line, first 8 used per scan (each costs ~200 of the 10,000 daily API units). Saved in this browser.
               </label>
               <textarea
                 value={queryText} onChange={e => saveQueries(e.target.value)} disabled={scanning}
                 rows={6}
                 style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.72rem', lineHeight:1.5, outline:'none', resize:'vertical' as const, boxSizing:'border-box' as const }}
               />
-              <button onClick={() => saveQueries(OUTLIER_SEED_QUERIES.join('\n'))} disabled={scanning} style={{ marginTop:'0.3rem', padding:'0.25rem 0.6rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.muted, cursor:scanning?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.64rem', fontWeight:600 }}>
-                Reset to channel defaults
-              </button>
+              <div style={{ display:'flex', gap:'0.35rem', marginTop:'0.3rem' }}>
+                <button onClick={suggestTopics} disabled={scanning || suggesting} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.25rem 0.6rem', background:'rgba(0,212,255,0.06)', border:'1px solid rgba(0,212,255,0.25)', borderRadius:'0.4rem', color:C.cyan, cursor:(scanning||suggesting)?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.64rem', fontWeight:700, opacity:(scanning||suggesting)?0.5:1 }}>
+                  <Sparkles size={10}/>{suggesting ? 'Suggesting…' : 'Suggest topics (AI)'}
+                </button>
+                <button onClick={() => saveQueries(OUTLIER_SEED_QUERIES.join('\n'))} disabled={scanning} style={{ padding:'0.25rem 0.6rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.muted, cursor:scanning?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.64rem', fontWeight:600 }}>
+                  Reset to channel defaults
+                </button>
+              </div>
             </div>
           )}
           {scanMsg && <p style={{ fontSize:'0.68rem', color:C.amber, margin:'0.5rem 0 0', lineHeight:1.4 }}>{scanMsg}</p>}
@@ -1186,13 +1263,8 @@ export default function ContentPage() {
         .join('\n')
         .trim()
       if (!raw) return { error: 'Empty response from Claude.' }
-      let clean = raw.replace(/```json|```/g, '').trim()
-      if (!clean.startsWith('{')) {
-        const match = clean.match(/\{[\s\S]*\}/)
-        if (match) clean = match[0]
-      }
-      const parsed = JSON.parse(clean) as { ideas: FoundIdea[] }
-      return { ideas: parsed.ideas ?? [] }
+      const parsed = parseModelJson<{ ideas: FoundIdea[] }>(raw)
+      return { ideas: (parsed.ideas ?? []).filter(i => i?.title) }
     } catch (e) {
       return { error: 'Generation failed: ' + String(e) }
     }
@@ -1310,14 +1382,7 @@ export default function ContentPage() {
         .join('\n')
         .trim()
       if (!raw) { setValidationMsg('Empty response from Claude.'); return }
-      let clean = raw.replace(/```json|```/g, '').trim()
-      // If there's commentary around the JSON despite instructions, pull out
-      // the first {...} block rather than failing to parse.
-      if (!clean.startsWith('{')) {
-        const match = clean.match(/\{[\s\S]*\}/)
-        if (match) clean = match[0]
-      }
-      const parsed = JSON.parse(clean) as ValidationResult
+      const parsed = parseModelJson<ValidationResult>(raw)
       const result: ValidationResult = { ...parsed, model }
       setValidationResult(result)
       await saveStageNote(item.id, IDEA_VALIDATION_SOP_ID, JSON.stringify(result))
