@@ -20,6 +20,7 @@ export const MORNING_ROUTINE: RoutineItem[] = [
   { id: 'mr-coffee',     title: 'Coffee + cane sugar + collagen + molasses',      minutes: 5,  category: 'Fuel' },
   { id: 'mr-eggs',       title: 'Eggs on sourdough + mushrooms (weights day)',     minutes: 15, category: 'Fuel', note: 'Only on hard weights days' },
   { id: 'mr-read',       title: 'Read 2 pages',                                   minutes: 5,  category: 'Mind' },
+  { id: 'mr-welsh',      title: 'Duolingo lesson in Welsh',                       minutes: 5,  category: 'Mind', note: 'Minimum 1 lesson' },
   { id: 'mr-visualise',  title: 'Process visualisation',                          minutes: 5,  category: 'Mind', note: 'Close your eyes. Walk through your day step by step — not the outcome, the PROCESS. See yourself sitting down to work, what your hands are doing, how focused you feel, how you handle the first obstacle. Finish by writing 1 specific action you will take before lunch.' },
 ]
 
