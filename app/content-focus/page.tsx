@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Circle, Play, Pause, RefreshCw, SkipForward, Wind, Waves, VolumeX, Zap, Music2, ChevronRight } from 'lucide-react'
-import { supabase, getActiveFocusVideos, type ActiveFocusVideo } from '@/lib/supabase'
+import { supabase, getActiveFocusVideos, getStageNote, saveStageNote, type ActiveFocusVideo } from '@/lib/supabase'
 import { STAGE_ADVANCE, sopForStage } from '@/lib/sops'
 import { sounds } from '@/lib/sounds'
 import { usePomodoro } from '@/hooks/usePomodoro'
@@ -159,6 +159,28 @@ export default function ContentFocusPage() {
   const steps = sop?.steps ?? []
   const doneSet = item ? (stepDone[item.id] ?? new Set<number>()) : new Set<number>()
   const allStepsDone = steps.length > 0 && doneSet.size === steps.length
+
+  // ── Stage draft (content_stage_notes) ─────────────────────────────────────
+  // The same note the Pipeline card's Produce / Consult Claude writes — shown
+  // here so a focus session starts with the AI draft in front of you and your
+  // edits flow straight back to the pipeline. Reloads when the video or its
+  // stage changes.
+  const [stageNote, setStageNote] = useState('')
+  const [stageNoteKey, setStageNoteKey] = useState('')
+  const [showStageNote, setShowStageNote] = useState(true)
+  const itemId = item?.id ?? null
+  const sopId = sop?.id ?? null
+  useEffect(() => {
+    const key = itemId && sopId ? itemId + ':' + sopId : ''
+    if (!key || key === stageNoteKey) return
+    setStageNoteKey(key)
+    setStageNote('')
+    getStageNote(itemId!, sopId!).then(({ output }) => setStageNote(output ?? ''))
+  }, [itemId, sopId, stageNoteKey])
+
+  function saveCurrentStageNote() {
+    if (itemId && sopId) saveStageNote(itemId, sopId, stageNote)
+  }
 
   async function toggleStep(idx: number) {
     if (!item || !sop) return
@@ -396,6 +418,25 @@ export default function ContentFocusPage() {
                   <p style={{ fontSize:'0.78rem', color:C.cyan, fontStyle:'italic', margin:'0 0 1.25rem', lineHeight:1.55 }}>
                     SOP {sop.id} &middot; {sop.title} &mdash; {sop.tagline}
                   </p>
+
+                  {/* Stage draft — the Produce/Consult output for this stage */}
+                  <div style={{ marginBottom:'1rem' }}>
+                    <button onClick={() => setShowStageNote(v => !v)} style={{ display:'flex', alignItems:'center', gap:'0.35rem', background:'none', border:'none', padding:0, marginBottom:'0.4rem', color: stageNote ? C.green : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase' }}>
+                      <ChevronRight size={11} style={{ transform: showStageNote ? 'rotate(90deg)' : 'none', transition:'transform 0.15s' }}/>
+                      Stage draft {stageNote ? '· ready' : '· empty'}
+                    </button>
+                    {showStageNote && (
+                      <textarea
+                        value={stageNote}
+                        onChange={e => setStageNote(e.target.value)}
+                        onBlur={saveCurrentStageNote}
+                        placeholder="No draft yet — hit Produce on this video's card in the Content Pipeline, or write here directly. Edits save back to the pipeline."
+                        rows={stageNote ? 10 : 3}
+                        style={{ width:'100%', padding:'0.7rem 0.875rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+(stageNote ? 'rgba(0,255,136,0.2)' : C.border), borderRadius:'0.75rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', lineHeight:1.6, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}
+                      />
+                    )}
+                  </div>
+
                   <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', marginBottom:'0.5rem' }}>
                     {steps.map((step, i) => {
                       const checked = doneSet.has(i)

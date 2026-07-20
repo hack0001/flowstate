@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, getStageNote, saveStageNote } from '@/lib/supabase'
-import { sopForStage, IDEA_VALIDATION_CHECKS } from '@/lib/sops'
+import { sopForStage, IDEA_VALIDATION_CHECKS, SOPS, type SOP } from '@/lib/sops'
 import { CHANNEL_BRIEF, OUTLIER_SEED_QUERIES } from '@/lib/channelBrief'
 import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check } from 'lucide-react'
 
@@ -202,6 +202,45 @@ function buildFindIdeasPrompt(existingTitles: string[], count: number, scannedOu
     `"researched" should be true only if you actually used live web/YouTube search or the verified outlier list above to ground this idea, false if you had neither and relied on established niche patterns instead. If "researched" is false, "outlier" should be null — do not fabricate view counts or channel names.`
   return { systemPrompt, userPrompt }
 }
+
+// ── Stage draft prompt (shared by per-stage Consult Claude + Auto-draft) ────
+// One builder so a single stage consult and the full production-pack chain
+// produce consistent output. priorStages lets the chain feed each stage the
+// stages drafted before it (script builds on research + trifecta, etc.).
+function buildStageDraftPrompt(
+  item: ContentItem,
+  sop: SOP,
+  opts?: { existingNote?: string; priorStages?: { title: string; output: string }[] }
+): { systemPrompt: string; userPrompt: string } {
+  const systemPrompt = 'You are a YouTube production assistant for SoundMoney.\n\n' + CHANNEL_BRIEF + '\n\nYou draft concrete, ready-to-use output for one pipeline stage at a time — never generic advice, always specific to the video described, always consistent with the CHANNEL BRIEF above (packaging patterns, prescriptive ending, faceless format). Keep output tight and scannable, using the checklist as your brief. Write in plain text (no markdown headers), short paragraphs or a short list where useful.'
+  const prior = (opts?.priorStages ?? []).filter(p => p.output?.trim())
+  const wantsShort = !!item.format && item.format !== 'Long-form'
+  const userPrompt = `Video title: ${item.title}\n` +
+    (item.video_type ? `Video type: ${item.video_type}\n` : '') +
+    (item.format ? `Format: ${item.format}\n` : '') +
+    (item.unique_angle ? `Unique angle: ${item.unique_angle}\n` : '') +
+    (item.notes ? `Existing notes: ${item.notes}\n` : '') +
+    (prior.length > 0
+      ? `\nOutputs already drafted for earlier stages — build on these and stay consistent with them:\n` +
+        prior.map(p => `--- ${p.title} ---\n${p.output}`).join('\n\n') + '\n'
+      : '') +
+    (opts?.existingNote ? `\nWork already drafted for this stage (improve and extend it rather than starting over):\n${opts.existingNote}\n` : '') +
+    `\nCurrent pipeline stage: ${sop.title}\nWhat this stage needs (checklist, strip the HTML tags mentally):\n` +
+    sop.steps.map((st, i) => (i + 1) + '. ' + st.replace(/<[^>]+>/g, '')).join('\n') +
+    `\n\nDraft the actual output for this stage for this specific video — e.g. if this is Research, give the wild stats, the story arc, the historical parallel and the sources to verify; if it's Holy Trifecta, give 3 title options + thumbnail concept + hook; if it's Scripting, give the section outline and the full opening${wantsShort ? ', plus a 60-80 word Shorts version cut from the strongest moment' : ''}; if it's Asset Gathering, list the specific memes, b-roll shots and charts the script calls for; if it's Thumbnail & SEO, give the final title pick, thumbnail build spec, description and tags. Where a fact is missing, write [FILL IN: what's needed] rather than inventing it.`
+  return { systemPrompt, userPrompt }
+}
+
+// The stages the auto-draft chain fills, in dependency order. Voiceover,
+// Editing and Upload stay human — that's where the creator's voice and
+// judgment go; the chain's job is to have everything ready for them.
+const AUTO_DRAFT_STAGES: { sopId: string; label: string }[] = [
+  { sopId: '02', label: 'Research' },
+  { sopId: '03', label: 'Holy Trifecta' },
+  { sopId: '04', label: 'Script' },
+  { sopId: '05', label: 'Assets' },
+  { sopId: '08', label: 'Thumbnail & SEO' },
+]
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -1083,16 +1122,7 @@ function PipelineCard({ item, onMove, onSaveRevenue, onToggleFocus, focusAtCap }
     if (!sop) return
     setConsulting(true)
     setNoteMsg(null)
-    const systemPrompt = 'You are a YouTube production assistant for SoundMoney.\n\n' + CHANNEL_BRIEF + '\n\nYou draft concrete, ready-to-use output for one pipeline stage at a time — never generic advice, always specific to the video described, always consistent with the CHANNEL BRIEF above (packaging patterns, prescriptive ending, faceless format). Keep output tight and scannable, using the checklist as your brief. Write in plain text (no markdown headers), short paragraphs or a short list where useful.'
-    const userPrompt = `Video title: ${item.title}\n` +
-      (item.video_type ? `Video type: ${item.video_type}\n` : '') +
-      (item.format ? `Format: ${item.format}\n` : '') +
-      (item.unique_angle ? `Unique angle: ${item.unique_angle}\n` : '') +
-      (item.notes ? `Existing notes: ${item.notes}\n` : '') +
-      (note ? `Work already drafted for this stage:\n${note}\n` : '') +
-      `\nCurrent pipeline stage: ${sop.title}\nWhat this stage needs (checklist, strip the HTML tags mentally):\n` +
-      sop.steps.map((st, i) => (i + 1) + '. ' + st.replace(/<[^>]+>/g, '')).join('\n') +
-      `\n\nDraft the actual output for this stage for this specific video — e.g. if this is Idea & Validation, give the angle/pitch/comment-mining notes; if it's Holy Trifecta, give 3 title options + thumbnail concept + hook; if it's Scripting, give the outline or opening lines. Use what you know about the video above. Where a fact is missing, write [FILL IN: what's needed] rather than inventing it.`
+    const { systemPrompt, userPrompt } = buildStageDraftPrompt(item, sop, { existingNote: note })
     try {
       const res = await fetch('/api/content/consult', {
         method: 'POST',
@@ -1109,6 +1139,62 @@ function PipelineCard({ item, onMove, onSaveRevenue, onToggleFocus, focusAtCap }
       setNoteMsg('Consult failed: ' + String(e))
     } finally {
       setConsulting(false)
+    }
+  }
+
+  // ── One-click production pack ─────────────────────────────────────────────
+  // Runs the whole AI-draftable chain (Research → Trifecta → Script → Assets
+  // → Thumbnail & SEO) in one go, each stage building on the ones before it.
+  // Stages that already have a saved note are kept and used as context, never
+  // overwritten — so re-running after edits only fills what's still empty.
+  // The drafts land in each stage's note (and the focus session), leaving the
+  // creator to review, rewrite in their own voice, record and edit.
+  const [autoStage, setAutoStage] = useState<string | null>(null)
+  const [autoDone, setAutoDone] = useState<string[]>([])
+  const [autoMsg, setAutoMsg] = useState<string | null>(null)
+
+  async function autoDraftAll() {
+    setAutoMsg(null)
+    setAutoDone([])
+    const prior: { title: string; output: string }[] = []
+    try {
+      for (const { sopId, label } of AUTO_DRAFT_STAGES) {
+        const stageSop = SOPS.find(sp => sp.id === sopId)
+        if (!stageSop) continue
+        setAutoStage(label)
+        const { output: existing } = await getStageNote(item.id, sopId)
+        if (existing?.trim()) {
+          prior.push({ title: stageSop.title, output: existing })
+          setAutoDone(d => [...d, label + ' ✓ (kept your version)'])
+          continue
+        }
+        const { systemPrompt, userPrompt } = buildStageDraftPrompt(item, stageSop, { priorStages: prior })
+        const res = await fetch('/api/content/consult', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          // Research gets live web search for real stats/sources; the rest
+          // build on it. Sonnet for quality — this chain is the video.
+          body: JSON.stringify({ systemPrompt, userPrompt, model: 'claude-sonnet-5', webSearch: sopId === '02' }),
+        })
+        const data = await res.json()
+        if (data?.error) { setAutoMsg(`Stopped at ${label}: ` + JSON.stringify(data.error)); return }
+        const raw = (data?.content ?? [])
+          .filter((b: { type: string; text?: string }) => b.type === 'text')
+          .map((b: { text?: string }) => b.text ?? '')
+          .join('\n').trim()
+        if (!raw) { setAutoMsg(`Stopped at ${label}: empty response.`); return }
+        const { error } = await saveStageNote(item.id, sopId, raw)
+        if (error) { setAutoMsg(`Stopped at ${label}: ` + error); return }
+        prior.push({ title: stageSop.title, output: raw })
+        setAutoDone(d => [...d, label + ' ✓'])
+        // If the card's currently-open stage just got drafted, show it.
+        if (sop && sop.id === sopId) { setNote(raw); setNoteLoaded(true) }
+      }
+      setAutoMsg('Production pack ready — open each stage, edit into your voice, tick the checklist, then record.')
+    } catch (e) {
+      setAutoMsg('Auto-draft failed: ' + String(e))
+    } finally {
+      setAutoStage(null)
     }
   }
 
@@ -1139,12 +1225,26 @@ function PipelineCard({ item, onMove, onSaveRevenue, onToggleFocus, focusAtCap }
         <button onClick={onMove} style={{ flex:1, padding:'0.3rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.25rem' }}>
           Move stage <ChevronRight size={10}/>
         </button>
+        {!isPostPublished && (
+          <button
+            onClick={autoDraftAll} disabled={!!autoStage}
+            title="Draft the full production pack — Research, Trifecta, Script, Assets, Thumbnail & SEO — each stage building on the last. Stages you've already written are kept."
+            style={{ padding:'0.3rem 0.5rem', background: autoStage ? C.surface : 'rgba(0,255,136,0.08)', border:'1px solid '+(autoStage ? C.border : 'rgba(0,255,136,0.3)'), borderRadius:'0.5rem', color: autoStage ? C.muted : C.green, cursor: autoStage ? 'default' : 'pointer', fontFamily:'inherit', fontSize:'0.65rem', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:'0.25rem' }}>
+            <Zap size={10}/>{autoStage ? `Drafting ${autoStage}…` : 'Produce'}
+          </button>
+        )}
         {sop && (
           <button onClick={() => setExpanded(e => !e)} style={{ padding:'0.3rem 0.5rem', background: expanded ? 'rgba(139,92,246,0.1)' : 'rgba(255,255,255,0.02)', border:'1px solid '+(expanded ? 'rgba(139,92,246,0.3)' : C.border), borderRadius:'0.5rem', color: expanded ? C.purple : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.25rem' }}>
             SOP &amp; AI <ChevronDown size={10} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition:'transform 0.15s' }}/>
           </button>
         )}
       </div>
+      {(autoDone.length > 0 || autoMsg) && (
+        <div style={{ marginTop:'0.4rem', padding:'0.4rem 0.5rem', background:'rgba(0,255,136,0.04)', border:'1px solid rgba(0,255,136,0.15)', borderRadius:'0.5rem' }}>
+          {autoDone.map((d, i) => <p key={i} style={{ fontSize:'0.62rem', color:C.sec, margin:0, lineHeight:1.5 }}>{d}</p>)}
+          {autoMsg && <p style={{ fontSize:'0.62rem', color: autoMsg.startsWith('Stopped') || autoMsg.startsWith('Auto-draft failed') ? C.amber : C.green, margin: autoDone.length ? '0.2rem 0 0' : 0, lineHeight:1.5, fontWeight:600 }}>{autoMsg}</p>}
+        </div>
+      )}
 
       {expanded && sop && (
         <div style={{ marginTop:'0.5rem', paddingTop:'0.5rem', borderTop:'1px solid '+C.border }}>
