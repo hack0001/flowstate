@@ -3,9 +3,17 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Edit3, Check, Flame, Sunrise, Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react'
 import { useLanguage } from '@/context/LanguageContext'
-import { MORNING_ROUTINE } from '@/lib/morningRoutine'
-import type { RoutineItem } from '@/lib/morningRoutine'
-import { supabase } from '@/lib/supabase'
+import {
+  supabase,
+  getMorningRoutineItems,
+  addMorningRoutineItem,
+  retireMorningRoutineItem,
+  reorderMorningRoutineItems,
+  getMorningCompletionsForDate,
+  markMorningItemComplete,
+  getMorningCompletionCounts,
+} from '@/lib/supabase'
+import type { MorningRoutineItem } from '@/lib/supabase'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'rgba(18,18,26,0.8)', border:'#2a2a3a',
@@ -125,7 +133,6 @@ function ParticleCanvas() {
   return <canvas ref={ref} aria-hidden="true" style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0, width:'100%', height:'100%' }} />
 }
 
-const STORAGE_KEY   = 'flowstate_routine_v2'
 const ERROR_LOG_KEY = 'flowstate_error_log'
 
 type ErrorEntry = { id: string; date: string; text: string }
@@ -142,35 +149,33 @@ function todayStr() {
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')
 }
 
-function loadState(): { items:RoutineItem[]; completed:string[]; date:string } {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const p = JSON.parse(raw)
-      if (p.date === todayStr()) return p
-      return { items: p.items ?? MORNING_ROUTINE, completed:[], date:todayStr() }
-    }
-  } catch {}
-  return { items:MORNING_ROUTINE, completed:[], date:todayStr() }
-}
-
-function saveState(items:RoutineItem[], completed:string[]) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, completed, date:todayStr() })) } catch {}
-}
-
 // ---- Edit modal ----
-function EditPanel({ items, onClose, onSave }:{ items:RoutineItem[]; onClose:()=>void; onSave:(i:RoutineItem[])=>void }) {
-  const [list, setList] = useState<RoutineItem[]>(items)
+// Add / retire happen immediately against Supabase (so they can't be "lost"
+// by closing without saving); reordering is batched and persisted on Save.
+function EditPanel({ items, completionCounts, onClose, onSave }:{ items:MorningRoutineItem[]; completionCounts:Record<string,number>; onClose:()=>void; onSave:(i:MorningRoutineItem[])=>void }) {
+  const [list, setList] = useState<MorningRoutineItem[]>(items)
   const [newTitle, setNewTitle] = useState('')
   const [newNote, setNewNote] = useState('')
   const [newCat, setNewCat] = useState('Movement')
+  const [adding, setAdding] = useState(false)
+  const [saving, setSaving] = useState(false)
 
-  function addItem() {
-    if (!newTitle.trim()) return
-    setList(l => [...l, { id:'custom-'+Date.now(), title:newTitle.trim(), minutes:5, note:newNote.trim()||undefined, category:newCat }])
+  async function addItem() {
+    if (!newTitle.trim() || adding) return
+    setAdding(true)
+    const { item, error } = await addMorningRoutineItem({
+      title: newTitle.trim(), minutes: 5, note: newNote.trim() || null, category: newCat, sort_order: list.length,
+    })
+    setAdding(false)
+    if (error || !item) { alert(error ?? 'Could not add item.'); return }
+    setList(l => [...l, item])
     setNewTitle(''); setNewNote('')
   }
-  function remove(id:string) { setList(l => l.filter(x => x.id!==id)) }
+  async function remove(id:string) {
+    setList(l => l.filter(x => x.id!==id))
+    const { error } = await retireMorningRoutineItem(id)
+    if (error) alert(error)
+  }
   function move(id:string, dir:-1|1) {
     setList(l => {
       const i = l.findIndex(x => x.id===id); if (i<0) return l
@@ -178,11 +183,18 @@ function EditPanel({ items, onClose, onSave }:{ items:RoutineItem[]; onClose:()=
       const n=[...l];[n[i],n[j]]=[n[j],n[i]]; return n
     })
   }
+  async function handleSave() {
+    setSaving(true)
+    await onSave(list)
+    setSaving(false)
+    onClose()
+  }
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60 }}>
       <div style={{ background:'#1a1a26', border:'1px solid #2a2a3a', borderRadius:'1rem', padding:'1.5rem', width:'90%', maxWidth:'30rem', maxHeight:'85vh', overflow:'auto', position:'relative' }}>
         <button onClick={onClose} style={{ position:'absolute', top:'1rem', right:'1rem', background:'none', border:'none', color:C.muted, cursor:'pointer' }}><X size={16}/></button>
-        <h2 style={{ margin:'0 0 1rem', fontSize:'0.95rem', fontWeight:800, color:C.text }}>Edit Morning Routine</h2>
+        <h2 style={{ margin:'0 0 0.2rem', fontSize:'0.95rem', fontWeight:800, color:C.text }}>Edit Morning Routine</h2>
+        <p style={{ margin:'0 0 1rem', fontSize:'0.65rem', color:C.muted }}>Completion count = last 30 days</p>
         <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem', marginBottom:'1rem' }}>
           {list.map((item,i) => (
             <div key={item.id} style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.5rem 0.75rem', background:C.surface, border:'1px solid #2a2a3a', borderRadius:'0.5rem' }}>
@@ -191,6 +203,7 @@ function EditPanel({ items, onClose, onSave }:{ items:RoutineItem[]; onClose:()=
                 <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</p>
                 {item.note&&<p style={{ fontSize:'0.65rem', color:C.muted, margin:0 }}>{item.note}</p>}
               </div>
+              <span style={{ fontSize:'0.62rem', fontWeight:700, color:C.sec, flexShrink:0 }}>{completionCounts[item.id] ?? 0}/30</span>
               <button onClick={()=>move(item.id,-1)} disabled={i===0} style={{ background:'none', border:'none', color:i===0?C.muted:C.sec, cursor:i===0?'default':'pointer', padding:'2px' }}><ChevronUp size={13}/></button>
               <button onClick={()=>move(item.id,1)} disabled={i===list.length-1} style={{ background:'none', border:'none', color:i===list.length-1?C.muted:C.sec, cursor:i===list.length-1?'default':'pointer', padding:'2px' }}><ChevronDown size={13}/></button>
               <button onClick={()=>remove(item.id)} style={{ background:'none', border:'none', color:C.red, cursor:'pointer', padding:'2px' }}><Trash2 size={13}/></button>
@@ -208,13 +221,13 @@ function EditPanel({ items, onClose, onSave }:{ items:RoutineItem[]; onClose:()=
               <button key={cat} onClick={()=>setNewCat(cat)} style={{ fontSize:'0.6rem', padding:'0.15rem 0.4rem', borderRadius:'0.25rem', border:'1px solid '+(newCat===cat?CAT_COLORS[cat]:'#2a2a3a'), background:newCat===cat?'rgba(255,255,255,0.05)':'transparent', color:newCat===cat?CAT_COLORS[cat]:C.muted, cursor:'pointer', fontFamily:'inherit' }}>{cat}</button>
             ))}
           </div>
-          <button onClick={addItem} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.35rem 0.7rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.5rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700 }}>
-            <Plus size={12}/>Add
+          <button onClick={addItem} disabled={adding} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.35rem 0.7rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.5rem', color:C.cyan, cursor:adding?'default':'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, opacity:adding?0.6:1 }}>
+            <Plus size={12}/>{adding?'Adding...':'Add'}
           </button>
         </div>
         <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end' }}>
-          <button onClick={onClose} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid #2a2a3a', borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Cancel</button>
-          <button onClick={()=>{onSave(list);onClose()}} style={{ padding:'0.5rem 1.25rem', background:C.cyan, border:'none', borderRadius:'0.5rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Save</button>
+          <button onClick={onClose} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid #2a2a3a', borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Close</button>
+          <button onClick={handleSave} disabled={saving} style={{ padding:'0.5rem 1.25rem', background:C.cyan, border:'none', borderRadius:'0.5rem', color:'#000', fontWeight:700, cursor:saving?'default':'pointer', fontFamily:'inherit', fontSize:'0.8rem', opacity:saving?0.7:1 }}>{saving?'Saving...':'Save order'}</button>
         </div>
       </div>
     </div>
@@ -224,40 +237,50 @@ function EditPanel({ items, onClose, onSave }:{ items:RoutineItem[]; onClose:()=
 export default function MorningPage() {
   const router = useRouter()
   const { t } = useLanguage()
-  const [items, setItems]         = useState<RoutineItem[]>(MORNING_ROUTINE)
+  const [items, setItems]         = useState<MorningRoutineItem[]>([])
   const [completed, setCompleted] = useState<string[]>([])
+  const [completionCounts, setCompletionCounts] = useState<Record<string,number>>({})
   const [streak, setStreak]       = useState(0)
   const [editing, setEditing]     = useState(false)
   const [celebrating, setCelebrating] = useState(false)
   const [loaded, setLoaded]       = useState(false)
+  const [loadErr, setLoadErr]     = useState<string | null>(null)
   const [errors, setErrors]       = useState<ErrorEntry[]>([])
   const [errInput, setErrInput]   = useState('')
   const [errOpen, setErrOpen]     = useState(false)
   const today = todayStr()
 
   useEffect(() => {
-    const state = loadState()
-    setItems(state.items)
-    setCompleted(state.completed)
-    setErrors(loadErrors())
-    setLoaded(true)
+    (async () => {
+      const [itemsRes, completionsRes] = await Promise.all([
+        getMorningRoutineItems(),
+        getMorningCompletionsForDate(today),
+      ])
+      setItems(itemsRes.items)
+      setCompleted(completionsRes.itemIds)
+      setLoadErr(itemsRes.error ?? completionsRes.error ?? null)
+      setErrors(loadErrors())
+      setLoaded(true)
 
-    supabase.from('routine_completions').select('routine_date').eq('routine_date', today).maybeSingle()
-      .then(({ data }) => { if (data) setCelebrating(true) })
+      getMorningCompletionCounts(30).then(({ counts }) => setCompletionCounts(counts))
 
-    const from = new Date(); from.setDate(from.getDate()-60)
-    const fromStr = from.getFullYear()+'-'+String(from.getMonth()+1).padStart(2,'0')+'-'+String(from.getDate()).padStart(2,'0')
-    supabase.from('routine_completions').select('routine_date').gte('routine_date', fromStr).lte('routine_date', today)
-      .then(({ data }) => {
-        if (!data) return
-        const dates = new Set(data.map((r:{ routine_date:string })=>r.routine_date))
-        let s=0; const d=new Date()
-        while (true) {
-          const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')
-          if (dates.has(k)) { s++; d.setDate(d.getDate()-1) } else break
-        }
-        setStreak(s)
-      })
+      supabase.from('routine_completions').select('routine_date').eq('routine_date', today).maybeSingle()
+        .then(({ data }) => { if (data) setCelebrating(true) })
+
+      const from = new Date(); from.setDate(from.getDate()-60)
+      const fromStr = from.getFullYear()+'-'+String(from.getMonth()+1).padStart(2,'0')+'-'+String(from.getDate()).padStart(2,'0')
+      supabase.from('routine_completions').select('routine_date').gte('routine_date', fromStr).lte('routine_date', today)
+        .then(({ data }) => {
+          if (!data) return
+          const dates = new Set(data.map((r:{ routine_date:string })=>r.routine_date))
+          let s=0; const d=new Date()
+          while (true) {
+            const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')
+            if (dates.has(k)) { s++; d.setDate(d.getDate()-1) } else break
+          }
+          setStreak(s)
+        })
+    })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -270,19 +293,18 @@ export default function MorningPage() {
   async function markComplete(id:string) {
     const next = [...completed, id]
     setCompleted(next)
-    saveState(items, next)
+    markMorningItemComplete(id, today)
     if (next.length >= items.length) {
       await supabase.from('routine_completions').upsert({ routine_date:today }, { onConflict:'routine_date' })
-      try { localStorage.setItem('flowstate_routine_done', today) } catch {}
       setCelebrating(true)
     }
   }
 
   function skip(id:string) { markComplete(id) }
 
-  function handleSaveItems(newItems:RoutineItem[]) {
+  async function handleSaveItems(newItems:MorningRoutineItem[]) {
     setItems(newItems)
-    saveState(newItems, completed)
+    await reorderMorningRoutineItems(newItems.map(i => i.id))
   }
 
   function addError() {
@@ -331,6 +353,12 @@ export default function MorningPage() {
           </button>
         </div>
       </div>
+
+      {loadErr && (
+        <div style={{ position:'relative', zIndex:2, margin:'0 1.75rem 0.5rem', padding:'0.6rem 0.9rem', background:'rgba(255,68,68,0.08)', border:'1px solid rgba(255,68,68,0.25)', borderRadius:'0.6rem', color:C.red, fontSize:'0.72rem', textAlign:'center' }}>
+          {loadErr}
+        </div>
+      )}
 
       {/* ---- Main content ---- */}
       <div style={{ flex:1, position:'relative', zIndex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'1rem 1.5rem 3rem', textAlign:'center' }}>
@@ -554,7 +582,7 @@ export default function MorningPage() {
         </div>
       </div>
 
-      {editing && <EditPanel items={items} onClose={() => setEditing(false)} onSave={handleSaveItems}/>}
+      {editing && <EditPanel items={items} completionCounts={completionCounts} onClose={() => setEditing(false)} onSave={handleSaveItems}/>}
 
       <style>{`
         @keyframes fadeInUp { from { opacity:0; transform:translateY(14px) } to { opacity:1; transform:translateY(0) } }
