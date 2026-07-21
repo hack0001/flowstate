@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronRight, Edit3, RotateCcw, ArrowLeft, BookOpen, Save, X } from 'lucide-react'
 import { SECTIONS, SectionKey, KBPage } from './data'
+import { getEtsyKbOverrides, saveEtsyKbOverride, resetEtsyKbOverride } from '@/lib/supabase'
 
 const C = {
   bg: '#0a0a0f', surface: '#12121a', card: '#1a1a26', border: '#2a2a3a',
@@ -10,8 +11,6 @@ const C = {
   red: '#ff4466', text: '#f0f0ff', sec: '#8888aa', muted: '#4a4a6a',
   teal: '#14b8a6', pink: '#ec4899', blue: '#60a5fa',
 }
-
-const STORAGE_PREFIX = 'flowstate_etsy_kb_'
 
 function escapeHtml(str: string): string {
   return str
@@ -112,23 +111,25 @@ function renderContent(raw: string): string {
   return out.join('\n')
 }
 
-function EditablePage({ page, accentColor }: { page: KBPage; accentColor: string }) {
-  const storageKey = `${STORAGE_PREFIX}${page.id}`
-  const [content, setContent] = useState(page.content)
+function EditablePage({ page, accentColor, overrideContent, onSave, onReset }: {
+  page: KBPage; accentColor: string
+  overrideContent: string | null
+  onSave: (pageId: string, content: string) => void
+  onReset: (pageId: string) => void
+}) {
+  const [content, setContent] = useState(overrideContent ?? page.content)
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(page.content)
-  const [modified, setModified] = useState(false)
+  const [draft, setDraft] = useState(overrideContent ?? page.content)
+  const modified = overrideContent !== null
 
+  // Overrides load asynchronously from Supabase after first mount — sync once they arrive.
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storageKey)
-      if (saved) {
-        setContent(saved)
-        setDraft(saved)
-        setModified(true)
-      }
-    } catch {}
-  }, [storageKey])
+    if (overrideContent !== null) {
+      setContent(overrideContent)
+      setDraft(overrideContent)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overrideContent])
 
   function startEdit() {
     setDraft(content)
@@ -136,9 +137,8 @@ function EditablePage({ page, accentColor }: { page: KBPage; accentColor: string
   }
 
   function save() {
-    try { localStorage.setItem(storageKey, draft) } catch {}
+    onSave(page.id, draft)
     setContent(draft)
-    setModified(draft !== page.content)
     setEditing(false)
   }
 
@@ -149,10 +149,9 @@ function EditablePage({ page, accentColor }: { page: KBPage; accentColor: string
 
   function reset() {
     if (!confirm('Reset to original Notion content? Your edits will be lost.')) return
-    try { localStorage.removeItem(storageKey) } catch {}
+    onReset(page.id)
     setContent(page.content)
     setDraft(page.content)
-    setModified(false)
     setEditing(false)
   }
 
@@ -209,7 +208,12 @@ function EditablePage({ page, accentColor }: { page: KBPage; accentColor: string
   )
 }
 
-function PageAccordion({ page, accentColor }: { page: KBPage; accentColor: string }) {
+function PageAccordion({ page, accentColor, overrideContent, onSave, onReset }: {
+  page: KBPage; accentColor: string
+  overrideContent: string | null
+  onSave: (pageId: string, content: string) => void
+  onReset: (pageId: string) => void
+}) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -229,7 +233,7 @@ function PageAccordion({ page, accentColor }: { page: KBPage; accentColor: strin
           {page.title}
         </span>
       </button>
-      {open && <EditablePage page={page} accentColor={accentColor} />}
+      {open && <EditablePage page={page} accentColor={accentColor} overrideContent={overrideContent} onSave={onSave} onReset={onReset} />}
     </div>
   )
 }
@@ -238,16 +242,36 @@ export default function EtsyKnowledge() {
   const router = useRouter()
   const [section, setSection] = useState<SectionKey>('framework')
   const [expandAll, setExpandAll] = useState(false)
+  const [overrides, setOverrides] = useState<Record<string, string>>({})
+  const [loadErr, setLoadErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    getEtsyKbOverrides().then(({ overrides, error }) => {
+      setOverrides(overrides)
+      setLoadErr(error)
+    })
+  }, [])
+
+  function handleSaveOverride(pageId: string, content: string) {
+    setOverrides(prev => ({ ...prev, [pageId]: content }))
+    saveEtsyKbOverride(pageId, content)
+  }
+
+  function handleResetOverride(pageId: string) {
+    setOverrides(prev => {
+      const next = { ...prev }
+      delete next[pageId]
+      return next
+    })
+    resetEtsyKbOverride(pageId)
+  }
 
   const current = SECTIONS[section]
   const sectionKeys = Object.keys(SECTIONS) as SectionKey[]
 
   // Count modified pages for a section
   function countModified(key: SectionKey) {
-    if (typeof window === 'undefined') return 0
-    return SECTIONS[key].pages.filter(p => {
-      try { return localStorage.getItem(`${STORAGE_PREFIX}${p.id}`) !== null } catch { return false }
-    }).length
+    return SECTIONS[key].pages.filter(p => overrides[p.id] !== undefined).length
   }
 
   return (
@@ -268,6 +292,12 @@ export default function EtsyKnowledge() {
           {current.pages.length} pages
         </div>
       </div>
+
+      {loadErr && (
+        <div style={{ margin: '10px 24px 0', padding: '8px 12px', background: 'rgba(255,68,102,0.08)', border: `1px solid rgba(255,68,102,0.25)`, borderRadius: 8, color: C.red, fontSize: 12 }}>
+          {loadErr}
+        </div>
+      )}
 
       {/* Section Tabs */}
       <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${C.border}`, background: C.surface, overflowX: 'auto' }}>
@@ -300,7 +330,9 @@ export default function EtsyKnowledge() {
         </div>
 
         {current.pages.map(page => (
-          <PageAccordion key={page.id} page={page} accentColor={current.color} />
+          <PageAccordion key={page.id} page={page} accentColor={current.color}
+            overrideContent={overrides[page.id] ?? null}
+            onSave={handleSaveOverride} onReset={handleResetOverride} />
         ))}
       </div>
     </main>

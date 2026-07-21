@@ -183,3 +183,222 @@ export async function getMorningCompletionCounts(days: number): Promise<{ counts
   for (const row of (data ?? []) as { item_id: string }[]) counts[row.item_id] = (counts[row.item_id] ?? 0) + 1
   return { counts, error: null }
 }
+
+// ---- Evening review (tomorrow's MIT + routine completion) ----
+// Was evening_mit_<date> / evening_done_<date> in localStorage only.
+// Requires 023_localstorage_to_db.sql.
+export type EveningReview = { mit: string | null; completedAt: string | null }
+
+function explainEveningError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('evening_reviews')) {
+    return 'Setup needed: run supabase/migrations/023_localstorage_to_db.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading the evening review.'
+}
+
+export async function getEveningReview(date: string): Promise<{ review: EveningReview | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('evening_reviews')
+    .select('mit,completed_at')
+    .eq('review_date', date)
+    .maybeSingle()
+  if (error) return { review: null, error: explainEveningError(error.message) }
+  if (!data) return { review: null, error: null }
+  return { review: { mit: data.mit as string | null, completedAt: data.completed_at as string | null }, error: null }
+}
+
+export async function saveEveningMit(date: string, mit: string): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from('evening_reviews')
+    .upsert({ review_date: date, mit }, { onConflict: 'review_date' })
+  if (error) return { error: explainEveningError(error.message) }
+  return { error: null }
+}
+
+export async function markEveningComplete(date: string): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from('evening_reviews')
+    .upsert({ review_date: date, completed_at: new Date().toISOString() }, { onConflict: 'review_date' })
+  if (error) return { error: explainEveningError(error.message) }
+  return { error: null }
+}
+
+// ---- Generic daily checklist completions ----
+// Shared by any page with a "resets tomorrow" daily task list (Physical,
+// Instagram, X Daily Workflow) — checklist_key distinguishes them. Was
+// localStorage-only, date-keyed, with no history. Requires 023_localstorage_to_db.sql.
+function explainDailyChecklistError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('daily_checklist_completions')) {
+    return 'Setup needed: run supabase/migrations/023_localstorage_to_db.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading the checklist.'
+}
+
+export async function getDailyChecklistState(checklistKey: string, date: string): Promise<{ state: Record<string, boolean>; error: string | null }> {
+  const { data, error } = await supabase
+    .from('daily_checklist_completions')
+    .select('item_id')
+    .eq('checklist_key', checklistKey)
+    .eq('completed_date', date)
+  if (error) return { state: {}, error: explainDailyChecklistError(error.message) }
+  const state: Record<string, boolean> = {}
+  for (const row of (data ?? []) as { item_id: string }[]) state[row.item_id] = true
+  return { state, error: null }
+}
+
+export async function setDailyChecklistItem(checklistKey: string, itemId: string, date: string, done: boolean): Promise<{ error: string | null }> {
+  if (done) {
+    const { error } = await supabase
+      .from('daily_checklist_completions')
+      .upsert({ checklist_key: checklistKey, item_id: itemId, completed_date: date }, { onConflict: 'checklist_key,item_id,completed_date' })
+    if (error) return { error: explainDailyChecklistError(error.message) }
+    return { error: null }
+  }
+  const { error } = await supabase
+    .from('daily_checklist_completions')
+    .delete()
+    .eq('checklist_key', checklistKey)
+    .eq('item_id', itemId)
+    .eq('completed_date', date)
+  if (error) return { error: explainDailyChecklistError(error.message) }
+  return { error: null }
+}
+
+// ---- Tweet swipe file (X page "Tweet Models") ----
+// Was flowstate_tweet_models in localStorage only — a real, growing content
+// library with no backup. Requires 023_localstorage_to_db.sql.
+export type TweetModelRow = {
+  id: string
+  source: 'seed' | 'manual' | 'generated'
+  tweetUrl: string
+  addedAt: string
+  authorHandle: string
+  authorName: string
+  tweetText: string
+  likes: number
+  retweets: number
+  followerEstimate: number
+  engagementRatio: number
+  category: string
+  hookPattern: string
+  formatType: string
+  whyItWorked: string
+  soundMoneyAlternative: string
+}
+
+function explainTweetModelError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('tweet_models')) {
+    return 'Setup needed: run supabase/migrations/023_localstorage_to_db.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading tweet models.'
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function tweetModelFromRow(r: any): TweetModelRow {
+  return {
+    id: r.id, source: r.source, tweetUrl: r.tweet_url ?? '', addedAt: r.added_at,
+    authorHandle: r.author_handle ?? '', authorName: r.author_name ?? '', tweetText: r.tweet_text,
+    likes: r.likes ?? 0, retweets: r.retweets ?? 0, followerEstimate: r.follower_estimate ?? 0,
+    engagementRatio: r.engagement_ratio ?? 0, category: r.category ?? '', hookPattern: r.hook_pattern ?? '',
+    formatType: r.format_type ?? '', whyItWorked: r.why_it_worked ?? '', soundMoneyAlternative: r.sound_money_alternative ?? '',
+  }
+}
+
+function tweetModelToRow(m: TweetModelRow) {
+  return {
+    id: m.id, source: m.source, tweet_url: m.tweetUrl || null, added_at: m.addedAt,
+    author_handle: m.authorHandle || null, author_name: m.authorName || null, tweet_text: m.tweetText,
+    likes: m.likes, retweets: m.retweets, follower_estimate: m.followerEstimate, engagement_ratio: m.engagementRatio,
+    category: m.category || null, hook_pattern: m.hookPattern || null, format_type: m.formatType || null,
+    why_it_worked: m.whyItWorked || null, sound_money_alternative: m.soundMoneyAlternative || null,
+  }
+}
+
+export async function getTweetModels(): Promise<{ models: TweetModelRow[]; error: string | null }> {
+  const { data, error } = await supabase.from('tweet_models').select('*').order('created_at', { ascending: true })
+  if (error) return { models: [], error: explainTweetModelError(error.message) }
+  return { models: (data ?? []).map(tweetModelFromRow), error: null }
+}
+
+export async function addTweetModels(models: TweetModelRow[]): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('tweet_models').insert(models.map(tweetModelToRow))
+  if (error) return { error: explainTweetModelError(error.message) }
+  return { error: null }
+}
+
+export async function deleteTweetModel(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('tweet_models').delete().eq('id', id)
+  if (error) return { error: explainTweetModelError(error.message) }
+  return { error: null }
+}
+
+// ---- Etsy Knowledge Base overrides ----
+// Tom's own edits to the Notion-sourced KB pages. Was flowstate_etsy_kb_*
+// in localStorage only. Requires 023_localstorage_to_db.sql.
+function explainEtsyKbError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('etsy_kb_overrides')) {
+    return 'Setup needed: run supabase/migrations/023_localstorage_to_db.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading Etsy KB overrides.'
+}
+
+export async function getEtsyKbOverrides(): Promise<{ overrides: Record<string, string>; error: string | null }> {
+  const { data, error } = await supabase.from('etsy_kb_overrides').select('page_id,content')
+  if (error) return { overrides: {}, error: explainEtsyKbError(error.message) }
+  const overrides: Record<string, string> = {}
+  for (const row of (data ?? []) as { page_id: string; content: string }[]) overrides[row.page_id] = row.content
+  return { overrides, error: null }
+}
+
+export async function saveEtsyKbOverride(pageId: string, content: string): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from('etsy_kb_overrides')
+    .upsert({ page_id: pageId, content, updated_at: new Date().toISOString() }, { onConflict: 'page_id' })
+  if (error) return { error: explainEtsyKbError(error.message) }
+  return { error: null }
+}
+
+export async function resetEtsyKbOverride(pageId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('etsy_kb_overrides').delete().eq('page_id', pageId)
+  if (error) return { error: explainEtsyKbError(error.message) }
+  return { error: null }
+}
+
+// ---- Error log (morning page "what went wrong" journal) ----
+// Was flowstate_error_log in localStorage only — explicitly meant for
+// spotting patterns over time, so it needs to actually persist.
+// Requires 023_localstorage_to_db.sql.
+export type ErrorLogEntry = { id: string; date: string; text: string }
+
+function explainErrorLogError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('error_log')) {
+    return 'Setup needed: run supabase/migrations/023_localstorage_to_db.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading the error log.'
+}
+
+export async function getErrorLog(): Promise<{ entries: ErrorLogEntry[]; error: string | null }> {
+  const { data, error } = await supabase
+    .from('error_log')
+    .select('id,log_date,entry_text')
+    .order('created_at', { ascending: false })
+  if (error) return { entries: [], error: explainErrorLogError(error.message) }
+  const entries = (data ?? []).map((r: { id: string; log_date: string; entry_text: string }) => ({ id: r.id, date: r.log_date, text: r.entry_text }))
+  return { entries, error: null }
+}
+
+export async function addErrorLogEntry(date: string, text: string): Promise<{ entry: ErrorLogEntry | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('error_log')
+    .insert({ log_date: date, entry_text: text })
+    .select('id,log_date,entry_text')
+    .single()
+  if (error) return { entry: null, error: explainErrorLogError(error.message) }
+  return { entry: { id: data.id, date: data.log_date, text: data.entry_text }, error: null }
+}
+
+export async function deleteErrorLogEntry(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('error_log').delete().eq('id', id)
+  if (error) return { error: explainErrorLogError(error.message) }
+  return { error: null }
+}

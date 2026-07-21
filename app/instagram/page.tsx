@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, Camera, CheckCircle2, Circle, Copy, Check, ExternalLink, ChevronDown, Hash } from 'lucide-react'
+import { getDailyChecklistState, setDailyChecklistItem } from '@/lib/supabase'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -222,7 +223,7 @@ const FORMAT_GUIDE = [
   { name:'Stories', reach:'2/5', saves:'1/5', engagement:'3/5', color:C.cyan, tip:'Not for discovery &#8212; for retention. Daily stories keep you visible at the top of your followers\' feeds. Polls and questions get 30&#8211;40% response rates from engaged audiences.' },
 ]
 
-const INSTA_KEY = () => 'flowstate_insta_' + new Date().toISOString().slice(0,10)
+const todayStr = () => new Date().toISOString().slice(0,10)
 
 export default function InstagramPage() {
   const router = useRouter()
@@ -233,17 +234,14 @@ export default function InstagramPage() {
   const [expandedIdea, setExpandedIdea] = useState<string|null>(null)
 
   useEffect(() => {
-    try {
-      const s = localStorage.getItem(INSTA_KEY())
-      if (s) setDone(JSON.parse(s))
-    } catch {}
+    getDailyChecklistState('instagram', todayStr()).then(({ state }) => setDone(state))
   }, [])
 
   function toggleTask(id: TaskId) {
     setDone(prev => {
-      const next = { ...prev, [id]: !prev[id] }
-      try { localStorage.setItem(INSTA_KEY(), JSON.stringify(next)) } catch {}
-      return next
+      const nextDone = !prev[id]
+      setDailyChecklistItem('instagram', id, todayStr(), nextDone)
+      return { ...prev, [id]: nextDone }
     })
   }
 

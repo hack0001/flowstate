@@ -1,5 +1,5 @@
 // Etsy Knowledge Base — verbatim content from Notion
-// Editable via localStorage: keys use prefix flowstate_etsy_kb_
+// Editable content: overrides are saved to the etsy_kb_overrides Supabase table (see lib/supabase.ts)
 
 export type KBPage = { id: string; title: string; content: string }
 export type KBSection = { title: string; color: string; pages: KBPage[] }

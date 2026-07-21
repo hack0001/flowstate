@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, CheckCircle2, Circle, Repeat, Droplets, Bell, BellOff } from 'lucide-react'
+import { getDailyChecklistState, setDailyChecklistItem } from '@/lib/supabase'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -56,8 +57,8 @@ const SESSION_WINDOWS = [
   { id:'afternoon', from:15, to:23 },
 ]
 
-function todayKey() {
-  return 'flowstate_physical_' + new Date().toISOString().slice(0, 10)
+function todayStr() {
+  return new Date().toISOString().slice(0, 10)
 }
 
 function isTrainingDay() {
@@ -113,10 +114,7 @@ export default function PhysicalPage() {
   const training = isTrainingDay()
 
   useEffect(() => {
-    try {
-      const s = localStorage.getItem(todayKey())
-      if (s) setDone(JSON.parse(s))
-    } catch {}
+    getDailyChecklistState('physical', todayStr()).then(({ state }) => setDone(state))
 
     // Notification permission state
     if (typeof Notification === 'undefined') {
@@ -141,9 +139,9 @@ export default function PhysicalPage() {
 
   function toggle(id: string) {
     setDone(prev => {
-      const next = { ...prev, [id]: !prev[id] }
-      try { localStorage.setItem(todayKey(), JSON.stringify(next)) } catch {}
-      return next
+      const nextDone = !prev[id]
+      setDailyChecklistItem('physical', id, todayStr(), nextDone)
+      return { ...prev, [id]: nextDone }
     })
   }
 

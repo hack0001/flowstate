@@ -12,6 +12,9 @@ import {
   getMorningCompletionsForDate,
   markMorningItemComplete,
   getMorningCompletionCounts,
+  getErrorLog,
+  addErrorLogEntry,
+  deleteErrorLogEntry,
 } from '@/lib/supabase'
 import type { MorningRoutineItem } from '@/lib/supabase'
 
@@ -133,16 +136,7 @@ function ParticleCanvas() {
   return <canvas ref={ref} aria-hidden="true" style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0, width:'100%', height:'100%' }} />
 }
 
-const ERROR_LOG_KEY = 'flowstate_error_log'
-
 type ErrorEntry = { id: string; date: string; text: string }
-
-function loadErrors(): ErrorEntry[] {
-  try { return JSON.parse(localStorage.getItem(ERROR_LOG_KEY) ?? '[]') } catch { return [] }
-}
-function saveErrors(entries: ErrorEntry[]) {
-  try { localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(entries)) } catch {}
-}
 
 function todayStr() {
   const d = new Date()
@@ -259,8 +253,12 @@ export default function MorningPage() {
       setItems(itemsRes.items)
       setCompleted(completionsRes.itemIds)
       setLoadErr(itemsRes.error ?? completionsRes.error ?? null)
-      setErrors(loadErrors())
       setLoaded(true)
+
+      getErrorLog().then(({ entries, error }) => {
+        setErrors(entries)
+        if (error) console.error('[error log]', error)
+      })
 
       getMorningCompletionCounts(30).then(({ counts }) => setCompletionCounts(counts))
 
@@ -307,15 +305,17 @@ export default function MorningPage() {
     await reorderMorningRoutineItems(newItems.map(i => i.id))
   }
 
-  function addError() {
+  async function addError() {
     if (!errInput.trim()) return
-    const entry: ErrorEntry = { id: Date.now().toString(), date: todayStr(), text: errInput.trim() }
-    const next = [entry, ...errors]
-    setErrors(next); saveErrors(next); setErrInput('')
+    const text = errInput.trim()
+    setErrInput('')
+    const { entry, error } = await addErrorLogEntry(todayStr(), text)
+    if (error || !entry) { console.error('[error log]', error); return }
+    setErrors(prev => [entry, ...prev])
   }
   function removeError(id: string) {
-    const next = errors.filter(e => e.id !== id)
-    setErrors(next); saveErrors(next)
+    setErrors(prev => prev.filter(e => e.id !== id))
+    deleteErrorLogEntry(id)
   }
 
   const quote    = DONE_QUOTES[new Date().getDate() % DONE_QUOTES.length]

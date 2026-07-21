@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, CheckCircle2, Circle, Star, Clock, Moon } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { supabase, getEveningReview, saveEveningMit, markEveningComplete } from '@/lib/supabase'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -70,7 +70,7 @@ function PhaseTomorrow({ onNext }: { onNext: () => void }) {
 
   function handleSave() {
     if (!mit.trim()) return
-    try { localStorage.setItem('evening_mit_' + toDateStr(), mit.trim()) } catch {}
+    saveEveningMit(toDateStr(), mit.trim())
     setSaved(true)
     setTimeout(onNext, 600)
   }
@@ -427,7 +427,7 @@ function PhaseSleep({ onComplete }: { onComplete: () => void }) {
 
   function handleComplete() {
     // Save completion
-    try { localStorage.setItem('evening_done_' + toDateStr(), '1') } catch {}
+    markEveningComplete(toDateStr())
     onComplete()
   }
 
@@ -510,9 +510,9 @@ export default function EveningPage() {
     const h = new Date().getHours()
     if (h < EVENING_HOUR) setTooEarly(true)
     // Check if already done today
-    try {
-      if (localStorage.getItem('evening_done_' + toDateStr()) === '1') setComplete(true)
-    } catch {}
+    getEveningReview(toDateStr()).then(({ review }) => {
+      if (review?.completedAt) setComplete(true)
+    })
   }, [])
 
   const dateLabel = new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' })

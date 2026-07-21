@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, Zap, Copy, Check, ExternalLink, ChevronDown, CheckCircle2, Circle, Calendar, Trash2, Plus, Search, TrendingUp, ListOrdered } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { supabase, getDailyChecklistState, setDailyChecklistItem, getTweetModels, addTweetModels, deleteTweetModel } from '@/lib/supabase'
+import type { TweetModelRow } from '@/lib/supabase'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -87,27 +88,9 @@ Style: confident, intellectually sharp, occasionally provocative. Think: the eco
 
 CRITICAL: Return ONLY a valid JSON array. No markdown, no backticks, no preamble. Each object must have exactly: {"tweet":"...","hook_type":"...","why_it_works":"..."}`
 
-const TODAY_KEY = () => 'flowstate_x_workflow_' + new Date().toISOString().slice(0,10)
-const MODELS_KEY = 'flowstate_tweet_models'
+const todayStr = () => new Date().toISOString().slice(0,10)
 
-type TweetModel = {
-  id: string
-  tweetText: string
-  authorHandle: string
-  authorName: string
-  tweetUrl: string
-  likes: number
-  retweets: number
-  followerEstimate: number
-  engagementRatio: number
-  category: string
-  hookPattern: string
-  formatType: string
-  whyItWorked: string
-  soundMoneyAlternative: string
-  addedAt: string
-  source: 'seed' | 'manual' | 'generated'
-}
+type TweetModel = TweetModelRow
 
 const CATEGORIES = [
   { value:'all',         label:'All' },
@@ -335,42 +318,32 @@ export default function XPage() {
   }
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(TODAY_KEY())
-      if (stored) setDone(JSON.parse(stored))
-    } catch {}
+    getDailyChecklistState('x_workflow', todayStr()).then(({ state }) => setDone(state))
   }, [])
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(MODELS_KEY)
-      if (raw) {
-        setModels(JSON.parse(raw) as TweetModel[])
-      } else {
+    getTweetModels().then(({ models: dbModels, error }) => {
+      if (error || dbModels.length === 0) {
         setModels(SEED_MODELS)
-        localStorage.setItem(MODELS_KEY, JSON.stringify(SEED_MODELS))
+        if (!error) addTweetModels(SEED_MODELS)
+        return
       }
-    } catch {
-      setModels(SEED_MODELS)
-    }
+      setModels(dbModels)
+    })
   }, [])
 
   function toggleTask(id: TaskId) {
     setDone(prev => {
-      const next = { ...prev, [id]: !prev[id] }
-      try { localStorage.setItem(TODAY_KEY(), JSON.stringify(next)) } catch {}
-      return next
+      const nextDone = !prev[id]
+      setDailyChecklistItem('x_workflow', id, todayStr(), nextDone)
+      return { ...prev, [id]: nextDone }
     })
   }
 
   // ── Outlier model helpers ────────────────────────────────────────────────────
-  function saveModels(next: TweetModel[]) {
-    setModels(next)
-    try { localStorage.setItem(MODELS_KEY, JSON.stringify(next)) } catch {}
-  }
-
   function deleteModel(id: string) {
-    saveModels(models.filter(m => m.id !== id))
+    setModels(prev => prev.filter(m => m.id !== id))
+    deleteTweetModel(id)
     if (expandedModel === id) setExpandedModel(null)
   }
 
@@ -433,7 +406,8 @@ export default function XPage() {
       whyItWorked:addAnalysis.whyItWorked, soundMoneyAlternative:addAnalysis.soundMoneyAlternative,
       addedAt:new Date().toISOString().slice(0,10), source:'manual',
     }
-    saveModels([...models, model])
+    setModels(prev => [...prev, model])
+    addTweetModels([model])
     closeAddModal()
   }
 
@@ -455,7 +429,8 @@ export default function XPage() {
         addedAt: new Date().toISOString().slice(0,10),
         source: 'generated' as const,
       }))
-      saveModels([...models, ...examples])
+      setModels(prev => [...prev, ...examples])
+      addTweetModels(examples)
     } catch (e) {
       console.error('Generate failed', e)
     } finally {
