@@ -293,7 +293,19 @@ type ContentItem = {
   unique_angle: string | null
   revenue_note: string | null
   is_active_focus: boolean
+  script_url: string | null
+  drive_url: string | null
+  youtube_url: string | null
 }
+
+// Pull the video id out of any YouTube URL shape (watch?v=, youtu.be/, /shorts/)
+function extractYouTubeId(url: string | null): string | null {
+  if (!url) return null
+  const m = url.match(/(?:v=|youtu\.be\/|\/shorts\/|\/embed\/)([A-Za-z0-9_-]{11})/)
+  return m ? m[1] : null
+}
+
+type YtStats = { views: number; likes: number; comments: number; publishedAt: string; title: string }
 
 type View = 'ideas' | 'pipeline' | 'list'
 
@@ -1092,9 +1104,16 @@ function FocusStar({ active, atCap, onToggle }: { active:boolean; atCap:boolean;
 }
 
 // ── Pipeline card ───────────────────────────────────────────────────────────
-function PipelineCard({ item, onMove, onSaveRevenue, onToggleFocus, focusAtCap }: { item:ContentItem; onMove:()=>void; onSaveRevenue:(note:string)=>void; onToggleFocus:()=>void; focusAtCap:boolean }) {
+function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focusAtCap }: { item:ContentItem; stats?: YtStats; onMove:()=>void; onSaveRevenue:(note:string)=>void; onToggleFocus:()=>void; focusAtCap:boolean }) {
   const s = stageStyle(item.pipeline_stage)
   const [revenue, setRevenue] = useState(item.revenue_note ?? '')
+  const [scriptUrl, setScriptUrl] = useState(item.script_url ?? '')
+  const [driveUrl, setDriveUrl] = useState(item.drive_url ?? '')
+  const [youtubeUrl, setYoutubeUrl] = useState(item.youtube_url ?? '')
+
+  async function saveLink(field: 'script_url' | 'drive_url' | 'youtube_url', value: string) {
+    await supabase.from('content_items').update({ [field]: value.trim() || null }).eq('id', item.id)
+  }
   const isPostPublished = item.pipeline_stage === '📊 Post-Published'
   const sop = sopForStage(item.pipeline_stage)
   const [expanded, setExpanded] = useState(false)
@@ -1208,7 +1227,15 @@ function PipelineCard({ item, onMove, onSaveRevenue, onToggleFocus, focusAtCap }
         {item.format && <span style={{ fontSize:'0.6rem', color:C.muted, background:C.surface, border:'1px solid '+C.border, borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.format}</span>}
         {item.video_type && <span style={{ fontSize:'0.6rem', color:C.purple, background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.video_type}</span>}
         {item.tag && <span style={{ fontSize:'0.6rem', color:C.amber, background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.tag}</span>}
+        {item.script_url && <a href={item.script_url} target="_blank" rel="noreferrer" style={{ fontSize:'0.6rem', color:C.cyan, background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem', textDecoration:'none' }}>&#128221; Script</a>}
+        {item.drive_url && <a href={item.drive_url} target="_blank" rel="noreferrer" style={{ fontSize:'0.6rem', color:C.green, background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem', textDecoration:'none' }}>&#128193; Assets</a>}
+        {item.youtube_url && <a href={item.youtube_url} target="_blank" rel="noreferrer" style={{ fontSize:'0.6rem', color:C.red, background:'rgba(255,68,102,0.08)', border:'1px solid rgba(255,68,102,0.2)', borderRadius:'9999px', padding:'0.1rem 0.4rem', textDecoration:'none' }}>&#9654; Watch</a>}
       </div>
+      {stats && (
+        <p style={{ fontSize:'0.66rem', color:C.sec, margin:'0 0 0.4rem', fontWeight:600 }}>
+          &#128200; {stats.views.toLocaleString()} views &middot; {stats.likes.toLocaleString()} likes &middot; {stats.comments.toLocaleString()} comments
+        </p>
+      )}
       {item.unique_angle && <p style={{ fontSize:'0.65rem', color:C.purple, margin:'0 0 0.3rem', lineHeight:1.4 }}>&#9889; {item.unique_angle.slice(0,90)}{item.unique_angle.length>90?'…':''}</p>}
       {item.notes && <p style={{ fontSize:'0.68rem', color:C.sec, margin:'0 0 0.4rem', lineHeight:1.45, fontStyle:'italic' }}>{item.notes.slice(0,80)}{item.notes.length>80?'…':''}</p>}
       {isPostPublished && (
@@ -1269,6 +1296,24 @@ function PipelineCard({ item, onMove, onSaveRevenue, onToggleFocus, focusAtCap }
             rows={4}
             style={{ width:'100%', padding:'0.5rem 0.6rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.7rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}
           />
+
+          {/* Per-video links — script doc, Drive asset folder, published video */}
+          <div style={{ marginTop:'0.5rem', display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+            {([
+              { label:'Script link', value:scriptUrl, set:setScriptUrl, field:'script_url' as const, ph:'Google Doc / Drive link to the script' },
+              { label:'Asset folder', value:driveUrl, set:setDriveUrl, field:'drive_url' as const, ph:'Google Drive folder with VO, b-roll, thumbnail' },
+              { label:'YouTube URL', value:youtubeUrl, set:setYoutubeUrl, field:'youtube_url' as const, ph:'Published video link — enables live stats on this card' },
+            ]).map(l => (
+              <div key={l.field} style={{ display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                <span style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase', color:C.muted, width:'5.2rem', flexShrink:0 }}>{l.label}</span>
+                <input
+                  value={l.value} onChange={e => l.set(e.target.value)} onBlur={() => saveLink(l.field, l.value)}
+                  placeholder={l.ph}
+                  style={{ flex:1, padding:'0.3rem 0.5rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.text, fontFamily:'inherit', fontSize:'0.64rem', outline:'none', boxSizing:'border-box' as const }}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -1303,6 +1348,24 @@ export default function ContentPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // ── Live YouTube stats for published items ────────────────────────────────
+  // One batched videos.list call (1 quota unit) for every item with a
+  // youtube_url — keeps views/likes/comments visible on the cards without
+  // opening Studio. Refreshes on page load.
+  const [ytStats, setYtStats] = useState<Record<string, YtStats>>({})
+  useEffect(() => {
+    const ids = [...new Set(items.map(i => extractYouTubeId(i.youtube_url)).filter((v): v is string => !!v))]
+    if (ids.length === 0) return
+    fetch('/api/content/stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoIds: ids }),
+    })
+      .then(r => r.json())
+      .then(data => { if (data?.stats) setYtStats(data.stats) })
+      .catch(() => { /* stats are a nice-to-have — never block the page on them */ })
+  }, [items])
 
   async function moveStage(item: ContentItem, stage: string) {
     setMoveTarget(null)
@@ -1675,7 +1738,7 @@ export default function ContentPage() {
                   {stage.items.length === 0 ? (
                     <p style={{ fontSize:'0.65rem', color:C.muted, textAlign:'center', padding:'0.75rem 0', margin:0 }}>empty</p>
                   ) : (
-                    stage.items.map(item => <PipelineCard key={item.id} item={item} onMove={() => setMoveTarget(item)} onSaveRevenue={note => saveRevenueNote(item, note)} onToggleFocus={() => toggleFocus(item)} focusAtCap={focusCount >= 2}/>)
+                    stage.items.map(item => <PipelineCard key={item.id} item={item} stats={ytStats[extractYouTubeId(item.youtube_url) ?? ''] } onMove={() => setMoveTarget(item)} onSaveRevenue={note => saveRevenueNote(item, note)} onToggleFocus={() => toggleFocus(item)} focusAtCap={focusCount >= 2}/>)
                   )}
                 </div>
               ))}
