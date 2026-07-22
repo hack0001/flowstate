@@ -402,3 +402,30 @@ export async function deleteErrorLogEntry(id: string): Promise<{ error: string |
   if (error) return { error: explainErrorLogError(error.message) }
   return { error: null }
 }
+
+// ---- Page visits (Home page "haven't checked this in a while" badges) ----
+// Was flowstate_last_visit_<route> in localStorage only — per-browser, so a
+// fresh device or cleared cache made every pill look stale. Requires
+// 024_page_visits.sql.
+function explainPageVisitsError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('page_visits')) {
+    return 'Setup needed: run supabase/migrations/024_page_visits.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading page visits.'
+}
+
+export async function getPageVisits(): Promise<{ visits: Record<string, string>; error: string | null }> {
+  const { data, error } = await supabase.from('page_visits').select('route,last_visited_at')
+  if (error) return { visits: {}, error: explainPageVisitsError(error.message) }
+  const visits: Record<string, string> = {}
+  for (const row of (data ?? []) as { route: string; last_visited_at: string }[]) visits[row.route] = row.last_visited_at
+  return { visits, error: null }
+}
+
+export async function recordPageVisit(route: string): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from('page_visits')
+    .upsert({ route, last_visited_at: new Date().toISOString() }, { onConflict: 'route' })
+  if (error) return { error: explainPageVisitsError(error.message) }
+  return { error: null }
+}

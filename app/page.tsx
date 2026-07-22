@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers } from 'lucide-react'
 import { getActiveFocusVideos, type ActiveFocusVideo } from '@/lib/supabase'
-import { supabase } from '@/lib/supabase'
+import { supabase, getPageVisits, recordPageVisit } from '@/lib/supabase'
 import { sopForStage } from '@/lib/sops'
 import { useLanguage } from '@/context/LanguageContext'
 
@@ -244,14 +244,14 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    try {
+    getPageVisits().then(({ visits }) => {
       const now = Date.now()
       const alerts: Record<string, 'green' | 'orange' | 'red'> = {}
       const warn = new Set<string>()
       for (const route of TRACKED_ROUTES) {
-        const raw = localStorage.getItem('flowstate_last_visit_' + route)
+        const raw = visits[route]
         if (!raw) { alerts[route] = 'red'; warn.add(route); continue }
-        const age = now - parseInt(raw, 10)
+        const age = now - new Date(raw).getTime()
         const days = age / (24 * 3600 * 1000)
         if (days >= 5) alerts[route] = 'red'
         else if (days >= 4) alerts[route] = 'orange'
@@ -260,12 +260,12 @@ export default function Home() {
       }
       setPageAlerts(alerts)
       setPageWarn(warn)
-    } catch {}
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function navTo(route: string) {
-    try { localStorage.setItem('flowstate_last_visit_' + route, Date.now().toString()) } catch {}
+    recordPageVisit(route)
     router.push('/' + route)
   }
 
