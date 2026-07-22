@@ -165,6 +165,7 @@ export default function Home() {
   const [showReminder, setShowReminder] = useState(false)
   const [pageAlerts, setPageAlerts] = useState<Record<string, 'green' | 'orange' | 'red'>>({})
   const [pageWarn, setPageWarn] = useState<Set<string>>(new Set())
+  const [pageVisitsErr, setPageVisitsErr] = useState<string | null>(null)
 
   const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','goals','youtube','links','etsy','niche-calendar','x','nsdr','physical','instagram','tabs']
 
@@ -244,7 +245,8 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    getPageVisits().then(({ visits }) => {
+    getPageVisits().then(({ visits, error }) => {
+      setPageVisitsErr(error)
       const now = Date.now()
       const alerts: Record<string, 'green' | 'orange' | 'red'> = {}
       const warn = new Set<string>()
@@ -266,6 +268,20 @@ export default function Home() {
 
   function navTo(route: string) {
     recordPageVisit(route)
+    // Clear the badge immediately rather than waiting on the next full page
+    // load — visiting today should drop the warning right away.
+    setPageWarn(prev => {
+      if (!prev.has(route)) return prev
+      const next = new Set(prev)
+      next.delete(route)
+      return next
+    })
+    setPageAlerts(prev => {
+      if (!(route in prev)) return prev
+      const next = { ...prev }
+      delete next[route]
+      return next
+    })
     router.push('/' + route)
   }
 
@@ -376,6 +392,11 @@ export default function Home() {
               )
             })}
           </div>
+          {pageVisitsErr && (
+            <div style={{ marginTop:'0.75rem', padding:'0.5rem 0.75rem', background:'rgba(255,68,102,0.08)', border:'1px solid rgba(255,68,102,0.25)', borderRadius:'0.6rem', color:'#ff4466', fontSize:'0.72rem' }}>
+              {pageVisitsErr}
+            </div>
+          )}
         </div>
       </div>
 
