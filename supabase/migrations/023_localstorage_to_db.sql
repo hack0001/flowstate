@@ -32,6 +32,10 @@ create table if not exists evening_reviews (
   completed_at timestamptz
 );
 
+alter table evening_reviews enable row level security;
+drop policy if exists allow_all_evening_reviews on evening_reviews;
+create policy allow_all_evening_reviews on evening_reviews for all using (true) with check (true);
+
 create table if not exists daily_checklist_completions (
   id uuid primary key default gen_random_uuid(),
   checklist_key text not null,
@@ -43,6 +47,10 @@ create table if not exists daily_checklist_completions (
 
 create index if not exists daily_checklist_completions_lookup_idx
   on daily_checklist_completions (checklist_key, completed_date);
+
+alter table daily_checklist_completions enable row level security;
+drop policy if exists allow_all_daily_checklist_completions on daily_checklist_completions;
+create policy allow_all_daily_checklist_completions on daily_checklist_completions for all using (true) with check (true);
 
 create table if not exists tweet_models (
   id text primary key,
@@ -64,11 +72,19 @@ create table if not exists tweet_models (
   created_at timestamptz not null default now()
 );
 
+alter table tweet_models enable row level security;
+drop policy if exists allow_all_tweet_models on tweet_models;
+create policy allow_all_tweet_models on tweet_models for all using (true) with check (true);
+
 create table if not exists etsy_kb_overrides (
   page_id text primary key,
   content text not null,
   updated_at timestamptz not null default now()
 );
+
+alter table etsy_kb_overrides enable row level security;
+drop policy if exists allow_all_etsy_kb_overrides on etsy_kb_overrides;
+create policy allow_all_etsy_kb_overrides on etsy_kb_overrides for all using (true) with check (true);
 
 create table if not exists error_log (
   id uuid primary key default gen_random_uuid(),
@@ -78,3 +94,7 @@ create table if not exists error_log (
 );
 
 create index if not exists error_log_date_idx on error_log (log_date);
+
+alter table error_log enable row level security;
+drop policy if exists allow_all_error_log on error_log;
+create policy allow_all_error_log on error_log for all using (true) with check (true);

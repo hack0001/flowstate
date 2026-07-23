@@ -17,3 +17,7 @@ create table if not exists page_visits (
   route text primary key,
   last_visited_at timestamptz not null default now()
 );
+
+alter table page_visits enable row level security;
+drop policy if exists allow_all_page_visits on page_visits;
+create policy allow_all_page_visits on page_visits for all using (true) with check (true);

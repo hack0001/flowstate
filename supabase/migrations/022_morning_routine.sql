@@ -44,6 +44,14 @@ create table if not exists morning_routine_completions (
 create index if not exists morning_routine_completions_date_idx on morning_routine_completions (completed_date);
 create index if not exists morning_routine_completions_item_idx on morning_routine_completions (item_id);
 
+alter table morning_routine_items enable row level security;
+drop policy if exists allow_all_morning_routine_items on morning_routine_items;
+create policy allow_all_morning_routine_items on morning_routine_items for all using (true) with check (true);
+
+alter table morning_routine_completions enable row level security;
+drop policy if exists allow_all_morning_routine_completions on morning_routine_completions;
+create policy allow_all_morning_routine_completions on morning_routine_completions for all using (true) with check (true);
+
 insert into morning_routine_items (id, title, minutes, note, category, sort_order) values
   ('mr-pushpull',  '5 push-ups / 5 pull-ups',                       5,  'Before breakfast', 'Movement', 0),
   ('mr-weight',    'Weigh yourself + log in spreadsheet',            2,  null, 'Health', 1),
