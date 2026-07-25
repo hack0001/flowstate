@@ -40,6 +40,7 @@ type ScannedOutlier = {
   query: string          // which seed query surfaced it
   ageDays: number         // days since published
   viewsPerDay: number     // views / ageDays, rounded — the velocity number
+  channelCountry: string | null // ISO 3166-1 alpha-2 the channel owner set in About, e.g. "US" — not viewer demographics (YouTube doesn't expose those for channels you don't own), just the channel's declared base
 }
 
 const YT = 'https://www.googleapis.com/youtube/v3'
@@ -74,6 +75,17 @@ export async function POST(req: NextRequest) {
     const velocityMinViews = typeof body?.velocityMinViews === 'number' ? body.velocityMinViews : 300_000
     const velocityMaxAgeDays = typeof body?.velocityMaxAgeDays === 'number' ? body.velocityMaxAgeDays : 60
 
+    // Audience-geography knobs. YouTube's public API has no way to see who
+    // actually watched a video you don't own (that's YouTube Analytics,
+    // owner-only) — the closest available proxy is the channel's own
+    // declared country (channels.list snippet.country, set by the channel
+    // owner in About, often left blank). regionCode biases search.list's
+    // ranking toward what's popular in that region; countryFilter, if set,
+    // hard-filters results to channels that declared that exact country
+    // (so it will also drop channels that never set one).
+    const regionCode = typeof body?.regionCode === 'string' && body.regionCode ? body.regionCode : 'US'
+    const countryFilter = typeof body?.countryFilter === 'string' && body.countryFilter ? body.countryFilter : null
+
     const publishedAfter = new Date(Date.now() - maxAgeMonths * 30 * 24 * 3600 * 1000).toISOString()
 
     // 1. search.list per query — two passes each (relevance + viewCount) so we
@@ -85,7 +97,7 @@ export async function POST(req: NextRequest) {
       for (const order of ['relevance', 'viewCount'] as const) {
         const params = new URLSearchParams({
           key, part: 'id', type: 'video', maxResults: '50', order,
-          q, publishedAfter, relevanceLanguage: 'en',
+          q, publishedAfter, relevanceLanguage: 'en', regionCode,
         })
         const res = await fetch(`${YT}/search?${params}`)
         const data = await res.json()
@@ -123,11 +135,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. channels.list — subscriber counts (batches of 50, dedup)
+    // 3. channels.list — subscriber counts + declared country (batches of 50, dedup)
     const channelIds = [...new Set(videos.map(v => v.channelId).filter(Boolean))]
     const subsByChannel = new Map<string, number>()
+    const countryByChannel = new Map<string, string | null>()
     for (let i = 0; i < channelIds.length; i += 50) {
-      const params = new URLSearchParams({ key, part: 'statistics', id: channelIds.slice(i, i + 50).join(',') })
+      const params = new URLSearchParams({ key, part: 'snippet,statistics', id: channelIds.slice(i, i + 50).join(',') })
       const res = await fetch(`${YT}/channels?${params}`)
       const data = await res.json()
       if (data?.error) {
@@ -135,24 +148,32 @@ export async function POST(req: NextRequest) {
       }
       for (const c of data?.items ?? []) {
         subsByChannel.set(c.id, Number(c.statistics?.subscriberCount ?? 0))
+        countryByChannel.set(c.id, c.snippet?.country ?? null)
       }
     }
 
-    // 4. Enrich every candidate once — ratio, age, views/day — then split into
-    // the two evidence buckets from this single pass.
-    const enriched: ScannedOutlier[] = videos.map(v => {
-      const subscribers = subsByChannel.get(v.channelId) ?? 0
-      const ratio = subscribers > 0 ? Math.round((v.views / subscribers) * 10) / 10 : 0
-      const ageDays = Math.max(1, Math.round((Date.now() - new Date(v.publishedAt).getTime()) / 86400000))
-      const viewsPerDay = Math.round(v.views / ageDays)
-      return {
-        videoId: v.id, title: v.title, channel: v.channelTitle,
-        views: v.views, subscribers, ratio,
-        publishedAt: v.publishedAt, url: `https://www.youtube.com/watch?v=${v.id}`,
-        query: candidates.get(v.id)?.query ?? '',
-        ageDays, viewsPerDay,
-      }
-    })
+    // 4. Enrich every candidate once — ratio, age, views/day, declared
+    // country — then split into the two evidence buckets from this single
+    // pass. countryFilter, if set, drops anything that didn't declare that
+    // exact country (so it also drops the many channels that left it blank —
+    // that's a real gap, not a bug: YouTube just doesn't expose true viewer
+    // geography for channels you don't own).
+    const enriched: ScannedOutlier[] = videos
+      .map(v => {
+        const subscribers = subsByChannel.get(v.channelId) ?? 0
+        const ratio = subscribers > 0 ? Math.round((v.views / subscribers) * 10) / 10 : 0
+        const ageDays = Math.max(1, Math.round((Date.now() - new Date(v.publishedAt).getTime()) / 86400000))
+        const viewsPerDay = Math.round(v.views / ageDays)
+        return {
+          videoId: v.id, title: v.title, channel: v.channelTitle,
+          views: v.views, subscribers, ratio,
+          publishedAt: v.publishedAt, url: `https://www.youtube.com/watch?v=${v.id}`,
+          query: candidates.get(v.id)?.query ?? '',
+          ageDays, viewsPerDay,
+          channelCountry: countryByChannel.get(v.channelId) ?? null,
+        }
+      })
+      .filter(o => !countryFilter || o.channelCountry === countryFilter)
 
     // Ratio outliers — topic beat the channel's own audience size.
     const outliers = enriched

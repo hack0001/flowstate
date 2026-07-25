@@ -127,6 +127,7 @@ type OutlierBreakdown = {
   // could be doing some of the work). Undefined/omitted = treat as ratio.
   signal_type?: 'ratio' | 'velocity'
   velocity_note?: string // e.g. "1.2M views in 3 weeks on a 2M-sub channel — fast, but large channel so weigh replicability carefully"
+  channel_country?: string // e.g. "US" — channel's own declared country, empty if unknown/not declared
 }
 type FoundIdea = {
   title: string; description: string; video_type: string; format: string
@@ -148,6 +149,7 @@ type ScannedOutlier = {
   views: number; subscribers: number; ratio: number
   publishedAt: string; url: string; query: string
   ageDays: number; viewsPerDay: number
+  channelCountry: string | null // channel's own declared country (About), not confirmed viewer geography
 }
 
 // Parse a model reply that should be JSON, surviving markdown fences,
@@ -188,13 +190,13 @@ function parseModelJson<T>(raw: string): T {
 
 function formatScannedOutliers(rows: ScannedOutlier[]): string {
   return rows.map(o =>
-    `- "${o.title}" — ${o.channel} · ${o.views.toLocaleString()} views on a ${o.subscribers.toLocaleString()}-subscriber channel (${o.ratio}:1 view:sub) · published ${o.publishedAt.slice(0, 10)} · found via "${o.query}" · ${o.url}`
+    `- "${o.title}" — ${o.channel}${o.channelCountry ? ' [' + o.channelCountry + ']' : ''} · ${o.views.toLocaleString()} views on a ${o.subscribers.toLocaleString()}-subscriber channel (${o.ratio}:1 view:sub) · published ${o.publishedAt.slice(0, 10)} · found via "${o.query}" · ${o.url}`
   ).join('\n')
 }
 
 function formatScannedVelocity(rows: ScannedOutlier[]): string {
   return rows.map(o =>
-    `- "${o.title}" — ${o.channel} (${o.subscribers.toLocaleString()} subs) · ${o.views.toLocaleString()} views in ${o.ageDays} days (~${o.viewsPerDay.toLocaleString()}/day) · published ${o.publishedAt.slice(0, 10)} · found via "${o.query}" · ${o.url}`
+    `- "${o.title}" — ${o.channel}${o.channelCountry ? ' [' + o.channelCountry + ']' : ''} (${o.subscribers.toLocaleString()} subs) · ${o.views.toLocaleString()} views in ${o.ageDays} days (~${o.viewsPerDay.toLocaleString()}/day) · published ${o.publishedAt.slice(0, 10)} · found via "${o.query}" · ${o.url}`
   ).join('\n')
 }
 
@@ -204,6 +206,7 @@ function buildFindIdeasPrompt(existingTitles: string[], count: number, scannedOu
     '1. RATIO outliers (primary, strongest evidence) — a video that got unusually high views (100,000+) relative to how few subscribers its channel has (well under 100,000 subscribers — ideally a 5:1+ view-to-subscriber ratio), AND whose packaging is mediocre or bad — a weak title, a cluttered or low-effort thumbnail, or a video that clearly underdelivers on its own premise. That combination (proven demand + weak execution) isolates the topic from the channel: the topic itself pulled an audience beyond the creator\'s own following, and nobody has made a great version of it yet.\n\n' +
     '2. VELOCITY outliers (secondary, corroborating evidence) — a video that racked up a large absolute view count in a short window (e.g. 300,000+ views within about 2 months), REGARDLESS of channel size or ratio. Do not dismiss these just because the channel is large. A gold video that hit 1 million views in a month is real evidence the topic has broad current appeal, even on a big channel where the ratio looks unremarkable or would get filtered out — that view count did not happen by accident. The caveat: on a large channel, some of that pull is the channel\'s own subscriber base and algorithmic authority rather than the topic alone, so it is weaker proof that a smaller channel like this one could replicate it. Use velocity outliers to justify an idea when: the same topic also shows up across multiple velocity results (not just one channel\'s fluke), or a velocity outlier corroborates a weaker ratio candidate, or there is a genuine timing/news reason the topic is hot right now. When an idea rests primarily on a velocity outlier rather than a ratio outlier, say so explicitly and flag the channel size so it can be weighed accordingly — do not present it with the same confidence as a ratio outlier.\n\n' +
     'A small channel with a great video getting modest views still proves nothing on its own (that\'s just a good video, not necessarily a hungry topic) — you still need either a ratio outlier or a velocity outlier (ideally both) as evidence.\n\n' +
+    'AUDIENCE GEOGRAPHY: this channel targets a predominantly American audience. Where a scanned candidate shows a country code in brackets (e.g. "[US]"), that\'s the channel\'s own declared country from its About page — a reasonable proxy for its audience, not confirmed viewer data (YouTube does not expose actual viewer geography for channels you don\'t own). Prefer candidates tagged [US] when picking which outlier/velocity evidence to build an idea on; a candidate with no country tag just means the channel never declared one, not that its audience isn\'t American — use judgment (title/thumbnail language, currency mentioned, etc.) rather than discarding it outright. If you use live web search, you may also independently judge a channel\'s likely audience from its content and say so.\n\n' +
     'Additionally, every idea you propose must:\n' +
     '- Be unambiguous about its topic in the title itself — YouTube\'s search and recommendation system needs to be able to tell what the video is about from the title/description, so a clever or vague hook must still contain a clear topical keyword or claim, not just curiosity with no subject.\n' +
     '- Genuinely fit the CHANNEL BRIEF above — the launch focus (inflation eating savings first, then gold/hard assets, monetary history, how the money system works), one of the 4 proven packaging patterns (name it), and room for the prescriptive "what this means for your savings" ending. Not just "finance" in general.\n' +
@@ -783,6 +786,12 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
   const [scanVelocity, setScanVelocity] = useState<ScannedOutlier[] | null>(null)
   const [velocityAddStatus, setVelocityAddStatus] = useState<Record<string, 'adding' | 'added' | 'error'>>({})
   const [showQueries, setShowQueries] = useState(false)
+  // Filters results to channels that declared "US" as their country in About
+  // (channels.list snippet.country) and biases search ranking toward the US
+  // region. It's the closest proxy the public API offers — YouTube doesn't
+  // expose actual viewer geography for channels you don't own — so this will
+  // also drop channels that never declared a country, not just non-US ones.
+  const [usOnly, setUsOnly] = useState(false)
   // One query per line, editable per scan and remembered in this browser so a
   // tuned set survives reloads. Defaults come from the channel brief.
   const [queryText, setQueryText] = useState(OUTLIER_SEED_QUERIES.join('\n'))
@@ -849,7 +858,7 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
       const res = await fetch('/api/content/outliers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ queries: parsedQueries.slice(0, 8) }),
+        body: JSON.stringify({ queries: parsedQueries.slice(0, 8), regionCode: 'US', countryFilter: usOnly ? 'US' : undefined }),
       })
       const data = await res.json()
       if (data?.error) { setScanMsg(String(data.error)); return }
@@ -884,6 +893,7 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
         view_to_sub_ratio: `${o.ratio}:1`,
         recency: months <= 1 ? 'about a month ago' : `${months} months ago`,
         packaging_gap: '',
+        channel_country: o.channelCountry ?? '',
       },
     }
     const ok = await onAdd(idea)
@@ -912,6 +922,7 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
         packaging_gap: '',
         signal_type: 'velocity',
         velocity_note: `${o.subscribers.toLocaleString()}-subscriber channel — some of this pull may be channel authority/algorithm reach rather than pure topic demand; check whether the topic shows up elsewhere too before betting on it.`,
+        channel_country: o.channelCountry ?? '',
       },
     }
     const ok = await onAdd(idea)
@@ -976,6 +987,11 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
           Search the web while generating (finds real outlier videos and comment gaps to ground each idea in)
         </label>
 
+        <label style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.75rem', cursor:scanning?'not-allowed':'pointer', fontSize:'0.76rem', color:C.sec }}>
+          <input type="checkbox" checked={usOnly} onChange={e => setUsOnly(e.target.checked)} disabled={scanning} style={{ width:'0.9rem', height:'0.9rem' }}/>
+          US audience only when scanning &mdash; biases search toward the US region and keeps only channels that declared "US" as their country. Note: this also drops channels that never declared a country at all, since YouTube doesn&apos;t expose real viewer geography for channels you don&apos;t own.
+        </label>
+
         {/* ── YouTube Data API scan — exact numbers before Claude judges ── */}
         <div style={{ padding:'0.75rem', background:'rgba(0,255,136,0.04)', border:'1px solid rgba(0,255,136,0.15)', borderRadius:'0.75rem', marginBottom:'1rem' }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.5rem', flexWrap:'wrap' as const }}>
@@ -1024,7 +1040,7 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
                     <div key={o.videoId} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.25rem 0.4rem', background:C.card, borderRadius:'0.35rem', border:'1px solid '+C.border }}>
                       <a href={o.url} target="_blank" rel="noreferrer" style={{ flex:1, fontSize:'0.66rem', color:C.sec, textDecoration:'none', lineHeight:1.4 }}>
                         <span style={{ color:C.text, fontWeight:600 }}>{o.title}</span>
-                        {' '}— {o.channel} · {o.views.toLocaleString()} views / {o.subscribers.toLocaleString()} subs · <span style={{ color:C.cyan, fontWeight:700 }}>{o.ratio}:1</span>
+                        {' '}— {o.channel}{o.channelCountry && <span style={{ color:o.channelCountry==='US'?C.green:C.muted, fontWeight:700 }}> [{o.channelCountry}]</span>} · {o.views.toLocaleString()} views / {o.subscribers.toLocaleString()} subs · <span style={{ color:C.cyan, fontWeight:700 }}>{o.ratio}:1</span>
                       </a>
                       <button
                         onClick={() => addOutlierToIdeas(o)}
@@ -1057,7 +1073,7 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
                     <div key={o.videoId} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.25rem 0.4rem', background:C.card, borderRadius:'0.35rem', border:'1px solid '+C.border }}>
                       <a href={o.url} target="_blank" rel="noreferrer" style={{ flex:1, fontSize:'0.66rem', color:C.sec, textDecoration:'none', lineHeight:1.4 }}>
                         <span style={{ color:C.text, fontWeight:600 }}>{o.title}</span>
-                        {' '}— {o.channel} ({o.subscribers.toLocaleString()} subs) · {o.views.toLocaleString()} views in {o.ageDays}d · <span style={{ color:C.amber, fontWeight:700 }}>~{o.viewsPerDay.toLocaleString()}/day</span>
+                        {' '}— {o.channel}{o.channelCountry && <span style={{ color:o.channelCountry==='US'?C.green:C.muted, fontWeight:700 }}> [{o.channelCountry}]</span>} ({o.subscribers.toLocaleString()} subs) · {o.views.toLocaleString()} views in {o.ageDays}d · <span style={{ color:C.amber, fontWeight:700 }}>~{o.viewsPerDay.toLocaleString()}/day</span>
                       </a>
                       <button
                         onClick={() => addVelocityToIdeas(o)}
