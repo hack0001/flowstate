@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers } from 'lucide-react'
+import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, ChevronDown } from 'lucide-react'
 import { getActiveFocusVideos, type ActiveFocusVideo } from '@/lib/supabase'
 import { supabase, getPageVisits, recordPageVisit } from '@/lib/supabase'
 import { sopForStage } from '@/lib/sops'
@@ -20,6 +20,60 @@ const QUOTES = [
   { q:'Done beats perfect.', a:'' },
   { q:'One task. Full attention. Ship it.', a:'' },
   { q:'Your future self is watching you right now through memories.', a:'Hal Elrod' },
+]
+
+// Website / app ideas parked for later -- not active projects, just a backlog
+// to revisit when there's capacity.
+const SITE_IDEAS = [
+  {
+    title: 'Word of Welsh',
+    tag: 'Website',
+    color: '#00c04b',
+    summary: 'A daily/weekly Welsh word site -- one word, meaning, pronunciation and an example sentence, maybe a streak to keep people coming back.',
+    next: 'This one lives or dies on accuracy. Get Sioned to sign off on word choice, translation and pronunciation before any content goes live -- she is the actual bottleneck here, not the build. Once she is on board the site itself is simple: word-of-the-day, an archive, a shareable card.',
+  },
+  {
+    title: '5-a-side app & Football Goffy',
+    tag: 'App',
+    color: '#00d4ff',
+    summary: 'Two related football ideas -- a 5-a-side game organiser (fill a game, manage regulars, split costs) and "Football Goffy" (concept still needs fleshing out).',
+    next: 'Pick one to scope first. The 5-a-side organiser has proven demand -- Playo, TeamUp and Spond already exist, so study what they get wrong before building rather than starting from scratch. Goffy needs a one-paragraph concept written down before it can be scoped at all.',
+  },
+  {
+    title: 'Old Money / Luxury Spending',
+    tag: 'Website',
+    color: '#ffb800',
+    summary: 'Content site in the "old money" / quiet luxury niche -- brand guides, style rules, where old money actually spends.',
+    next: 'The angle is trending on TikTok and Pinterest right now, so demand is not the question -- monetisation is. Affiliate links to the brands featured is the obvious model, but a paid style guide or membership could work too. Decide that before writing a word.',
+  },
+  {
+    title: 'Movie Site to Beat Rotten Tomatoes',
+    tag: 'Website',
+    color: '#ff4466',
+    summary: 'A trustworthy alternative to Rotten Tomatoes, positioned against the perceived studio/critic influence on its scores.',
+    next: '"Better than RT" is not a strategy on its own. Nail the actual mechanic that makes it harder to game -- verified-viewer-only scoring, transparent methodology, no paid placements -- before touching a line of code.',
+  },
+  {
+    title: "Punter's Revenge & Gambling Theories",
+    tag: 'App',
+    color: '#8b5cf6',
+    summary: 'A betting theory and strategy tracking app.',
+    next: 'Decide early whether this is pure education and bet-tracking (low regulatory burden) or actually facilitates betting (triggers UK Gambling Commission licensing -- expensive and slow). That single decision shapes the entire build, so settle it before anything else.',
+  },
+  {
+    title: 'Claude Options & Financial Psychology',
+    tag: 'Website',
+    color: '#f97316',
+    summary: 'An options-trading education site, using Claude to explain trades and the psychology behind them.',
+    next: 'Decide whether this is content (articles/courses) or a tool (AI-assisted trade and psychology analysis) -- the brief specifically calls out layout, so once the content-vs-tool question is answered, start there.',
+  },
+  {
+    title: 'Capitals & Flags Test Site',
+    tag: 'Website',
+    color: '#00ff88',
+    summary: 'A quiz site testing knowledge of world capitals and flags -- classic trivia format, likely with difficulty levels, streaks or a speedrun mode.',
+    next: 'This is the most straightforward build on the list -- no dependency on anyone else and the data (countries, capitals, flag images) is freely available. The differentiator is the game modes, not the content, so sketch out 2-3 quiz formats (multiple choice, speed round, hard mode with no hints) before building rather than shipping a single generic quiz.',
+  },
 ]
 
 // Pre-flight check items -- must all be ticked before focus starts
@@ -166,6 +220,7 @@ export default function Home() {
   const [pageAlerts, setPageAlerts] = useState<Record<string, 'green' | 'orange' | 'red'>>({})
   const [pageWarn, setPageWarn] = useState<Set<string>>(new Set())
   const [pageVisitsErr, setPageVisitsErr] = useState<string | null>(null)
+  const [showIdeas, setShowIdeas] = useState(false)
 
   const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','goals','youtube','links','etsy','niche-calendar','x','nsdr','physical','instagram','tabs']
 
@@ -589,6 +644,35 @@ export default function Home() {
             )}
           </>
         )}
+      </div>
+
+      {/* Website / app ideas backlog */}
+      <div style={{ position:'relative', zIndex:1, borderTop:'1px solid '+C.border, background:'rgba(139,92,246,0.02)' }}>
+        <div style={{ maxWidth:'900px', margin:'0 auto', padding:'0 2rem' }}>
+          <button onClick={() => setShowIdeas(s => !s)} style={{ display:'flex', alignItems:'center', gap:'0.6rem', width:'100%', background:'none', border:'none', padding:'0.9rem 0', cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const }}>
+            <Lightbulb size={14} color={C.purple}/>
+            <span style={{ fontSize:'0.75rem', fontWeight:700, color:C.purple }}>Website &amp; App Ideas</span>
+            <span style={{ fontSize:'0.7rem', color:C.muted, flex:1 }}>{SITE_IDEAS.length} parked for later</span>
+            <ChevronDown size={14} color={C.muted} style={{ transform: showIdeas ? 'rotate(180deg)' : 'none', transition:'transform 0.2s' }}/>
+          </button>
+          {showIdeas && (
+            <div style={{ paddingBottom:'1.5rem', display:'flex', flexDirection:'column', gap:'0.6rem' }}>
+              {SITE_IDEAS.map((idea, i) => (
+                <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', padding:'1rem 1.15rem' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.5rem', flexWrap:'wrap' }}>
+                    <span style={{ fontSize:'0.85rem', fontWeight:800, color:C.text }}>{idea.title}</span>
+                    <span style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' as const, color:idea.color, background:idea.color+'18', border:'1px solid '+idea.color+'40', borderRadius:'9999px', padding:'0.12rem 0.5rem' }}>{idea.tag}</span>
+                  </div>
+                  <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 0.6rem', lineHeight:1.6 }}>{idea.summary}</p>
+                  <div style={{ padding:'0.65rem 0.8rem', background:'rgba(139,92,246,0.05)', border:'1px solid rgba(139,92,246,0.15)', borderRadius:'0.625rem' }}>
+                    <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' as const, color:C.purple, margin:'0 0 0.3rem' }}>Next step</p>
+                    <p style={{ fontSize:'0.75rem', color:C.sec, margin:0, lineHeight:1.6 }}>{idea.next}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Focus pre-flight check overlay */}
