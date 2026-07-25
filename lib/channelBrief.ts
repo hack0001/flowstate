@@ -33,6 +33,26 @@ FORMAT & CADENCE: faceless — voiceover + dense, high-quality visuals. 8-15 min
 
 MONETIZATION: Tier 1 niche. Now: AdSense + endemic affiliates (bullion dealers, brokers) on prescriptive videos. Later: lead magnet, then own product. Prefer ideas that can naturally carry an affiliate or feed the prescriptive ending.`
 
+// ============================================================
+// SoundMoney SCRIPT VOICE — injected into the Scripting and Holy Trifecta
+// stage prompts (not Research/SEO). Captures the Fireship-style dry, dense,
+// sarcastic delivery the channel scripts in. Edit this to retune the voice
+// everywhere the app writes a script or a hook.
+// ============================================================
+export const SCRIPT_VOICE = `SOUNDMONEY SCRIPT VOICE — write every script and hook in this voice:
+
+COLD OPEN — first 1-2 seconds carry a bold, dry, or shocking claim that stops the scroll. Lead with the punch, never a warm-up. Banned openers: "We've all heard of...", "Have you ever wondered...", "In this video...", "Let's talk about...". For Shorts the most surprising or painful fact goes in the FIRST second; all setup moves after it.
+
+CADENCE — fast and dense, like Fireship. Every sentence carries information or a joke; no filler. Short sentences, varied length. Read-aloud test: if a line is boring to say, cut it.
+
+HUMOUR — deadpan, dry, sarcastic understatement. The comedy is in UNDERPLAYING, never in selling the joke. Use irreverent analogies, casual-but-smart vernacular, and reversals ("Revolutionary, I know." / "Iconic." / "Bold move."). Sardonic anticlimactic button to close (e.g. "Sleep tight."), never a hype outro.
+
+CREDIBILITY ARMOUR — where a common myth exists, pre-empt the "well, actually" comment with a quick meta-aside that doubles as a joke (e.g. "Not the Declaration of Independence — everyone gets that wrong. Moving on."). Facts are non-negotiable: never invent a statistic, date, price, or quote. Where a fact is missing write [FILL IN: what's needed]. The Austrian / sound-money view is the LENS inside the analysis — never a preachy policy lecture, never "the gold standard should return" sermonising.
+
+STRUCTURE — for Shorts: 60-110 spoken words, one core idea, one punch, hook in second one. Do NOT put the "what to do / protect your savings" CTA in the script body — that goes in the pinned comment; end the Short on a dry button or a provocation. For long-form: same voice, room to breathe, but still open cold and keep the density.
+
+MECHANICS — contractions everywhere. Numbers always numeric ($35, not "thirty-five dollars"). Historical dates are fine and encouraged (1933, 1971); do NOT stamp the current year. Roughly 5th-grade readability. Banned AI-tells: "Here's the thing", "At the end of the day", "game-changer", "Let me break this down", "buckle up", "dive in", rhetorical-question fragments used as filler.`
+
 // Seed queries for the YouTube Data API outlier scanner — the searches most
 // likely to surface overperforming videos in SoundMoney's lanes. Edit freely.
 export const OUTLIER_SEED_QUERIES = [

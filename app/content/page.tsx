@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, getStageNote, saveStageNote } from '@/lib/supabase'
 import { sopForStage, IDEA_VALIDATION_CHECKS, SOPS, type SOP } from '@/lib/sops'
-import { CHANNEL_BRIEF, OUTLIER_SEED_QUERIES } from '@/lib/channelBrief'
+import { CHANNEL_BRIEF, SCRIPT_VOICE, OUTLIER_SEED_QUERIES } from '@/lib/channelBrief'
 import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check } from 'lucide-react'
 
 const IDEA_VALIDATION_SOP_ID = 'idea_validation'
@@ -238,7 +238,16 @@ function buildStageDraftPrompt(
   sop: SOP,
   opts?: { existingNote?: string; priorStages?: { title: string; output: string }[] }
 ): { systemPrompt: string; userPrompt: string } {
-  const systemPrompt = 'You are a YouTube production assistant for SoundMoney.\n\n' + CHANNEL_BRIEF + '\n\nYou draft concrete, ready-to-use output for one pipeline stage at a time — never generic advice, always specific to the video described, always consistent with the CHANNEL BRIEF above (packaging patterns, prescriptive ending, faceless format). Keep output tight and scannable, using the checklist as your brief. Write in plain text (no markdown headers), short paragraphs or a short list where useful.'
+  // The voice spec only applies to stages that actually produce spoken words
+  // — Scripting (04) and the Holy Trifecta hook (03). Research (02), Assets
+  // (05) and Thumbnail/SEO (08) are logistics, not delivery, so they stay
+  // plain to avoid the model trying to write those in a comedy voice.
+  const isScripting = sop.id === '04' || sop.id === '03'
+  const systemPrompt = 'You are a YouTube production assistant for SoundMoney.\n\n' + CHANNEL_BRIEF +
+    (isScripting ? '\n\n' + SCRIPT_VOICE : '') +
+    '\n\nYou draft concrete, ready-to-use output for one pipeline stage at a time — never generic advice, always specific to the video described, always consistent with the CHANNEL BRIEF above (packaging patterns, prescriptive ending, faceless format)' +
+    (isScripting ? ', and written in the SOUNDMONEY SCRIPT VOICE above' : '') +
+    '. Keep output tight and scannable, using the checklist as your brief. Write in plain text (no markdown headers), short paragraphs or a short list where useful.'
   const prior = (opts?.priorStages ?? []).filter(p => p.output?.trim())
   const wantsShort = !!item.format && item.format !== 'Long-form'
   const userPrompt = `Video title: ${item.title}\n` +
