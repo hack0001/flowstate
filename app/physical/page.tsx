@@ -1,8 +1,9 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, CheckCircle2, Circle, Repeat, Droplets, Bell, BellOff } from 'lucide-react'
-import { getDailyChecklistState, setDailyChecklistItem } from '@/lib/supabase'
+import { ChevronLeft, CheckCircle2, Circle, Repeat, Droplets, Bell, BellOff, RotateCcw } from 'lucide-react'
+import { getDailyChecklistState, setDailyChecklistItem, getMobilityProgramStart, setMobilityProgramStart } from '@/lib/supabase'
+import { getMobilityDay, MOBILITY_WEEK_TEMPLATE, MOBILITY_PROGRAM_WEEKS } from '@/lib/mobility'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -113,8 +114,20 @@ export default function PhysicalPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const training = isTrainingDay()
 
+  // Squat & Snatch Mobility Program
+  const [mobStart, setMobStart]   = useState<Date | null>(null)
+  const [mobDone, setMobDone]     = useState<Record<string, boolean>>({})
+  const [mobErr, setMobErr]       = useState<string | null>(null)
+
   useEffect(() => {
     getDailyChecklistState('physical', todayStr()).then(({ state }) => setDone(state))
+
+    getMobilityProgramStart().then(({ startDate, error }) => {
+      if (error) { setMobErr(error); return }
+      if (startDate) { setMobStart(new Date(startDate + 'T00:00:00')) }
+      else { setMobStart(new Date()) }
+    })
+    getDailyChecklistState('mobility', todayStr()).then(({ state }) => setMobDone(state))
 
     // Notification permission state
     if (typeof Notification === 'undefined') {
@@ -143,6 +156,21 @@ export default function PhysicalPage() {
       setDailyChecklistItem('physical', id, todayStr(), nextDone)
       return { ...prev, [id]: nextDone }
     })
+  }
+
+  function toggleMob(id: string) {
+    setMobDone(prev => {
+      const nextDone = !prev[id]
+      setDailyChecklistItem('mobility', id, todayStr(), nextDone)
+      return { ...prev, [id]: nextDone }
+    })
+  }
+
+  async function restartMobilityProgram() {
+    if (!confirm('Restart the 4-week mobility rotation from today?')) return
+    const today = new Date()
+    setMobStart(today)
+    await setMobilityProgramStart(todayStr())
   }
 
   const allMoves = SESSIONS.flatMap(s => s.moves)
@@ -179,6 +207,72 @@ export default function PhysicalPage() {
       </div>
 
       <div style={{ maxWidth:'820px', margin:'0 auto', padding:'2rem' }}>
+
+        {/* Squat & Snatch Mobility Program */}
+        <div style={{ marginBottom:'2.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem' }}>
+          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:'1rem', marginBottom:'0.25rem', flexWrap:'wrap' }}>
+            <div>
+              <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.25rem' }}>Squat &amp; Snatch Mobility Program</p>
+              <p style={{ fontSize:'0.78rem', color:C.muted, margin:0 }}>Knee, ankle &amp; lower-back work &#8212; building toward a full deep squat and a snatch lift. Do it every day, different focus each weekday, rotating over a 4-week cycle.</p>
+            </div>
+            <button onClick={restartMobilityProgram} title="Restart the 4-week rotation from today" style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.35rem 0.7rem', background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.25)', borderRadius:'0.5rem', color:C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:700, flexShrink:0 }}>
+              <RotateCcw size={11}/> Restart
+            </button>
+          </div>
+
+          {mobErr ? (
+            <p style={{ fontSize:'0.75rem', color:C.amber, margin:'1rem 0 0' }}>{mobErr}</p>
+          ) : !mobStart ? (
+            <p style={{ fontSize:'0.78rem', color:C.muted, margin:'1rem 0 0' }}>Loading program...</p>
+          ) : (() => {
+            const plan = getMobilityDay(new Date(), mobStart)
+            const mobDoneCount = plan.exercises.filter(e => mobDone[e.id]).length
+            const mobAllDone = mobDoneCount === plan.exercises.length
+            return (
+              <>
+                {/* Status row */}
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', margin:'1rem 0 0.75rem', flexWrap:'wrap' }}>
+                  <span style={{ fontSize:'0.65rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase' as const, color:C.purple, background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'9999px', padding:'0.15rem 0.55rem' }}>
+                    Week {plan.weekNumber} of {MOBILITY_PROGRAM_WEEKS}
+                  </span>
+                  <span style={{ fontSize:'0.82rem', fontWeight:800, color:C.text }}>{plan.dayLabel} &#8212; {plan.focus}</span>
+                  <span style={{ marginLeft:'auto', fontSize:'0.7rem', fontWeight:700, color:mobAllDone ? C.green : C.muted }}>{mobDoneCount} / {plan.exercises.length} done</span>
+                </div>
+                <div style={{ height:'5px', background:C.border, borderRadius:'9999px', overflow:'hidden', marginBottom:'1rem' }}>
+                  <div style={{ height:'100%', width:(plan.exercises.length ? (mobDoneCount/plan.exercises.length)*100 : 0)+'%', background:mobAllDone ? C.green : C.purple, borderRadius:'9999px', transition:'width 0.3s' }}/>
+                </div>
+
+                {/* Today's exercises */}
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem', marginBottom:'1.25rem' }}>
+                  {plan.exercises.map(ex => (
+                    <button key={ex.id} onClick={() => toggleMob(ex.id)} style={{ width:'100%', display:'flex', alignItems:'flex-start', gap:'0.75rem', padding:'0.65rem 0.85rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.75rem', cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const, opacity:mobDone[ex.id] ? 0.55 : 1, transition:'opacity 0.2s' }}>
+                      {mobDone[ex.id]
+                        ? <CheckCircle2 size={16} color={C.purple} style={{ flexShrink:0, marginTop:'2px' }}/>
+                        : <Circle size={16} color={C.purple} style={{ flexShrink:0, marginTop:'2px' }}/>}
+                      <div>
+                        <span style={{ fontSize:'0.82rem', fontWeight:700, color:mobDone[ex.id] ? C.muted : C.text, textDecoration:mobDone[ex.id] ? 'line-through' : 'none' }}>{ex.name}</span>
+                        {ex.cue && <p style={{ fontSize:'0.71rem', color:C.sec, margin:'0.15rem 0 0', lineHeight:1.5 }}>{ex.cue}</p>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Week structure preview */}
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(96px,1fr))', gap:'0.4rem' }}>
+                  {MOBILITY_WEEK_TEMPLATE.map(t => {
+                    const isToday = t.day === plan.dayLabel
+                    return (
+                      <div key={t.day} style={{ padding:'0.5rem 0.6rem', background:isToday ? 'rgba(139,92,246,0.1)' : C.surface, border:'1px solid '+(isToday ? 'rgba(139,92,246,0.35)' : C.border), borderRadius:'0.625rem' }}>
+                        <p style={{ fontSize:'0.62rem', fontWeight:800, color:isToday ? C.purple : C.sec, margin:'0 0 0.2rem' }}>{t.day.slice(0,3)}</p>
+                        <p style={{ fontSize:'0.6rem', color:C.muted, margin:0, lineHeight:1.4 }}>{t.focus.split('--')[0].trim()}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )
+          })()}
+        </div>
 
         {/* Training day status banner */}
         {training ? (

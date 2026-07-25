@@ -264,6 +264,29 @@ export async function setDailyChecklistItem(checklistKey: string, itemId: string
   return { error: null }
 }
 
+// ---- Mobility program start date (Physical / Morning / Calendar) ----
+// Single row keyed 'default' — the date the 4-week rotating mobility
+// program began, used to work out which week's rotation is live today.
+// Requires 026_mobility_program.sql.
+function explainMobilityError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('mobility_program')) {
+    return 'Setup needed: run supabase/migrations/026_mobility_program.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading the mobility program.'
+}
+
+export async function getMobilityProgramStart(): Promise<{ startDate: string | null; error: string | null }> {
+  const { data, error } = await supabase.from('mobility_program').select('start_date').eq('id', 'default').maybeSingle()
+  if (error) return { startDate: null, error: explainMobilityError(error.message) }
+  return { startDate: (data?.start_date as string | undefined) ?? null, error: null }
+}
+
+export async function setMobilityProgramStart(dateStr: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('mobility_program').upsert({ id: 'default', start_date: dateStr }, { onConflict: 'id' })
+  if (error) return { error: explainMobilityError(error.message) }
+  return { error: null }
+}
+
 // ---- Tweet swipe file (X page "Tweet Models") ----
 // Was flowstate_tweet_models in localStorage only — a real, growing content
 // library with no backup. Requires 023_localstorage_to_db.sql.

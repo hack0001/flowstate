@@ -15,8 +15,10 @@ import {
   getErrorLog,
   addErrorLogEntry,
   deleteErrorLogEntry,
+  getMobilityProgramStart,
 } from '@/lib/supabase'
 import type { MorningRoutineItem } from '@/lib/supabase'
+import { getMobilityDay, type MobilityDayPlan } from '@/lib/mobility'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'rgba(18,18,26,0.8)', border:'#2a2a3a',
@@ -242,6 +244,7 @@ export default function MorningPage() {
   const [errors, setErrors]       = useState<ErrorEntry[]>([])
   const [errInput, setErrInput]   = useState('')
   const [errOpen, setErrOpen]     = useState(false)
+  const [mobilityPlan, setMobilityPlan] = useState<MobilityDayPlan | null>(null)
   const today = todayStr()
 
   useEffect(() => {
@@ -261,6 +264,11 @@ export default function MorningPage() {
       })
 
       getMorningCompletionCounts(30).then(({ counts }) => setCompletionCounts(counts))
+
+      getMobilityProgramStart().then(({ startDate }) => {
+        const start = startDate ? new Date(startDate + 'T00:00:00') : new Date()
+        setMobilityPlan(getMobilityDay(new Date(), start))
+      })
 
       supabase.from('routine_completions').select('routine_date').eq('routine_date', today).maybeSingle()
         .then(({ data }) => { if (data) setCelebrating(true) })
@@ -457,7 +465,22 @@ export default function MorningPage() {
                     {current.title}
                   </p>
 
-                  {current.note && (
+                  {current.id === 'mr-mobility' && mobilityPlan ? (
+                    <div style={{ textAlign:'left', marginBottom:'0.375rem' }}>
+                      <p style={{ fontSize:'0.72rem', fontWeight:700, color:C.purple, margin:'0 0 0.5rem' }}>
+                        Week {mobilityPlan.weekNumber} &#8212; {mobilityPlan.focus}
+                      </p>
+                      <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
+                        {mobilityPlan.exercises.map(ex => (
+                          <div key={ex.id} style={{ fontSize:'0.78rem', color:C.sec, lineHeight:1.5 }}>
+                            <span style={{ color:C.text, fontWeight:600 }}>{ex.name}</span>
+                            {ex.cue && <span style={{ color:C.muted }}> &#8212; {ex.cue}</span>}
+                          </div>
+                        ))}
+                      </div>
+                      <p style={{ fontSize:'0.68rem', color:C.muted, margin:'0.6rem 0 0', fontStyle:'italic' }}>Full checklist &amp; program structure on the Physical page.</p>
+                    </div>
+                  ) : current.note && (
                     <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 0.375rem', fontStyle:'italic', textAlign:'left' }}>{current.note}</p>
                   )}
                   {current.minutes && (
