@@ -120,6 +120,13 @@ type OutlierBreakdown = {
   view_to_sub_ratio: string
   recency: string
   packaging_gap: string
+  // Which evidence type this idea is grounded in — 'ratio' (topic beat the
+  // channel's own audience, the strongest signal) or 'velocity' (big
+  // absolute views fast, any channel size — real demand evidence, but
+  // weaker on its own since a big channel's algorithmic/audience head start
+  // could be doing some of the work). Undefined/omitted = treat as ratio.
+  signal_type?: 'ratio' | 'velocity'
+  velocity_note?: string // e.g. "1.2M views in 3 weeks on a 2M-sub channel — fast, but large channel so weigh replicability carefully"
 }
 type FoundIdea = {
   title: string; description: string; video_type: string; format: string
@@ -132,11 +139,15 @@ type FoundIdea = {
   outlier: OutlierBreakdown | null
 }
 
-// Raw outlier row from /api/content/outliers (YouTube Data API scanner)
+// Raw outlier row from /api/content/outliers (YouTube Data API scanner).
+// Same shape for both the ratio list and the velocity list — ageDays/
+// viewsPerDay are what the velocity list is sorted by, but they're computed
+// for every row either way.
 type ScannedOutlier = {
   videoId: string; title: string; channel: string
   views: number; subscribers: number; ratio: number
   publishedAt: string; url: string; query: string
+  ageDays: number; viewsPerDay: number
 }
 
 // Parse a model reply that should be JSON, surviving markdown fences,
@@ -181,25 +192,37 @@ function formatScannedOutliers(rows: ScannedOutlier[]): string {
   ).join('\n')
 }
 
-function buildFindIdeasPrompt(existingTitles: string[], count: number, scannedOutliers?: ScannedOutlier[]): { systemPrompt: string; userPrompt: string } {
+function formatScannedVelocity(rows: ScannedOutlier[]): string {
+  return rows.map(o =>
+    `- "${o.title}" — ${o.channel} (${o.subscribers.toLocaleString()} subs) · ${o.views.toLocaleString()} views in ${o.ageDays} days (~${o.viewsPerDay.toLocaleString()}/day) · published ${o.publishedAt.slice(0, 10)} · found via "${o.query}" · ${o.url}`
+  ).join('\n')
+}
+
+function buildFindIdeasPrompt(existingTitles: string[], count: number, scannedOutliers?: ScannedOutlier[], scannedVelocity?: ScannedOutlier[]): { systemPrompt: string; userPrompt: string } {
   const systemPrompt = 'You are a YouTube idea generator for SoundMoney.\n\n' + CHANNEL_BRIEF + '\n\n' + VALIDATION_METHOD +
-    '\n\nThe outlier-opportunity method, in detail — this is the core of how ideas get selected, not just one check among many: search YouTube for videos in this niche and find ones that got unusually high views (100,000+) relative to how few subscribers their channel has (well under 100,000 subscribers — ideally a 5:1+ view-to-subscriber ratio), AND whose packaging is mediocre or bad — a weak title, a cluttered or low-effort thumbnail, or a video that clearly underdelivers on its own premise. That combination (proven demand + weak execution) is the opportunity: the topic demonstrably pulls an audience beyond the creator\'s own following, but nobody has made a great version of it yet. A big channel getting big views proves nothing (that\'s just their existing audience). A small channel with a great video getting modest views proves nothing (that\'s just a good video, not necessarily a hungry topic). It has to be both: high views, low subs, weak packaging.\n\n' +
+    '\n\nThe outlier-opportunity method, in detail — this is the core of how ideas get selected, not just one check among many. There are two kinds of evidence, and both count, but they are not equally strong:\n\n' +
+    '1. RATIO outliers (primary, strongest evidence) — a video that got unusually high views (100,000+) relative to how few subscribers its channel has (well under 100,000 subscribers — ideally a 5:1+ view-to-subscriber ratio), AND whose packaging is mediocre or bad — a weak title, a cluttered or low-effort thumbnail, or a video that clearly underdelivers on its own premise. That combination (proven demand + weak execution) isolates the topic from the channel: the topic itself pulled an audience beyond the creator\'s own following, and nobody has made a great version of it yet.\n\n' +
+    '2. VELOCITY outliers (secondary, corroborating evidence) — a video that racked up a large absolute view count in a short window (e.g. 300,000+ views within about 2 months), REGARDLESS of channel size or ratio. Do not dismiss these just because the channel is large. A gold video that hit 1 million views in a month is real evidence the topic has broad current appeal, even on a big channel where the ratio looks unremarkable or would get filtered out — that view count did not happen by accident. The caveat: on a large channel, some of that pull is the channel\'s own subscriber base and algorithmic authority rather than the topic alone, so it is weaker proof that a smaller channel like this one could replicate it. Use velocity outliers to justify an idea when: the same topic also shows up across multiple velocity results (not just one channel\'s fluke), or a velocity outlier corroborates a weaker ratio candidate, or there is a genuine timing/news reason the topic is hot right now. When an idea rests primarily on a velocity outlier rather than a ratio outlier, say so explicitly and flag the channel size so it can be weighed accordingly — do not present it with the same confidence as a ratio outlier.\n\n' +
+    'A small channel with a great video getting modest views still proves nothing on its own (that\'s just a good video, not necessarily a hungry topic) — you still need either a ratio outlier or a velocity outlier (ideally both) as evidence.\n\n' +
     'Additionally, every idea you propose must:\n' +
     '- Be unambiguous about its topic in the title itself — YouTube\'s search and recommendation system needs to be able to tell what the video is about from the title/description, so a clever or vague hook must still contain a clear topical keyword or claim, not just curiosity with no subject.\n' +
     '- Genuinely fit the CHANNEL BRIEF above — the launch focus (inflation eating savings first, then gold/hard assets, monetary history, how the money system works), one of the 4 proven packaging patterns (name it), and room for the prescriptive "what this means for your savings" ending. Not just "finance" in general.\n' +
-    '- Pass all 7 checks above, especially outlier evidence and comment-mined gap — do not propose an idea you have no real outlier video for.\n\n' +
+    '- Pass all 7 checks above, especially outlier evidence and comment-mined gap — do not propose an idea you have no real outlier or velocity evidence for.\n\n' +
     'Never invent outlier video statistics, comment data, or facts you did not actually find. Return ONLY valid JSON matching the schema described, no markdown fences, no commentary outside the JSON.'
   const userPrompt = `Generate ${count} new video ideas for this channel.\n` +
     (existingTitles.length > 0
       ? `Do not repeat or closely overlap with these existing ideas already in the bank:\n${existingTitles.map(t => '- ' + t).join('\n')}\n\n`
       : '') +
     (scannedOutliers && scannedOutliers.length > 0
-      ? `VERIFIED OUTLIER CANDIDATES — fetched directly from the YouTube Data API, so these view counts, subscriber counts and ratios are REAL, not estimates. Prefer building ideas on these before hunting for others; you may still use web search to judge their packaging and read around them:\n${formatScannedOutliers(scannedOutliers)}\n\n`
+      ? `VERIFIED RATIO OUTLIERS — fetched directly from the YouTube Data API, so these view counts, subscriber counts and ratios are REAL, not estimates. Prefer building ideas on these first; you may still use web search to judge their packaging and read around them:\n${formatScannedOutliers(scannedOutliers)}\n\n`
       : '') +
-    `For each idea, ground it in a real outlier video first (high views, low-subscriber channel, weak packaging — see the method above)${scannedOutliers && scannedOutliers.length > 0 ? ', preferably one from the verified list' : ''}, then build the idea around beating it. Run through all 7 checks and only include ideas that would score Viable or at worst Needs More Research — do not include ideas that would fail, and do not include an idea if you cannot find a genuine outlier backing it.\n\n` +
+    (scannedVelocity && scannedVelocity.length > 0
+      ? `VERIFIED VELOCITY CANDIDATES — also from the YouTube Data API, REAL numbers. These are videos that gained a lot of views fast REGARDLESS of channel size or ratio (so some may be on large, established channels). Treat as secondary/corroborating evidence per the method above — worth building an idea on, but flag the channel size and note it's velocity-based rather than a ratio outlier:\n${formatScannedVelocity(scannedVelocity)}\n\n`
+      : '') +
+    `For each idea, ground it in a real outlier or velocity video first (see the method above)${(scannedOutliers && scannedOutliers.length > 0) || (scannedVelocity && scannedVelocity.length > 0) ? ', preferably one from the verified lists' : ''}, then build the idea around beating it. Run through all 7 checks and only include ideas that would score Viable or at worst Needs More Research — do not include ideas that would fail, and do not include an idea if you cannot find genuine outlier or velocity evidence backing it.\n\n` +
     `Return JSON exactly in this shape:\n` +
-    `{"ideas":[{"title":"...","description":"one or two sentences on what the video covers","video_type":"${VIDEO_TYPES.join('"|"')}"|"","format":"${FORMATS.join('"|"')}","unique_angle":"the alpha/edge — what your version does differently or better than the outlier","pattern":"Anxiety Question"|"History Story"|"Contrarian Take"|"Credible How-To","comment_gap":"the specific unanswered question or frustration from comments (or the audience insight in the brief) this idea fills — empty string if genuinely unknown","why_now":"one sentence on timing: the outlier's recency, the news cycle, or seasonality that makes this topic hot right now","rationale":"one or two sentences on why this passes the checklist and fits the channel","researched":true|false,"outlier":{"video_title":"the specific outlier video's title","channel":"its channel name","views":"approx view count, e.g. '180,000 views'","subscribers":"approx subscriber count of that channel, e.g. '8,200 subscribers'","view_to_sub_ratio":"e.g. '22:1'","recency":"how old the outlier video is, e.g. '4 months ago'","packaging_gap":"specifically what's weak about its title, thumbnail, or the video itself that your version can beat"} or null if you genuinely could not find a qualifying outlier}, ... ${count} entries]}\n\n` +
-    `"researched" should be true only if you actually used live web/YouTube search or the verified outlier list above to ground this idea, false if you had neither and relied on established niche patterns instead. If "researched" is false, "outlier" should be null — do not fabricate view counts or channel names.`
+    `{"ideas":[{"title":"...","description":"one or two sentences on what the video covers","video_type":"${VIDEO_TYPES.join('"|"')}"|"","format":"${FORMATS.join('"|"')}","unique_angle":"the alpha/edge — what your version does differently or better than the outlier","pattern":"Anxiety Question"|"History Story"|"Contrarian Take"|"Credible How-To","comment_gap":"the specific unanswered question or frustration from comments (or the audience insight in the brief) this idea fills — empty string if genuinely unknown","why_now":"one sentence on timing: the outlier's recency, the news cycle, or seasonality that makes this topic hot right now","rationale":"one or two sentences on why this passes the checklist and fits the channel","researched":true|false,"outlier":{"video_title":"the specific outlier/velocity video's title","channel":"its channel name","views":"approx view count, e.g. '180,000 views'","subscribers":"approx subscriber count of that channel, e.g. '8,200 subscribers'","view_to_sub_ratio":"e.g. '22:1', or 'n/a — velocity signal' if this is a velocity-based candidate","recency":"how old the video is, e.g. '4 months ago' or '3 weeks ago'","packaging_gap":"specifically what's weak about its title, thumbnail, or the video itself that your version can beat","signal_type":"ratio"|"velocity","velocity_note":"only when signal_type is velocity — one sentence naming the channel size and flagging how much of the pull might be channel authority vs topic demand, empty string otherwise"} or null if you genuinely could not find qualifying evidence}, ... ${count} entries]}\n\n` +
+    `"researched" should be true only if you actually used live web/YouTube search or the verified lists above to ground this idea, false if you had neither and relied on established niche patterns instead. If "researched" is false, "outlier" should be null — do not fabricate view counts or channel names.`
   return { systemPrompt, userPrompt }
 }
 
@@ -743,7 +766,7 @@ function AddIdeaModal({ onAdd, onClose }: { onAdd:(title:string,format:string,no
 // it's proposed, grounded in real search where possible, on-topic for the
 // channel, and titled so YouTube can actually tell what it's about.
 function FindIdeasModal({ onGenerate, onAdd, onClose }: {
-  onGenerate: (model: string, webSearch: boolean, count: number, scannedOutliers?: ScannedOutlier[]) => Promise<{ ideas: FoundIdea[] } | { error: string }>
+  onGenerate: (model: string, webSearch: boolean, count: number, scannedOutliers?: ScannedOutlier[], scannedVelocity?: ScannedOutlier[]) => Promise<{ ideas: FoundIdea[] } | { error: string }>
   onAdd: (idea: FoundIdea) => Promise<boolean>
   onClose: () => void
 }) {
@@ -757,6 +780,8 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
   const [scanning, setScanning] = useState(false)
   const [scanMsg, setScanMsg] = useState<string | null>(null)
   const [scanResults, setScanResults] = useState<ScannedOutlier[] | null>(null)
+  const [scanVelocity, setScanVelocity] = useState<ScannedOutlier[] | null>(null)
+  const [velocityAddStatus, setVelocityAddStatus] = useState<Record<string, 'adding' | 'added' | 'error'>>({})
   const [showQueries, setShowQueries] = useState(false)
   // One query per line, editable per scan and remembered in this browser so a
   // tuned set survives reloads. Defaults come from the channel brief.
@@ -829,8 +854,10 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
       const data = await res.json()
       if (data?.error) { setScanMsg(String(data.error)); return }
       const rows = (data?.outliers ?? []) as ScannedOutlier[]
+      const velocityRows = (data?.velocityOutliers ?? []) as ScannedOutlier[]
       setScanResults(rows)
-      if (rows.length === 0) setScanMsg('Scan ran fine but found no qualifying outliers — try different topics or loosen the thresholds in the API route.')
+      setScanVelocity(velocityRows)
+      if (rows.length === 0 && velocityRows.length === 0) setScanMsg('Scan ran fine but found no qualifying outliers or velocity candidates — try different topics or loosen the thresholds in the API route.')
     } catch (e) {
       setScanMsg('Scan failed: ' + String(e))
     } finally {
@@ -863,10 +890,42 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
     setOutlierAddStatus(prev => ({ ...prev, [o.videoId]: ok ? 'added' : 'error' }))
   }
 
+  // Same as addOutlierToIdeas but for a velocity candidate — the note is
+  // explicit that this is a fast-growth signal on a channel of whatever
+  // size it happened to be, not a small-channel ratio outlier, so the
+  // caveat travels with the idea onto the board.
+  async function addVelocityToIdeas(o: ScannedOutlier) {
+    setVelocityAddStatus(prev => ({ ...prev, [o.videoId]: 'adding' }))
+    const months = Math.max(0, Math.round((Date.now() - new Date(o.publishedAt).getTime()) / (30 * 24 * 3600 * 1000)))
+    const idea: FoundIdea = {
+      title: o.title,
+      description: `Beat this verified velocity candidate (found via "${o.query}"): ${o.url} — gained ${o.views.toLocaleString()} views in ${o.ageDays} days (~${o.viewsPerDay.toLocaleString()}/day) on a ${o.subscribers.toLocaleString()}-subscriber channel. Same proven topic, sharper SoundMoney version.`,
+      video_type: '', format: 'Long-form', unique_angle: '', pattern: '', comment_gap: '', why_now: '',
+      rationale: 'Added directly from the YouTube Data API scan — real numbers, but this is a velocity signal (big views fast, not a small-channel ratio outlier), so weigh replicability before committing.',
+      researched: true,
+      outlier: {
+        video_title: o.title, channel: o.channel,
+        views: o.views.toLocaleString() + ' views',
+        subscribers: o.subscribers.toLocaleString() + ' subscribers',
+        view_to_sub_ratio: `${o.ratio}:1`,
+        recency: months <= 1 ? 'about a month ago' : `${months} months ago`,
+        packaging_gap: '',
+        signal_type: 'velocity',
+        velocity_note: `${o.subscribers.toLocaleString()}-subscriber channel — some of this pull may be channel authority/algorithm reach rather than pure topic demand; check whether the topic shows up elsewhere too before betting on it.`,
+      },
+    }
+    const ok = await onAdd(idea)
+    setVelocityAddStatus(prev => ({ ...prev, [o.videoId]: ok ? 'added' : 'error' }))
+  }
+
   async function run() {
     setLoading(true)
     setMsg(null)
-    const res = await onGenerate(modelKey, webSearch, count, scanResults && scanResults.length > 0 ? scanResults : undefined)
+    const res = await onGenerate(
+      modelKey, webSearch, count,
+      scanResults && scanResults.length > 0 ? scanResults : undefined,
+      scanVelocity && scanVelocity.length > 0 ? scanVelocity : undefined,
+    )
     if ('error' in res) setMsg(res.error)
     else setIdeas(res.ideas)
     setLoading(false)
@@ -921,7 +980,7 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
         <div style={{ padding:'0.75rem', background:'rgba(0,255,136,0.04)', border:'1px solid rgba(0,255,136,0.15)', borderRadius:'0.75rem', marginBottom:'1rem' }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.5rem', flexWrap:'wrap' as const }}>
             <p style={{ fontSize:'0.7rem', color:C.sec, margin:0, lineHeight:1.45, flex:'1 1 16rem' }}>
-              <strong style={{ color:C.green }}>Scan YouTube first (recommended)</strong> — pulls real view counts and subscriber ratios from the YouTube Data API for the channel&apos;s seed topics, so ideas are built on verified outliers instead of estimates.
+              <strong style={{ color:C.green }}>Scan YouTube first (recommended)</strong> — pulls real view counts and subscriber ratios from the YouTube Data API for the channel&apos;s seed topics. Surfaces two kinds of evidence: verified <strong style={{ color:C.text }}>ratio outliers</strong> (small channel, topic beat its own audience) and verified <strong style={{ color:C.text }}>velocity candidates</strong> (big views fast on any channel size, including large ones that wouldn&apos;t clear the ratio bar) — both get handed to Claude as real evidence instead of estimates.
             </p>
             <div style={{ display:'flex', gap:'0.35rem' }}>
               <button onClick={() => setShowQueries(v => !v)} disabled={scanning} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.4rem 0.7rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:showQueries?C.text:C.sec, cursor:scanning?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, whiteSpace:'nowrap' as const }}>
@@ -983,6 +1042,39 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
               </div>
             </div>
           )}
+          {scanVelocity && scanVelocity.length > 0 && (
+            <div style={{ marginTop:'0.75rem', paddingTop:'0.65rem', borderTop:'1px solid '+C.border }}>
+              <p style={{ fontSize:'0.66rem', color:C.amber, margin:'0 0 0.3rem', fontWeight:700 }}>
+                {scanVelocity.length} velocity candidates — big views fast, any channel size
+              </p>
+              <p style={{ fontSize:'0.64rem', color:C.muted, margin:'0 0 0.35rem', lineHeight:1.4 }}>
+                Didn&apos;t clear the view:sub ratio bar (often because the channel is large) but still gained a lot of views in a short window — worth investigating rather than dismissing, just weigh channel size before betting on it.
+              </p>
+              <div style={{ maxHeight:'11rem', overflowY:'auto' as const, display:'flex', flexDirection:'column', gap:'0.25rem' }}>
+                {scanVelocity.map(o => {
+                  const st = velocityAddStatus[o.videoId]
+                  return (
+                    <div key={o.videoId} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.25rem 0.4rem', background:C.card, borderRadius:'0.35rem', border:'1px solid '+C.border }}>
+                      <a href={o.url} target="_blank" rel="noreferrer" style={{ flex:1, fontSize:'0.66rem', color:C.sec, textDecoration:'none', lineHeight:1.4 }}>
+                        <span style={{ color:C.text, fontWeight:600 }}>{o.title}</span>
+                        {' '}— {o.channel} ({o.subscribers.toLocaleString()} subs) · {o.views.toLocaleString()} views in {o.ageDays}d · <span style={{ color:C.amber, fontWeight:700 }}>~{o.viewsPerDay.toLocaleString()}/day</span>
+                      </a>
+                      <button
+                        onClick={() => addVelocityToIdeas(o)}
+                        disabled={st === 'adding' || st === 'added'}
+                        title="Add this topic to the Ideas board — flagged as a velocity signal, not a ratio outlier"
+                        style={{ display:'flex', alignItems:'center', gap:'0.25rem', flexShrink:0, padding:'0.25rem 0.5rem', background: st === 'added' ? 'rgba(34,197,94,0.12)' : 'rgba(255,184,0,0.1)', border:'1px solid '+(st === 'added' ? 'rgba(34,197,94,0.4)' : 'rgba(255,184,0,0.3)'), borderRadius:'0.35rem', color: st === 'added' ? '#22c55e' : C.amber, cursor:(st === 'adding' || st === 'added') ? 'default' : 'pointer', fontFamily:'inherit', fontSize:'0.62rem', fontWeight:700, whiteSpace:'nowrap' as const }}
+                      >
+                        {st === 'added' ? <Check size={10}/> : <Plus size={10}/>}
+                        {st === 'adding' ? 'Adding…' : st === 'added' ? 'Added' : 'Add'}
+                      </button>
+                      {st === 'error' && <span style={{ fontSize:'0.6rem', color:C.red }}>failed</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {msg && <p style={{ fontSize:'0.72rem', color:C.amber, margin:'0 0 0.75rem', lineHeight:1.4 }}>{msg}</p>}
@@ -1025,9 +1117,9 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
                       low-subscriber channel with weak packaging is what makes this an
                       opportunity, not just a topic guess. Shown plainly so it's obvious
                       what evidence (or lack of it) each idea actually rests on. */}
-                  <div style={{ padding:'0.55rem 0.65rem', background: idea.outlier ? 'rgba(0,212,255,0.05)' : 'rgba(255,184,0,0.05)', border:'1px solid '+(idea.outlier ? 'rgba(0,212,255,0.18)' : 'rgba(255,184,0,0.18)'), borderRadius:'0.5rem', marginBottom:'0.5rem' }}>
-                    <p style={{ fontSize:'0.6rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase', color: idea.outlier ? C.cyan : C.amber, margin:'0 0 0.35rem' }}>
-                      Opportunity signal
+                  <div style={{ padding:'0.55rem 0.65rem', background: idea.outlier ? (idea.outlier.signal_type === 'velocity' ? 'rgba(255,184,0,0.05)' : 'rgba(0,212,255,0.05)') : 'rgba(255,184,0,0.05)', border:'1px solid '+(idea.outlier ? (idea.outlier.signal_type === 'velocity' ? 'rgba(255,184,0,0.22)' : 'rgba(0,212,255,0.18)') : 'rgba(255,184,0,0.18)'), borderRadius:'0.5rem', marginBottom:'0.5rem' }}>
+                    <p style={{ fontSize:'0.6rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase', color: idea.outlier ? (idea.outlier.signal_type === 'velocity' ? C.amber : C.cyan) : C.amber, margin:'0 0 0.35rem' }}>
+                      {idea.outlier?.signal_type === 'velocity' ? 'Opportunity signal — velocity (secondary)' : 'Opportunity signal'}
                     </p>
                     {idea.outlier ? (
                       <div style={{ display:'flex', flexDirection:'column', gap:'0.2rem' }}>
@@ -1035,9 +1127,14 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
                           <strong>&#8220;{idea.outlier.video_title}&#8221;</strong> &mdash; {idea.outlier.channel}
                         </p>
                         <p style={{ fontSize:'0.68rem', color:C.sec, margin:0, lineHeight:1.4 }}>
-                          {idea.outlier.views} on a {idea.outlier.subscribers} channel &nbsp;<span style={{ color:C.cyan, fontWeight:700 }}>({idea.outlier.view_to_sub_ratio} view:sub)</span>
+                          {idea.outlier.views} on a {idea.outlier.subscribers} channel &nbsp;<span style={{ color: idea.outlier.signal_type === 'velocity' ? C.amber : C.cyan, fontWeight:700 }}>({idea.outlier.view_to_sub_ratio})</span>
                           {idea.outlier.recency && <span style={{ color:C.muted }}> &middot; {idea.outlier.recency}</span>}
                         </p>
+                        {idea.outlier.signal_type === 'velocity' && idea.outlier.velocity_note && (
+                          <p style={{ fontSize:'0.68rem', color:C.amber, margin:'0.15rem 0 0', lineHeight:1.4 }}>
+                            <span style={{ fontWeight:700 }}>Caveat:</span> {idea.outlier.velocity_note}
+                          </p>
+                        )}
                         <p style={{ fontSize:'0.68rem', color:C.sec, margin:'0.15rem 0 0', lineHeight:1.4 }}>
                           <span style={{ color:C.amber, fontWeight:700 }}>Packaging gap:</span> {idea.outlier.packaging_gap}
                         </p>
@@ -1409,9 +1506,9 @@ export default function ContentPage() {
 
   // Generates new ideas from scratch — same checklist + research requirement
   // as validation, just run before an idea exists rather than after.
-  async function runFindIdeas(model: string, webSearch: boolean, count: number, scannedOutliers?: ScannedOutlier[]): Promise<{ ideas: FoundIdea[] } | { error: string }> {
+  async function runFindIdeas(model: string, webSearch: boolean, count: number, scannedOutliers?: ScannedOutlier[], scannedVelocity?: ScannedOutlier[]): Promise<{ ideas: FoundIdea[] } | { error: string }> {
     const existingTitles = items.map(i => i.title).slice(0, 60)
-    const { systemPrompt, userPrompt } = buildFindIdeasPrompt(existingTitles, count, scannedOutliers)
+    const { systemPrompt, userPrompt } = buildFindIdeasPrompt(existingTitles, count, scannedOutliers, scannedVelocity)
     try {
       const res = await fetch('/api/content/consult', {
         method: 'POST',
@@ -1439,7 +1536,7 @@ export default function ContentPage() {
     // evidence that field is for, and keeps it visible once the idea is a
     // normal Ideas Bank row.
     const outlierNote = idea.outlier
-      ? `Outlier: "${idea.outlier.video_title}" (${idea.outlier.channel}) — ${idea.outlier.views} on a ${idea.outlier.subscribers} channel (${idea.outlier.view_to_sub_ratio} view:sub)${idea.outlier.recency ? ', ' + idea.outlier.recency : ''}. Packaging gap: ${idea.outlier.packaging_gap}`
+      ? `${idea.outlier.signal_type === 'velocity' ? 'Velocity signal' : 'Outlier'}: "${idea.outlier.video_title}" (${idea.outlier.channel}) — ${idea.outlier.views} on a ${idea.outlier.subscribers} channel (${idea.outlier.view_to_sub_ratio} view:sub)${idea.outlier.recency ? ', ' + idea.outlier.recency : ''}. Packaging gap: ${idea.outlier.packaging_gap}${idea.outlier.velocity_note ? ' Caveat: ' + idea.outlier.velocity_note : ''}`
       : null
     const patternNote = idea.pattern ? `Pattern: ${idea.pattern}` : null
     const gapNote = idea.comment_gap ? `Comment gap: ${idea.comment_gap}` : null

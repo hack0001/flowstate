@@ -4,10 +4,23 @@ import { NextRequest, NextResponse } from 'next/server'
 // Finder. Where Claude's web search gives judgment with approximate numbers,
 // this gives exact numbers with no judgment: for each seed query it pulls
 // real videos, their real view counts, and their channel's real subscriber
-// counts, then keeps only genuine outliers (high view:sub ratio on a
-// small-enough channel). The results are fed into the Find Ideas prompt as
-// verified evidence so Claude builds ideas on real precedents instead of
-// searching from scratch.
+// counts, then splits them into two evidence buckets from the SAME fetched
+// data (no extra API calls):
+//
+//   1. RATIO outliers — high view:sub ratio on a small-enough channel. Proof
+//      the topic itself pulled an audience beyond the channel's own
+//      following — the strongest signal, because it isolates the topic from
+//      the channel's existing reach.
+//   2. VELOCITY outliers — big absolute view count racked up in a short
+//      window, regardless of channel size or ratio. A gold video that hit
+//      1M views in a month is real demand evidence even if it happened on a
+//      channel with 2M subscribers (where the ratio would look unremarkable
+//      or get filtered out entirely). This doesn't isolate topic from
+//      channel authority the way ratio does — a big channel gets an
+//      algorithmic/audience head start — so it's weaker evidence on its own,
+//      but "ignore it because the channel is big" throws away real signal.
+//      It's flagged separately so it gets weighed as secondary/corroborating
+//      evidence, not treated as equivalent proof to a ratio outlier.
 //
 // Needs YOUTUBE_API_KEY (Google Cloud console → YouTube Data API v3 → API
 // key, free tier; set in Vercel env for production). Quota note: search.list
@@ -25,6 +38,8 @@ type ScannedOutlier = {
   publishedAt: string    // ISO date of the video
   url: string
   query: string          // which seed query surfaced it
+  ageDays: number         // days since published
+  viewsPerDay: number     // views / ageDays, rounded — the velocity number
 }
 
 const YT = 'https://www.googleapis.com/youtube/v3'
@@ -51,6 +66,13 @@ export async function POST(req: NextRequest) {
     const maxSubs = typeof body?.maxSubs === 'number' ? body.maxSubs : 500_000
     const minViews = typeof body?.minViews === 'number' ? body.minViews : 50_000
     const maxAgeMonths = typeof body?.maxAgeMonths === 'number' ? body.maxAgeMonths : 18
+
+    // Velocity thresholds — any channel size, but the views have to have
+    // landed FAST: a lot of views in a short window is what makes it
+    // "gained a lot despite low ratio" rather than just "old video with a
+    // lot of views by now".
+    const velocityMinViews = typeof body?.velocityMinViews === 'number' ? body.velocityMinViews : 300_000
+    const velocityMaxAgeDays = typeof body?.velocityMaxAgeDays === 'number' ? body.velocityMaxAgeDays : 60
 
     const publishedAfter = new Date(Date.now() - maxAgeMonths * 30 * 24 * 3600 * 1000).toISOString()
 
@@ -116,23 +138,38 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. Filter to genuine outliers and rank by ratio
-    const outliers: ScannedOutlier[] = videos
-      .map(v => {
-        const subscribers = subsByChannel.get(v.channelId) ?? 0
-        const ratio = subscribers > 0 ? Math.round((v.views / subscribers) * 10) / 10 : 0
-        return {
-          videoId: v.id, title: v.title, channel: v.channelTitle,
-          views: v.views, subscribers, ratio,
-          publishedAt: v.publishedAt, url: `https://www.youtube.com/watch?v=${v.id}`,
-          query: candidates.get(v.id)?.query ?? '',
-        }
-      })
+    // 4. Enrich every candidate once — ratio, age, views/day — then split into
+    // the two evidence buckets from this single pass.
+    const enriched: ScannedOutlier[] = videos.map(v => {
+      const subscribers = subsByChannel.get(v.channelId) ?? 0
+      const ratio = subscribers > 0 ? Math.round((v.views / subscribers) * 10) / 10 : 0
+      const ageDays = Math.max(1, Math.round((Date.now() - new Date(v.publishedAt).getTime()) / 86400000))
+      const viewsPerDay = Math.round(v.views / ageDays)
+      return {
+        videoId: v.id, title: v.title, channel: v.channelTitle,
+        views: v.views, subscribers, ratio,
+        publishedAt: v.publishedAt, url: `https://www.youtube.com/watch?v=${v.id}`,
+        query: candidates.get(v.id)?.query ?? '',
+        ageDays, viewsPerDay,
+      }
+    })
+
+    // Ratio outliers — topic beat the channel's own audience size.
+    const outliers = enriched
       .filter(o => o.views >= minViews && o.subscribers > 0 && o.subscribers <= maxSubs && o.ratio >= minRatio)
       .sort((a, b) => b.ratio - a.ratio)
       .slice(0, 30)
 
-    return NextResponse.json({ outliers })
+    // Velocity outliers — big absolute views, fast, regardless of channel
+    // size or ratio. Excludes anything already surfaced as a ratio outlier
+    // so the two lists don't just duplicate each other.
+    const outlierIds = new Set(outliers.map(o => o.videoId))
+    const velocityOutliers = enriched
+      .filter(o => !outlierIds.has(o.videoId) && o.views >= velocityMinViews && o.ageDays <= velocityMaxAgeDays)
+      .sort((a, b) => b.viewsPerDay - a.viewsPerDay)
+      .slice(0, 20)
+
+    return NextResponse.json({ outliers, velocityOutliers })
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
   }
