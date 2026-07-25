@@ -188,6 +188,29 @@ function parseModelJson<T>(raw: string): T {
   throw new Error('Response JSON was truncated beyond repair — try asking for fewer ideas')
 }
 
+// ── Hook Lab ────────────────────────────────────────────────────────────────
+// Same evidence-first logic as the idea finder, pointed at hooks: take the
+// verified outliers, infer the hook pattern each title implies, surface the
+// patterns that recur across the winners, then generate hooks for your topic
+// in those proven shapes — in the SoundMoney voice.
+type HookPattern = { pattern: string; why_it_works: string; example: string }
+type HookOption = { hook: string; pattern: string; emotion: string }
+type HookAnalysis = { patterns: HookPattern[]; hooks: HookOption[] }
+
+function buildHookAnalysisPrompt(outliers: ScannedOutlier[], topic: string): { systemPrompt: string; userPrompt: string } {
+  const systemPrompt = 'You are a YouTube hook analyst for SoundMoney.\n\n' + CHANNEL_BRIEF + '\n\n' + SCRIPT_VOICE +
+    '\n\nReturn ONLY valid JSON, no markdown fences, no commentary outside the JSON.'
+  const list = outliers.map(o => `- "${o.title}" — ${o.channel}, ${o.views.toLocaleString()} views, ${o.ratio}:1 view:sub`).join('\n')
+  const userPrompt = `These are verified outlier videos in this niche — high views relative to subscribers, so the topic and packaging did the work, not an existing audience:\n${list}\n\n` +
+    `Step 1 — for each, infer the HOOK PATTERN the title/packaging implies (e.g. loss/pain, curiosity gap, bold claim, contrarian, question, number/list, story, "you"-framed threat, authority/secret).\n` +
+    `Step 2 — identify the 3 to 5 patterns that RECUR most across these winners (the common threads). For each, give a one-sentence reason it holds retention, and cite one title from the list that uses it.\n` +
+    (topic.trim()
+      ? `Step 3 — write 6 scroll-stopping first-line hooks for a new Short on: "${topic.trim()}". Use the recurring winning patterns, in the SOUNDMONEY SCRIPT VOICE, shock in the first second, loss/"you"-framed where it fits. Never invent statistics.\n`
+      : `Step 3 — write 6 reusable first-line hook templates (leave a [TOPIC] slot) in the SOUNDMONEY SCRIPT VOICE, each built on one of the recurring patterns.\n`) +
+    `\nReturn JSON exactly: {"patterns":[{"pattern":"short name","why_it_works":"one sentence","example":"a title from the list"}],"hooks":[{"hook":"the first line","pattern":"which pattern it uses","emotion":"pain|prize|desire|curiosity|anger"}]}`
+  return { systemPrompt, userPrompt }
+}
+
 function formatScannedOutliers(rows: ScannedOutlier[]): string {
   return rows.map(o =>
     `- "${o.title}" — ${o.channel}${o.channelCountry ? ' [' + o.channelCountry + ']' : ''} · ${o.views.toLocaleString()} views on a ${o.subscribers.toLocaleString()}-subscriber channel (${o.ratio}:1 view:sub) · published ${o.publishedAt.slice(0, 10)} · found via "${o.query}" · ${o.url}`
@@ -805,6 +828,36 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
   // tuned set survives reloads. Defaults come from the channel brief.
   const [queryText, setQueryText] = useState(OUTLIER_SEED_QUERIES.join('\n'))
   const [outlierAddStatus, setOutlierAddStatus] = useState<Record<string, 'adding' | 'added' | 'error'>>({})
+  const [hookTopic, setHookTopic] = useState('')
+  const [hookLoading, setHookLoading] = useState(false)
+  const [hookMsg, setHookMsg] = useState<string | null>(null)
+  const [hookResult, setHookResult] = useState<HookAnalysis | null>(null)
+
+  async function runHookAnalysis() {
+    if (!scanResults || scanResults.length === 0) { setHookMsg('Scan for outliers first.'); return }
+    setHookLoading(true)
+    setHookMsg(null)
+    const { systemPrompt, userPrompt } = buildHookAnalysisPrompt(scanResults, hookTopic)
+    try {
+      const res = await fetch('/api/content/consult', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ systemPrompt, userPrompt, model: 'claude-sonnet-5' }),
+      })
+      const data = await res.json()
+      if (data?.error) { setHookMsg('API error: ' + JSON.stringify(data.error)); return }
+      const raw = (data?.content ?? [])
+        .filter((b: { type: string; text?: string }) => b.type === 'text')
+        .map((b: { text?: string }) => b.text ?? '')
+        .join('\n').trim()
+      if (!raw) { setHookMsg('Empty response from Claude.'); return }
+      setHookResult(parseModelJson<HookAnalysis>(raw))
+    } catch (e) {
+      setHookMsg('Hook analysis failed: ' + String(e))
+    } finally {
+      setHookLoading(false)
+    }
+  }
 
   useEffect(() => {
     try {
@@ -1101,6 +1154,56 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
             </div>
           )}
         </div>
+
+        {/* ── Hook Lab — analyse the scanned outliers' hook patterns ── */}
+        {scanResults && scanResults.length > 0 && (
+          <div style={{ padding:'0.75rem', background:'rgba(249,115,22,0.04)', border:'1px solid rgba(249,115,22,0.18)', borderRadius:'0.75rem', marginBottom:'1rem' }}>
+            <p style={{ fontSize:'0.7rem', color:C.sec, margin:'0 0 0.5rem', lineHeight:1.45 }}>
+              <strong style={{ color:C.orange }}>Hook Lab</strong> — read the winning hook patterns across the {scanResults.length} outliers, then generate hooks for your topic in those shapes. Optional topic below (leave blank for reusable templates).
+            </p>
+            <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' as const }}>
+              <input
+                value={hookTopic} onChange={e => setHookTopic(e.target.value)} disabled={hookLoading}
+                placeholder="Your video topic, e.g. why the gold standard was killed"
+                style={{ flex:'1 1 14rem', padding:'0.45rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.72rem', outline:'none', boxSizing:'border-box' as const }}
+              />
+              <button onClick={runHookAnalysis} disabled={hookLoading} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.85rem', background:C.card, border:'1px solid rgba(249,115,22,0.35)', borderRadius:'0.5rem', color:C.orange, cursor:hookLoading?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, whiteSpace:'nowrap' as const, opacity:hookLoading?0.5:1 }}>
+                <Zap size={11}/>{hookLoading ? 'Analysing…' : 'Analyse hooks'}
+              </button>
+            </div>
+            {hookMsg && <p style={{ fontSize:'0.68rem', color:C.amber, margin:'0.5rem 0 0', lineHeight:1.4 }}>{hookMsg}</p>}
+            {hookResult && (
+              <div style={{ marginTop:'0.7rem', display:'flex', flexDirection:'column', gap:'0.7rem' }}>
+                <div>
+                  <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase', color:C.orange, margin:'0 0 0.35rem' }}>Recurring winning patterns</p>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+                    {hookResult.patterns.map((p, i) => (
+                      <div key={i} style={{ padding:'0.4rem 0.55rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.45rem' }}>
+                        <p style={{ fontSize:'0.7rem', color:C.text, margin:0, fontWeight:700 }}>{p.pattern}</p>
+                        <p style={{ fontSize:'0.66rem', color:C.sec, margin:'0.1rem 0 0', lineHeight:1.4 }}>{p.why_it_works}</p>
+                        {p.example && <p style={{ fontSize:'0.62rem', color:C.muted, margin:'0.15rem 0 0', fontStyle:'italic' }}>e.g. &ldquo;{p.example}&rdquo;</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase', color:C.orange, margin:'0 0 0.35rem' }}>{hookTopic.trim() ? 'Hooks for your topic' : 'Reusable hook templates'}</p>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+                    {hookResult.hooks.map((h, i) => (
+                      <div key={i} style={{ padding:'0.4rem 0.55rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.45rem' }}>
+                        <p style={{ fontSize:'0.72rem', color:C.text, margin:0, lineHeight:1.4 }}>&ldquo;{h.hook}&rdquo;</p>
+                        <div style={{ display:'flex', gap:'0.3rem', marginTop:'0.2rem', flexWrap:'wrap' as const }}>
+                          {h.pattern && <span style={{ fontSize:'0.58rem', color:C.orange, background:'rgba(249,115,22,0.08)', border:'1px solid rgba(249,115,22,0.2)', borderRadius:'9999px', padding:'0.05rem 0.35rem' }}>{h.pattern}</span>}
+                          {h.emotion && <span style={{ fontSize:'0.58rem', color:C.pink, background:'rgba(236,72,153,0.08)', border:'1px solid rgba(236,72,153,0.2)', borderRadius:'9999px', padding:'0.05rem 0.35rem' }}>{h.emotion}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {msg && <p style={{ fontSize:'0.72rem', color:C.amber, margin:'0 0 0.75rem', lineHeight:1.4 }}>{msg}</p>}
 
