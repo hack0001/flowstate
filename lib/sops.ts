@@ -51,6 +51,21 @@ export const SOPS: SOP[] = [
     ],
   },
   {
+    id:'00c', icon:'&#127916;', title:'Premiere Template Build', group:'setup',
+    tagline:'One-time: build the reusable Premiere project, caption style, callout templates and shortcuts so every edit starts 80% done. Run once &mdash; then every video is just Save As.',
+    steps:[
+      '<strong>Master template project:</strong> New project &ldquo;SoundMoney_Short_TEMPLATE&rdquo; with one 1080&times;1920 vertical sequence. Label tracks: V1 VO-visual, V2 B-roll, V3 Memes, V4 Text, V5 Captions; A1 VO, A2 Music, A3 SFX. Add an adjustment layer on top with your LUT. Every new video is <code>File &gt; Save As</code> a copy of this.',
+      '<strong>Two text systems &mdash; keep them separate:</strong> Captions (from auto-transcribe) are the running subtitles on their own track. Callout text (the big [TEXT] punch-ins from your shot layouts) are separate Essential Graphics clips on the Text track. Never mix them.',
+      '<strong>Caption Master Style:</strong> Transcribe a VO (Window &gt; Text &gt; Transcribe), Create Captions, style one caption (font, size, stroke, drop shadow), then in Essential Graphics &gt; Edit &gt; Styles dropdown &gt; <strong>Create Style</strong> &mdash; name it &ldquo;SM Caption&rdquo;. Apply to the whole caption track. Change it once, it updates everywhere.',
+      '<strong>Typewriter callout (no After Effects):</strong> Type your text with the Type tool and style it. Add <strong>Video Effects &gt; Transition &gt; Linear Wipe</strong> to the clip. Set Wipe Angle 90&deg; (flip to 270&deg; if it reveals the wrong way), Feather 0. Keyframe <em>Transition Completion</em> 100% at the clip start &rarr; 0% about 0.5s later. Add a keyboard-clack SFX &mdash; at Shorts speed it reads as typing.',
+      '<strong>Save the 3 core templates as .mogrt:</strong> right-click each finished graphic &gt; <strong>Export As Motion Graphics Template</strong> &gt; Local Templates Folder. Build (1) <strong>SM Typewriter</strong> (the Linear Wipe reveal), (2) <strong>SM Pop</strong> (big bold word, keyframe Scale 0 &rarr; 115 &rarr; 100 over ~0.3s with ease-out &mdash; the meme pop), (3) <strong>SM End Card</strong> (handle + &ldquo;Follow for more&rdquo;, static, last 2s). They then live in Essential Graphics &gt; Browse &mdash; drag onto any timeline and retype.',
+      '<strong>Effect presets + Paste Attributes:</strong> for your standard punch-in zoom and number reveal, right-click the effect in Effect Controls &gt; <strong>Save Preset</strong>. Learn <code>Cmd/Ctrl+Alt+V</code> (Paste Attributes) to copy effects from one clip to another instantly.',
+      '<strong>Remap 4 shortcuts</strong> (Edit &gt; Keyboard Shortcuts): <code>Q</code>/<code>W</code> ripple-trim to playhead, <code>Cmd/Ctrl+K</code> razor at playhead, <code>Shift+Del</code> ripple delete (closes the gap), <code>M</code> marker. These four turn fast-cutting into muscle memory.',
+      '<strong>Fast personal alternative to mogrts:</strong> once a styled callout clip exists, <code>Opt/Alt</code>-drag it to duplicate and double-click to retype &mdash; all effects and keyframes come with it. Often faster than a mogrt for a solo editor.',
+      '<strong>Done once:</strong> tick this off and never rebuild it &mdash; from here every edit starts from the template with captions, callouts, LUT and shortcuts already in place.',
+    ],
+  },
+  {
     id:'01', icon:'&#128161;', title:'Idea & Validation', group:'production',
     tagline:'Commit only to topics that have demand, a clear angle, and meme/story potential. Pipeline stages: 💡 Idea → ✅ Validated.',
     steps:[
@@ -150,6 +165,7 @@ export const SOPS: SOP[] = [
     id:'07', icon:'&#9986;', title:'Editing (Fast-Cut Faceless)', group:'production',
     tagline:'Build the dense, fast, funny visual style that defines this format. Pipeline stage: ✂️ Editing.',
     steps:[
+      '<strong>Start from the template:</strong> <code>File &gt; Save As</code> a copy of SoundMoney_Short_TEMPLATE (see the one-time <em>Premiere Template Build</em> setup SOP). The caption style, callout mogrts (SM Typewriter / SM Pop / SM End Card), LUT and shortcuts are already in place &mdash; drag the mogrts onto the [TEXT] beats from your shot layout and retype. Do not rebuild any of it per video.',
       '<strong>Golden rules:</strong> VO goes on first. Everything hangs off it. The viewer should never see a blank or static shot.',
       'Memes land on the punchline, not before it. Timing is everything.',
       'New visual every 2&ndash;4 seconds on long form. Every 1&ndash;2 on Shorts.',
