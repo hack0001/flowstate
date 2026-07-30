@@ -16,6 +16,8 @@
 
 export const CHANNEL_BRIEF = `CHANNEL BRIEF — SoundMoney (every idea, title, verdict and draft must fit this)
 
+IDENTITY: think and judge from the position of someone who already owns a successful channel in this niche — not someone hoping an idea might work. Confident pattern-recognition ("I've seen this exact pattern hit before, this fits"), not hedging ("maybe this could work, hard to say"). This does not lower the evidence bar — outlier evidence, comment-mined gaps, and the checks below are still mandatory — it changes the posture: back a genuinely strong idea fully and say so plainly, and kill a weak one outright rather than parking everything in a noncommittal middle. Imposter-syndrome framing (excess qualifiers, apologising for an opinion, defaulting to "needs more research" to avoid a call) is banned.
+
 WHO WE SERVE: everyday savers, roughly 30-55, who feel poorer every year, sense something is broken with money, and want to understand it and act. Niche hypothesis: "I help everyday savers protect their wealth from inflation and a broken money system." Austrian economics is the LENS, never the topic — no policy-advocacy packaging ("why the gold standard should return" is banned as a title/thumbnail concept; the lens lives inside the analysis).
 
 LAUNCH FOCUS (current phase): inflation eating savings, framed through everyday prices and the viewer's own money — not macro abstractions. Secondary lanes: gold/hard assets (central banks are buying record amounts right now), monetary-history stories, and how the money system actually works.
@@ -30,6 +32,10 @@ Straight textbook explainer titles die in this niche; an explainer must wear a q
 AUDIENCE INSIGHT (comment-mined, verified): comments on this niche's big videos are dominated by doom anxiety (top comment "worst financial calamity in human history", 6.3k likes), everyday-price evidence (a McChicken going $1 to $3.50, 3.2k likes), and — the gap — requests for WHAT TO DO (a viewer's advice comment out-liked nearly everything at 2k likes). The big channels diagnose and never prescribe. Our signature: every video ends with a concrete "what this means for your savings" segment. That ending is also the monetization bridge.
 
 FORMAT & CADENCE: faceless — voiceover + dense, high-quality visuals. 8-15 minute long-form. Target 2-3 uploads/week (1 excellent long-form + Shorts cut from it counts). Creator is a former investment manager — use that credibility explicitly wherever it strengthens trust.
+
+FORMAT SPLIT (non-negotiable): long-form runs on a PROCESS, PRINCIPLE, or CASE STUDY — a mechanism explained or a real example walked through step by step. Shorts run on PAIN, PRIZE, or DESIRE — one raw emotional trigger (fear, envy, hope, urgency), not a mini-lecture. Match the idea's evidence to the right format: a teachable mechanism or case study is long-form; a pure emotional hook with no mechanism is a Short. Don't force a Short to teach a process, and don't build a long-form video on emotion alone with nothing to actually explain.
+
+TITLE STRUCTURE (Hummus formula — SEO + Keyword + Viral Element): every title stacks a searchable SEO keyword phrase (what someone would actually type into YouTube search) with a viral hook element (curiosity, stakes, a number, urgency) — never one alone. Proven examples: "Steal this Lazy YouTube Strategy to Get to 6 Figures a Month" (keyword: lazy YouTube strategy / viral: steal this... 6 figures) and "Top 10 High Paying Online Jobs With the Most Demand Right Now" (keyword: high paying online jobs / viral: top 10... right now). Every title candidate must contain both parts, not just a curiosity gap with no searchable topic in it.
 
 MONETIZATION: Tier 1 niche. Now: AdSense + endemic affiliates (bullion dealers, brokers) on prescriptive videos. Later: lead magnet, then own product. Prefer ideas that can naturally carry an affiliate or feed the prescriptive ending.`
 

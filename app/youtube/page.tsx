@@ -363,6 +363,24 @@ export default function YouTubePage() {
               </div>
             </section>
 
+            {/* Format Rule */}
+            <section>
+              <div style={{ marginBottom:'1rem' }}>
+                <h2 style={{ fontSize:'1.05rem', fontWeight:800, margin:'0 0 0.15rem' }}>Format Rule &mdash; Shorts vs Long-form</h2>
+                <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>Pick the lens before you write a word</p>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:'0.625rem' }}>
+                <div style={{ padding:'0.875rem 1rem', background:'rgba(0,212,255,0.04)', border:'1px solid rgba(0,212,255,0.15)', borderRadius:'0.875rem' }}>
+                  <p style={{ fontSize:'0.78rem', color:C.cyan, fontWeight:700, margin:'0 0 0.4rem' }}>Long-form: PROCESS, PRINCIPLE, or CASE STUDY</p>
+                  <p style={{ fontSize:'0.72rem', color:C.muted, margin:0, lineHeight:1.5 }}>A mechanism explained or a real example walked through step by step. Needs actual substance to teach &mdash; not just a feeling.</p>
+                </div>
+                <div style={{ padding:'0.875rem 1rem', background:'rgba(255,184,0,0.04)', border:'1px solid rgba(255,184,0,0.15)', borderRadius:'0.875rem' }}>
+                  <p style={{ fontSize:'0.78rem', color:C.amber, fontWeight:700, margin:'0 0 0.4rem' }}>Shorts: PAIN, PRIZE, or DESIRE</p>
+                  <p style={{ fontSize:'0.72rem', color:C.muted, margin:0, lineHeight:1.5 }}>One raw emotional trigger &mdash; fear, envy, hope, urgency. Not a mini-lecture. If it needs a mechanism to land, it&apos;s a long-form idea, not a Short.</p>
+                </div>
+              </div>
+            </section>
+
             {/* Upload Timing */}
             <section>
               <div style={{ marginBottom:'1rem' }}>

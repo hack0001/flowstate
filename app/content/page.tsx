@@ -805,7 +805,10 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
   onAdd: (idea: FoundIdea) => Promise<boolean>
   onClose: () => void
 }) {
-  const [modelKey, setModelKey] = useState<string>(DEFAULT_CONSULT_MODEL)
+  // Idea generation leans on stronger reasoning (weighing outlier evidence,
+  // spotting a genuine alpha angle) than a quick validation check does, so
+  // this defaults higher than DEFAULT_CONSULT_MODEL (Haiku) used elsewhere.
+  const [modelKey, setModelKey] = useState<string>('claude-sonnet-5')
   const [webSearch, setWebSearch] = useState(true)
   const [count, setCount] = useState(5)
   const [loading, setLoading] = useState(false)
@@ -1019,7 +1022,7 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
           <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex' }}><X size={16}/></button>
         </div>
         <p style={{ fontSize:'0.76rem', color:C.muted, margin:'0 0 1rem', lineHeight:1.5 }}>
-          Generates new ideas that pass the full 7-step checklist, fit the channel&apos;s niche, and are titled so YouTube can tell what they&apos;re about — not just clever hooks with no clear topic. Grounded in real search where possible, and checked against your existing ideas so it doesn&apos;t repeat them.
+          Generates new ideas that pass the full 7-step checklist, fit the channel&apos;s niche, and are titled so YouTube can tell what they&apos;re about — not just clever hooks with no clear topic. Grounded in real search where possible, checked against your existing ideas so it doesn&apos;t repeat them, and judged from the identity of someone who already owns a successful channel here — confident and decisive, not hedged.
         </p>
 
         <div style={{ display:'flex', gap:'0.6rem', marginBottom:'0.875rem', flexWrap:'wrap' as const }}>
@@ -1032,6 +1035,9 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
             >
               {CONSULT_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
+            <p style={{ fontSize:'0.62rem', color:C.muted, margin:'0.3rem 0 0', lineHeight:1.4 }}>
+              Recommended: Sonnet or Opus for idea generation &mdash; weighing outlier evidence and finding a real alpha angle needs stronger reasoning than Haiku gives. Save Haiku for quick validation checks.
+            </p>
           </div>
           <div style={{ width:'6rem' }}>
             <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, marginBottom:'0.35rem' }}>How many</label>
