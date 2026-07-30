@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X, RefreshCw, Bell, Settings2, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { generateDailyPlan, getDailyPlanSettings, saveDailyPlanSettings, SECTION_LABEL, type DailyPlanSettings } from '@/lib/dailyPlan'
+import { generateDailyPlan, getDailyPlanSettings, saveDailyPlanSettings, getDailyPlanCandidates, commitDailyPlan, SECTION_LABEL, type DailyPlanSettings, type PlanCandidate } from '@/lib/dailyPlan'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -19,6 +19,7 @@ type Task = {
   urgency: string | null; importance: string | null; time_commitment: string | null
   task_type: string | null; is_frog: boolean; why_note: string | null
   notion_id: string | null; notion_url: string | null; priority: string | null
+  start_time: string | null; duration_min: number | null
 }
 
 type HoverTip = { x: number; y: number; color: string; title: string; lines: string[] }
@@ -53,12 +54,116 @@ function addDays(d: Date, n: number): Date {
 function toDateStr(d: Date): string {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
 }
-function fmtWeekRange(start: Date): string {
-  const end = addDays(start, 6)
+function fmtWeekRange(start: Date, days: number = 7): string {
+  const end = addDays(start, Math.max(1, days) - 1)
   const sm = MONTHS[start.getMonth()].slice(0,3)
   const em = MONTHS[end.getMonth()].slice(0,3)
+  if (days <= 1) return sm + ' ' + start.getDate() + ', ' + start.getFullYear()
   if (start.getMonth() === end.getMonth()) return sm + ' ' + start.getDate() + ' - ' + end.getDate() + ', ' + start.getFullYear()
   return sm + ' ' + start.getDate() + ' - ' + em + ' ' + end.getDate() + ', ' + end.getFullYear()
+}
+
+// ── Timeline view — time-of-day grid ────────────────────────────────────────
+// Shows 06:00-23:00 as a scrollable hourly grid instead of section cards.
+// Tasks with an explicit start_time (set by dragging, or by Recommend for
+// Tomorrow's auto-organise) render exactly there; anything else falls back
+// to a default anchor by task_type (Flow -> morning, Personal/Admin ->
+// evening, everything else -> midday) purely for display — dragging a task
+// commits a real start_time so it stops floating.
+const TL_START_MIN = 6 * 60   // 06:00
+const TL_END_MIN = 23 * 60    // 23:00
+const TL_PX_PER_MIN = 1       // 60px/hour
+const TL_SNAP_MIN = 15
+const TL_ANCHOR_MORNING = 9 * 60   // Flow
+const TL_ANCHOR_MIDDAY = 13 * 60   // Quick Task / unclassified
+const TL_ANCHOR_EVENING = 19 * 60  // Personal / Admin
+const TL_DEFAULT_DURATION = 30
+
+function minutesToHHMM(min: number): string {
+  const m = Math.max(0, Math.round(min))
+  return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')
+}
+function hhmmToMinutes(s: string): number | null {
+  const m = s.match(/^(\d{1,2}):(\d{2})$/)
+  if (!m) return null
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10)
+}
+function fmtHour12(min: number): string {
+  const h = Math.floor(min / 60) % 24
+  const ap = h < 12 ? 'am' : 'pm'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return h12 + ap
+}
+// Lenient parser for the free-text reminder/habit timeLabel field
+// ("9am", "9:30 PM", "18:00"...). Returns null for anything unparseable
+// ("Anytime", ""), which is treated as "no fixed time" in the timeline.
+function parseTimeLabel(label: string): number | null {
+  if (!label) return null
+  const m = label.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i)
+  if (!m) return null
+  let h = parseInt(m[1], 10)
+  const min = m[2] ? parseInt(m[2], 10) : 0
+  const ap = m[3]?.toLowerCase()
+  if (ap === 'pm' && h < 12) h += 12
+  if (ap === 'am' && h === 12) h = 0
+  if (h > 23 || min > 59) return null
+  return h * 60 + min
+}
+function anchorForTask(t: Task): number {
+  if (t.task_type === 'Flow') return TL_ANCHOR_MORNING
+  if (t.task_type === 'Personal' || t.task_type === 'Admin') return TL_ANCHOR_EVENING
+  return TL_ANCHOR_MIDDAY
+}
+
+type TLBlock = { id: string; kind: 'task' | 'reminder' | 'habit'; title: string; color: string; start: number; duration: number; timed: boolean; task?: Task }
+
+// Any task without an explicit start_time gets stacked sequentially from its
+// type's default anchor, in is_frog-first order, purely for display.
+function autoPlaceTasks(tasks: Task[]): Map<string, number> {
+  const placed = new Map<string, number>()
+  const buckets = new Map<number, Task[]>()
+  for (const t of tasks) {
+    if (t.start_time) continue
+    const anchor = anchorForTask(t)
+    if (!buckets.has(anchor)) buckets.set(anchor, [])
+    buckets.get(anchor)!.push(t)
+  }
+  for (const [anchor, list] of buckets) {
+    list.sort((a, b) => (b.is_frog ? 1 : 0) - (a.is_frog ? 1 : 0))
+    let cursor = anchor
+    for (const t of list) {
+      placed.set(t.id, cursor)
+      cursor += (t.duration_min ?? TL_DEFAULT_DURATION) + 10
+    }
+  }
+  return placed
+}
+
+// Greedy lane assignment so overlapping blocks sit side by side instead of
+// stacking on top of each other.
+function layoutTimelineBlocks(blocks: TLBlock[]): (TLBlock & { lane: number; lanes: number })[] {
+  const sorted = [...blocks].sort((a, b) => a.start - b.start)
+  const result: (TLBlock & { lane: number })[] = []
+  let cluster: (TLBlock & { lane: number })[] = []
+  let clusterEnd = -Infinity
+  const laneEnds: number[] = []
+  const flush = () => {
+    if (cluster.length === 0) return
+    const lanes = Math.max(...cluster.map(b => b.lane)) + 1
+    for (const b of cluster) result.push({ ...b, lanes } as TLBlock & { lane: number; lanes: number })
+    cluster = []
+    laneEnds.length = 0
+  }
+  for (const b of sorted) {
+    if (cluster.length > 0 && b.start >= clusterEnd) { flush(); clusterEnd = -Infinity }
+    let lane = laneEnds.findIndex(end => end <= b.start)
+    if (lane === -1) { lane = laneEnds.length; laneEnds.push(b.start + b.duration) }
+    else laneEnds[lane] = b.start + b.duration
+    cluster.push({ ...b, lane })
+    clusterEnd = Math.max(clusterEnd, b.start + b.duration)
+  }
+  flush()
+  return result as (TLBlock & { lane: number; lanes: number })[]
 }
 
 function buildOrganisePlan(allTasks: Record<string, Task[]>, weekStart: Date): OrgMove[] {
@@ -190,6 +295,180 @@ function TaskCard({
   )
 }
 
+// One positioned block on the Timeline grid. Only task blocks are
+// draggable (reminders/habits have no per-day time field to persist to) —
+// drag the body to move, drag the bottom handle to resize. Both snap to
+// TL_SNAP_MIN and commit via onCommit on mouse-up; while dragging the block
+// shows a live preview computed from the in-progress delta.
+function TimelineBlock({
+  block, onCommit, onOpen, onHover, onHoverEnd,
+}: {
+  block: TLBlock & { lane: number; lanes: number }
+  onCommit?: (startMin: number, durationMin: number) => void
+  onOpen?: () => void
+  onHover?: (e: React.MouseEvent) => void
+  onHoverEnd?: () => void
+}) {
+  const [drag, setDrag] = useState<{ mode: 'move' | 'resize'; startY: number; deltaMin: number } | null>(null)
+  const draggable = block.kind === 'task' && !!onCommit
+
+  useEffect(() => {
+    if (!drag) return
+    const startY = drag.startY
+    function onMove(e: MouseEvent) {
+      const rawDelta = (e.clientY - startY) / TL_PX_PER_MIN
+      const snapped = Math.round(rawDelta / TL_SNAP_MIN) * TL_SNAP_MIN
+      setDrag(d => (d ? { ...d, deltaMin: snapped } : d))
+    }
+    function onUp() {
+      setDrag(d => {
+        if (d && onCommit) {
+          if (d.mode === 'move') {
+            const newStart = Math.min(TL_END_MIN - 10, Math.max(TL_START_MIN, block.start + d.deltaMin))
+            onCommit(newStart, block.duration)
+          } else {
+            const newDuration = Math.max(TL_SNAP_MIN, block.duration + d.deltaMin)
+            onCommit(block.start, newDuration)
+          }
+        }
+        return null
+      })
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+  }, [drag, onCommit, block.start, block.duration])
+
+  const liveStart = drag?.mode === 'move' ? Math.min(TL_END_MIN - 10, Math.max(TL_START_MIN, block.start + drag.deltaMin)) : block.start
+  const liveDuration = drag?.mode === 'resize' ? Math.max(TL_SNAP_MIN, block.duration + drag.deltaMin) : block.duration
+  const top = (liveStart - TL_START_MIN) * TL_PX_PER_MIN
+  const height = Math.max(16, liveDuration * TL_PX_PER_MIN)
+  const widthPct = 100 / block.lanes
+  const leftPct = block.lane * widthPct
+
+  return (
+    <div
+      onMouseDown={e => { if (draggable) { e.stopPropagation(); setDrag({ mode:'move', startY:e.clientY, deltaMin:0 }) } }}
+      onClick={e => { e.stopPropagation(); if (!drag) onOpen?.() }}
+      onMouseEnter={onHover}
+      onMouseLeave={onHoverEnd}
+      title={block.timed ? undefined : 'No fixed time yet — showing a suggested slot. Drag to lock it in.'}
+      style={{
+        position:'absolute', top, height, left:`calc(${leftPct}% + 1px)`, width:`calc(${widthPct}% - 3px)`,
+        background: block.color + (block.timed ? '22' : '10'),
+        border:'1px solid ' + block.color + (block.timed ? '70' : '35'),
+        borderLeft:'3px solid ' + block.color,
+        borderStyle: block.timed ? 'solid' : 'dashed',
+        borderRadius:'0.3rem', padding:'0.1rem 0.3rem', overflow:'hidden',
+        cursor: draggable ? (drag ? 'grabbing' : 'grab') : 'pointer',
+        zIndex: drag ? 30 : 5, boxShadow: drag ? '0 4px 14px rgba(0,0,0,0.45)' : 'none', userSelect:'none',
+        boxSizing:'border-box',
+      }}
+    >
+      <p style={{ margin:0, fontSize:'0.6rem', fontWeight:700, color:block.color, lineHeight:1.25, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{block.title}</p>
+      {height > 28 && <p style={{ margin:0, fontSize:'0.53rem', color:C.muted }}>{fmtHour12(liveStart)}{drag ? ' → ' + fmtHour12(liveStart) : ''}</p>}
+      {draggable && (
+        <div
+          onMouseDown={e => { e.stopPropagation(); setDrag({ mode:'resize', startY:e.clientY, deltaMin:0 }) }}
+          style={{ position:'absolute', left:0, right:0, bottom:0, height:'6px', cursor:'ns-resize' }}
+        />
+      )}
+    </div>
+  )
+}
+
+// One day's vertical timeline: hour gridlines in a left gutter, blocks laid
+// out by time with lane-splitting for overlaps, plus an "Anytime" strip
+// above the grid for reminders/habits with no parseable time.
+function TimelineDay({
+  date, tasks, reminders, habits, isToday,
+  onCommitTask, onOpenTask, onOpenReminder, onOpenHabit, onHoverTask, onHoverGeneric, onHoverEnd,
+}: {
+  date: string
+  tasks: Task[]
+  reminders: Reminder[]
+  habits: HabitBlock[]
+  isToday: boolean
+  onCommitTask: (task: Task, startMin: number, durationMin: number) => void
+  onOpenTask: (task: Task) => void
+  onOpenReminder: (r: Reminder) => void
+  onOpenHabit: (h: HabitBlock) => void
+  onHoverTask: (e: React.MouseEvent, task: Task) => void
+  onHoverGeneric: (e: React.MouseEvent, color: string, title: string, lines: string[]) => void
+  onHoverEnd: () => void
+}) {
+  const autoPlaced = autoPlaceTasks(tasks)
+  const taskBlocks: TLBlock[] = tasks.map(t => {
+    const explicit = t.start_time ? hhmmToMinutes(t.start_time) : null
+    const start = explicit ?? autoPlaced.get(t.id) ?? TL_ANCHOR_MIDDAY
+    return { id:'t-'+t.id, kind:'task', title:t.title, color: t.task_type==='Flow'?C.cyan:t.task_type==='Personal'?C.purple:t.task_type==='Admin'?C.muted:C.amber, start, duration: t.duration_min ?? TL_DEFAULT_DURATION, timed: !!explicit, task:t }
+  })
+  const timedReminders = reminders.map(r => ({ r, min: parseTimeLabel(r.timeLabel) })).filter(x => x.min !== null) as { r: Reminder; min: number }[]
+  const anytimeReminders = reminders.filter(r => parseTimeLabel(r.timeLabel) === null)
+  const reminderBlocks: TLBlock[] = timedReminders.map(({ r, min }) => ({ id:'r-'+r.id, kind:'reminder', title:(r.emoji?r.emoji+' ':'')+r.title, color:r.color, start:min, duration:30, timed:true }))
+  const timedHabits = habits.map(h => ({ h, min: parseTimeLabel(h.timeLabel) })).filter(x => x.min !== null) as { h: HabitBlock; min: number }[]
+  const anytimeHabits = habits.filter(h => parseTimeLabel(h.timeLabel) === null)
+  const habitBlocks: TLBlock[] = timedHabits.map(({ h, min }) => ({ id:'h-'+h.id, kind:'habit', title:(h.emoji?h.emoji+' ':'')+h.title, color:h.color, start:min, duration:30, timed:true }))
+
+  const laidOut = layoutTimelineBlocks([...taskBlocks, ...reminderBlocks, ...habitBlocks])
+  const hours = Array.from({ length: Math.ceil((TL_END_MIN - TL_START_MIN) / 60) + 1 }, (_, i) => TL_START_MIN + i * 60)
+  const gridHeight = (TL_END_MIN - TL_START_MIN) * TL_PX_PER_MIN
+  const anytimeItems = [...anytimeReminders.map(r => ({ kind:'reminder' as const, r })), ...anytimeHabits.map(h => ({ kind:'habit' as const, h }))]
+
+  const dow = new Date(date+'T12:00:00').getDay()
+  const dayName = DAY_ABBR[dow]
+  const dayNum = parseInt(date.split('-')[2])
+
+  return (
+    <div style={{ flex:'1 1 160px', minWidth:'160px', maxWidth:'260px', display:'flex', flexDirection:'column', border:'1px solid '+(isToday?'rgba(0,212,255,0.25)':C.border), borderRadius:'0.75rem', overflow:'hidden' }}>
+      <div style={{ textAlign:'center', padding:'0.4rem 0', borderBottom:'1px solid '+C.border, flexShrink:0 }}>
+        <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 0.1rem', color:isToday?C.cyan:C.sec }}>{dayName}</p>
+        <p style={{ fontSize:'1.1rem', fontWeight:900, margin:0, color:isToday?C.cyan:C.text }}>{dayNum}</p>
+      </div>
+      {anytimeItems.length > 0 && (
+        <div style={{ padding:'0.3rem 0.4rem', borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.015)', display:'flex', flexDirection:'column', gap:'0.2rem' }}>
+          {anytimeItems.map((it, i) => it.kind === 'reminder' ? (
+            <div key={'ar'+i} onClick={() => onOpenReminder(it.r)}
+              onMouseEnter={e => onHoverGeneric(e, it.r.color, (it.r.emoji?it.r.emoji+' ':'')+it.r.title, [describeRecurrence(it.r.recurrence) + ' · Anytime'])}
+              onMouseLeave={onHoverEnd}
+              style={{ display:'flex', alignItems:'center', gap:'0.25rem', padding:'0.12rem 0.3rem', borderRadius:'0.3rem', background:it.r.color+'18', border:'1px solid '+it.r.color+'40', cursor:'pointer' }}>
+              <span style={{ fontSize:'0.58rem', fontWeight:600, color:it.r.color, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{(it.r.emoji?it.r.emoji+' ':'')+it.r.title}</span>
+            </div>
+          ) : (
+            <div key={'ah'+i} onClick={() => onOpenHabit(it.h)}
+              onMouseEnter={e => onHoverGeneric(e, it.h.color, (it.h.emoji?it.h.emoji+' ':'')+it.h.title, ['Anytime'])}
+              onMouseLeave={onHoverEnd}
+              style={{ display:'flex', alignItems:'center', gap:'0.25rem', padding:'0.12rem 0.3rem', borderRadius:'0.3rem', background:it.h.color+'18', border:'1px solid '+it.h.color+'40', cursor:'pointer' }}>
+              <span style={{ fontSize:'0.58rem', fontWeight:600, color:it.h.color, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{(it.h.emoji?it.h.emoji+' ':'')+it.h.title}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ flex:1, overflowY:'auto', position:'relative' }}>
+        <div style={{ position:'relative', height:gridHeight }}>
+          {hours.map(h => (
+            <div key={h} style={{ position:'absolute', top:(h-TL_START_MIN)*TL_PX_PER_MIN, left:0, right:0, borderTop:'1px solid '+C.border+'88', display:'flex' }}>
+              <span style={{ fontSize:'0.53rem', color:C.muted, transform:'translateY(-6px)', paddingLeft:'2px', background:C.bg }}>{fmtHour12(h)}</span>
+            </div>
+          ))}
+          <div style={{ position:'absolute', left:'26px', right:0, top:0, bottom:0 }}>
+            {laidOut.map(b => (
+              <TimelineBlock
+                key={b.id}
+                block={b}
+                onCommit={b.kind === 'task' && b.task ? (start, duration) => onCommitTask(b.task!, start, duration) : undefined}
+                onOpen={() => b.kind === 'task' && b.task ? onOpenTask(b.task) : undefined}
+                onHover={e => b.kind === 'task' && b.task ? onHoverTask(e, b.task) : onHoverGeneric(e, b.color, b.title, [fmtHour12(b.start) + ' · ' + b.duration + 'min'])}
+                onHoverEnd={onHoverEnd}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function QuickAdd({ date, onSave, onClose }: { date: string; onSave: (title: string, type: string) => void; onClose: () => void }) {
   const [title, setTitle] = useState('')
   const [type, setType] = useState('Flow')
@@ -218,6 +497,12 @@ export default function CalendarPage() {
   const today = new Date()
   const todayStr = toDateStr(today)
   const [weekStart, setWeekStart] = useState(() => getMondayOfWeek(today))
+  // How many day columns to show at once (1-7). Nav buttons step by this
+  // amount so "next" always lands on the day right after the visible range.
+  const [viewDays, setViewDays] = useState(7)
+  // 'list' = existing section-grouped cards. 'timeline' = hourly grid where
+  // items are placed by time-of-day and can be dragged to reschedule.
+  const [dayViewMode, setDayViewMode] = useState<'list' | 'timeline'>('list')
   const [weekTasks, setWeekTasks] = useState<Record<string, Task[]>>({})
   const [loading, setLoading] = useState(false)
   const [orgPlan, setOrgPlan] = useState<OrgMove[] | null>(null)
@@ -233,6 +518,15 @@ export default function CalendarPage() {
   const [planSettings, setPlanSettings] = useState<DailyPlanSettings | null>(null)
   const [planGenerating, setPlanGenerating] = useState(false)
   const [planResult, setPlanResult] = useState<string | null>(null)
+  // Recommend for Tomorrow — same weighted-plan engine, but gathered as a
+  // checkable review list first (nothing is written until Confirm), and on
+  // confirm the day also gets auto time-blocked (organised), not just filled.
+  const [showRecModal, setShowRecModal] = useState(false)
+  const [recCandidates, setRecCandidates] = useState<(PlanCandidate & { checked: boolean })[] | null>(null)
+  const [recLoading, setRecLoading] = useState(false)
+  const [recCommitting, setRecCommitting] = useState(false)
+  const [recResult, setRecResult] = useState<string | null>(null)
+  const recDate = toDateStr(addDays(today, 1))
   // Task editing
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -286,7 +580,7 @@ export default function CalendarPage() {
   for (let i = 1; i <= daysInMonth; i++) calCells.push({ day: i, cur: true })
   let nextMonthDay = 1
   while (calCells.length < 42) calCells.push({ day: nextMonthDay++, cur: false })
-  const weekDates = Array.from({ length: 7 }, (_, i) => toDateStr(addDays(weekStart, i)))
+  const weekDates = Array.from({ length: viewDays }, (_, i) => toDateStr(addDays(weekStart, i)))
 
   const fetchWeek = useCallback(async () => {
     setLoading(true)
@@ -375,6 +669,64 @@ export default function CalendarPage() {
     setPlanGenerating(false)
   }
 
+  // Auto-organise: give every task on `date` that has no explicit start_time
+  // a real, persisted slot (Flow -> morning, Personal/Admin -> evening,
+  // everything else -> midday, stacked in is_frog-first order) so the day
+  // shows up already time-blocked on the Timeline view, not just a list.
+  async function organiseDayTimeBlocks(date: string): Promise<number> {
+    const { data } = await supabase.from('master_tasks').select('*').eq('due_date', date).neq('archived', true).neq('status', 'Done')
+    const dayTasks = (data ?? []) as Task[]
+    const placements = autoPlaceTasks(dayTasks)
+    const toUpdate = dayTasks.filter(t => !t.start_time && placements.has(t.id))
+    await Promise.all(toUpdate.map(t =>
+      supabase.from('master_tasks').update({
+        start_time: minutesToHHMM(placements.get(t.id)!),
+        duration_min: t.duration_min ?? TL_DEFAULT_DURATION,
+      }).eq('id', t.id)
+    ))
+    return toUpdate.length
+  }
+
+  async function openRecommendModal() {
+    setShowRecModal(true)
+    setRecResult(null)
+    setRecLoading(true)
+    try {
+      const candidates = await getDailyPlanCandidates(recDate)
+      setRecCandidates(candidates.map(c => ({ ...c, checked: true })))
+    } catch (e) {
+      setRecResult('Failed to load recommendations: ' + String(e))
+      setRecCandidates([])
+    }
+    setRecLoading(false)
+  }
+
+  function toggleRecCandidate(key: string) {
+    setRecCandidates(prev => prev ? prev.map(c => c.key === key ? { ...c, checked: !c.checked } : c) : prev)
+  }
+  function selectAllRec(val: boolean) {
+    setRecCandidates(prev => prev ? prev.map(c => ({ ...c, checked: val })) : prev)
+  }
+
+  async function confirmRecommend() {
+    if (!recCandidates) return
+    const selected = recCandidates.filter(c => c.checked)
+    setRecCommitting(true)
+    try {
+      const { created, scheduled } = await commitDailyPlan(recDate, selected)
+      const organised = await organiseDayTimeBlocks(recDate)
+      setRecResult(
+        created + scheduled === 0
+          ? 'Nothing selected — check at least one recommendation, or add priority items in Vault/Tasks/Etsy/X first.'
+          : `Added ${created} new task${created !== 1 ? 's' : ''} and scheduled ${scheduled} from your backlog for tomorrow, and time-blocked ${organised} of them on the Timeline.`
+      )
+      await fetchWeek()
+    } catch (e) {
+      setRecResult('Failed: ' + String(e))
+    }
+    setRecCommitting(false)
+  }
+
   async function handleApply() {
     if (!orgPlan || orgPlan.length === 0) { setOrgPlan(null); return }
     setApplying(true)
@@ -443,7 +795,21 @@ export default function CalendarPage() {
     } catch {}
   }
 
-  function jumpToWeek(day: number) { setWeekStart(getMondayOfWeek(new Date(calYear, calMonth, day))) }
+  // Timeline view — drag-move / drag-resize commits here.
+  async function commitTaskTime(task: Task, startMin: number, durationMin: number) {
+    const start_time = minutesToHHMM(startMin)
+    const date = task.due_date ?? todayStr
+    setWeekTasks(prev => ({
+      ...prev,
+      [date]: (prev[date] ?? []).map(t => t.id === task.id ? { ...t, start_time, duration_min: durationMin } : t),
+    }))
+    try { await supabase.from('master_tasks').update({ start_time, duration_min: durationMin }).eq('id', task.id) } catch {}
+  }
+
+  function jumpToWeek(day: number) {
+    const clicked = new Date(calYear, calMonth, day)
+    setWeekStart(viewDays === 7 ? getMondayOfWeek(clicked) : clicked)
+  }
   function isInCurrentWeek(day: number): boolean { return weekDates.includes(toDateStr(new Date(calYear, calMonth, day))) }
 
   async function handleOrganiseOverdue() {
@@ -699,6 +1065,9 @@ export default function CalendarPage() {
           <button onClick={openPlanModal} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:'0.75rem', color:C.green, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
             <Sparkles size={12} />Weighted Plan
           </button>
+          <button onClick={openRecommendModal} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'linear-gradient(135deg,rgba(0,212,255,0.15),rgba(0,255,136,0.12))', border:'1px solid rgba(0,212,255,0.35)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
+            <Sparkles size={12} />Recommend for Tomorrow
+          </button>
         </div>
       </div>
 
@@ -872,12 +1241,23 @@ export default function CalendarPage() {
 
         {/* Week grid */}
         {calTab === 'calendar' && <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', borderBottom:'1px solid '+C.border, flexShrink:0 }}>
-            <button onClick={() => setWeekStart(w => getMondayOfWeek(addDays(w, -7)))} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronLeft size={16} /></button>
-            <span style={{ fontWeight:700, fontSize:'0.9rem', color:C.text, flex:1 }}>{fmtWeekRange(weekStart)}</span>
-            <button onClick={() => setWeekStart(w => getMondayOfWeek(addDays(w, 7)))} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronRight size={16} /></button>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', borderBottom:'1px solid '+C.border, flexShrink:0, flexWrap:'wrap' }}>
+            <button onClick={() => setWeekStart(w => addDays(w, -viewDays))} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronLeft size={16} /></button>
+            <span style={{ fontWeight:700, fontSize:'0.9rem', color:C.text, flex:1 }}>{fmtWeekRange(weekStart, viewDays)}</span>
+            <button onClick={() => setWeekStart(w => addDays(w, viewDays))} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronRight size={16} /></button>
+            <div style={{ display:'flex', gap:'2px', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'2px' }}>
+              {[1,2,3,4,5,6,7].map(n => (
+                <button key={n} onClick={() => setViewDays(n)} title={n + ' day' + (n===1?'':'s')} style={{ width:'22px', height:'24px', display:'flex', alignItems:'center', justifyContent:'center', background:viewDays===n?C.cyan:'transparent', border:'none', borderRadius:'0.35rem', color:viewDays===n?'#000':C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:700 }}>{n}</button>
+              ))}
+            </div>
+            <div style={{ display:'flex', gap:'2px', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'2px' }}>
+              {(['list','timeline'] as const).map(m => (
+                <button key={m} onClick={() => setDayViewMode(m)} style={{ padding:'0.3rem 0.6rem', background:dayViewMode===m?C.cyan:'transparent', border:'none', borderRadius:'0.35rem', color:dayViewMode===m?'#000':C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:700, textTransform:'capitalize' }}>{m}</button>
+              ))}
+            </div>
           </div>
 
+          {dayViewMode === 'list' ? (
           <div style={{ flex:1, display:'flex', overflowX:'auto', overflowY:'hidden', padding:'0.75rem', gap:'0.5rem' }}>
             {weekDates.map(date => {
               const tasks = weekTasks[date] ?? []
@@ -984,6 +1364,33 @@ export default function CalendarPage() {
               )
             })}
           </div>
+          ) : (
+          <div style={{ flex:1, display:'flex', overflowX:'auto', overflowY:'hidden', padding:'0.75rem', gap:'0.5rem' }}>
+            {weekDates.map(date => {
+              const tasks = weekTasks[date] ?? []
+              const dow = new Date(date+'T12:00:00').getDay()
+              const dateReminders = reminders.filter(r => reminderOccursOn(r, date))
+              const dateHabits = habits.filter(h => h.days.includes(dow))
+              return (
+                <TimelineDay
+                  key={date}
+                  date={date}
+                  tasks={tasks}
+                  reminders={dateReminders}
+                  habits={dateHabits}
+                  isToday={date === todayStr}
+                  onCommitTask={commitTaskTime}
+                  onOpenTask={openEdit}
+                  onOpenReminder={openReminderForm}
+                  onOpenHabit={openHabitForm}
+                  onHoverTask={handleTaskHover}
+                  onHoverGeneric={showTip}
+                  onHoverEnd={hideTip}
+                />
+              )
+            })}
+          </div>
+          )}
         </div>}
       </div>
 
@@ -1145,6 +1552,58 @@ export default function CalendarPage() {
               <button onClick={() => setShowPlanModal(false)} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Close</button>
               <button onClick={runGeneratePlan} disabled={planGenerating} style={{ padding:'0.5rem 1.25rem', background:'linear-gradient(135deg,'+C.green+',#00cc6a)', border:'none', borderRadius:'0.625rem', color:'#000', fontWeight:700, cursor:planGenerating?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', opacity:planGenerating?0.6:1 }}>
                 {planGenerating ? 'Generating...' : 'Generate Plan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recommend for Tomorrow — review then commit + auto time-block */}
+      {showRecModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60, padding:'1rem' }}>
+          <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem', width:'100%', maxWidth:'30rem', maxHeight:'85vh', overflowY:'auto', position:'relative' }}>
+            <button onClick={() => { setShowRecModal(false); setRecCandidates(null) }} style={{ position:'absolute', top:'1rem', right:'1rem', background:'none', border:'none', color:C.muted, cursor:'pointer' }}><X size={16} /></button>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.35rem' }}>
+              <Sparkles size={16} color={C.cyan} />
+              <h2 style={{ margin:0, fontSize:'1rem', fontWeight:800, color:C.text }}>Recommend for Tomorrow</h2>
+            </div>
+            <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 1rem', lineHeight:1.5 }}>
+              Top-priority items from Vault, Tasks, Etsy, X and your pinned YouTube videos — review and uncheck anything you don&apos;t want. Confirming adds the checked items to <strong style={{ color:C.text }}>{recDate}</strong> and auto time-blocks the whole day on the Timeline (Flow &rarr; morning, Personal/Admin &rarr; evening).
+            </p>
+
+            {recLoading ? (
+              <p style={{ fontSize:'0.8rem', color:C.muted, textAlign:'center', padding:'1.5rem 0' }}>Loading recommendations...</p>
+            ) : recCandidates && recCandidates.length > 0 ? (
+              <>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.5rem' }}>
+                  <span style={{ fontSize:'0.68rem', color:C.muted }}>{recCandidates.filter(c=>c.checked).length}/{recCandidates.length} selected</span>
+                  <div style={{ display:'flex', gap:'0.5rem' }}>
+                    <button onClick={() => selectAllRec(true)} style={{ fontSize:'0.65rem', color:C.cyan, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', fontWeight:700 }}>Select all</button>
+                    <button onClick={() => selectAllRec(false)} style={{ fontSize:'0.65rem', color:C.muted, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', fontWeight:700 }}>Clear</button>
+                  </div>
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem', marginBottom:'1rem' }}>
+                  {recCandidates.map(c => (
+                    <label key={c.key} style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.45rem 0.6rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', cursor:'pointer' }}>
+                      <input type="checkbox" checked={c.checked} onChange={() => toggleRecCandidate(c.key)} style={{ width:'0.9rem', height:'0.9rem', flexShrink:0 }} />
+                      <span style={{ fontSize:'0.6rem', fontWeight:700, color:C.cyan, textTransform:'uppercase', letterSpacing:'0.05em', flexShrink:0, width:'3.5rem' }}>{SECTION_LABEL[c.section]}</span>
+                      <span style={{ fontSize:'0.78rem', color:C.text, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.title}</span>
+                      <span style={{ fontSize:'0.62rem', color:C.muted, flexShrink:0 }}>{c.minutes}m</span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p style={{ fontSize:'0.8rem', color:C.muted, textAlign:'center', padding:'1.5rem 0', lineHeight:1.5 }}>No recommendations found — add priority items in Vault/Tasks/Etsy/X, or pin YouTube videos in the Content Pipeline, then try again.</p>
+            )}
+
+            {recResult && <p style={{ fontSize:'0.75rem', color:recResult.startsWith('Failed') ? C.red : C.green, margin:'0 0 0.875rem', lineHeight:1.4 }}>{recResult}</p>}
+
+            <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end' }}>
+              <button onClick={() => { setShowRecModal(false); setRecCandidates(null) }} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Close</button>
+              <button onClick={confirmRecommend} disabled={recCommitting || recLoading || !recCandidates || recCandidates.filter(c=>c.checked).length===0}
+                style={{ padding:'0.5rem 1.25rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.625rem', color:'#000', fontWeight:700, cursor:(recCommitting||recLoading)?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', opacity:(recCommitting||recLoading||!recCandidates||recCandidates.filter(c=>c.checked).length===0)?0.5:1 }}>
+                {recCommitting ? 'Organising...' : 'Confirm & Organise'}
               </button>
             </div>
           </div>

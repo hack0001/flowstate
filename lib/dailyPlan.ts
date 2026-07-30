@@ -56,7 +56,7 @@ export async function saveDailyPlanSettings(s: DailyPlanSettings): Promise<void>
 
 // ---- Section adapters — each returns ranked candidate blocks, not yet persisted ----
 
-type Draft = { section: DailyPlanSection; source_id: string | null; title: string; minutes: number }
+export type Draft = { section: DailyPlanSection; source_id: string | null; title: string; minutes: number }
 
 async function pullYoutube(budget: number): Promise<Draft[]> {
   if (budget <= 0) return []
@@ -145,12 +145,16 @@ async function pullEtsy(budget: number): Promise<Draft[]> {
 
 export type GeneratePlanResult = { created: number; scheduled: number }
 
-// Writes the weighted plan for `date` directly into master_tasks:
-//  - Tasks picks: existing backlog tasks get due_date = date (update)
-//  - Everything else: new master_tasks rows tagged source_section/source_id
-//    (skipped if an active task for that source_id already exists, so
-//    regenerating — or generating for a different day — doesn't duplicate)
-export async function generateDailyPlan(date: string): Promise<GeneratePlanResult> {
+// A single reviewable recommendation — same shape as the internal Draft,
+// plus a stable key (source_id isn't always present) so the review UI can
+// track checked/unchecked state per candidate.
+export type PlanCandidate = Draft & { key: string }
+
+// Gathers the weighted candidate list for `date` WITHOUT writing anything —
+// used by the "Recommend for Tomorrow" review step so the person can see
+// and uncheck items before anything lands on the calendar.
+export async function getDailyPlanCandidates(date: string): Promise<PlanCandidate[]> {
+  void date // budgets/ranking are day-agnostic today; kept for a future per-weekday tune
   const settings = await getDailyPlanSettings()
   const budgets: Record<DailyPlanSection, number> = {
     youtube: Math.round(settings.total_minutes * settings.pct_youtube / 100),
@@ -159,7 +163,6 @@ export async function generateDailyPlan(date: string): Promise<GeneratePlanResul
     x: Math.round(settings.total_minutes * settings.pct_x / 100),
     vault: Math.round(settings.total_minutes * settings.pct_vault / 100),
   }
-
   const [youtube, etsy, tasks, x, vault] = await Promise.all([
     pullYoutube(budgets.youtube),
     pullEtsy(budgets.etsy),
@@ -167,39 +170,58 @@ export async function generateDailyPlan(date: string): Promise<GeneratePlanResul
     pullX(budgets.x),
     pullVault(budgets.vault),
   ])
+  const all = [...youtube, ...etsy, ...tasks, ...x, ...vault]
+  return all.map((d, i) => ({ ...d, key: d.section + ':' + (d.source_id ?? i) }))
+}
 
-  // Tasks: move existing backlog tasks onto this date.
+// Writes only the SELECTED candidates for `date` into master_tasks:
+//  - Tasks picks: existing backlog tasks get due_date = date (update)
+//  - Everything else: new master_tasks rows tagged source_section/source_id
+//    (skipped if an active task for that source_id already exists, so
+//    re-running doesn't duplicate)
+// Returns the ids of every task affected so the caller can time-block them.
+export async function commitDailyPlan(date: string, selected: PlanCandidate[]): Promise<GeneratePlanResult & { taskIds: string[] }> {
+  const tasks = selected.filter(d => d.section === 'tasks')
+  const others = selected.filter(d => d.section !== 'tasks')
+  const taskIds: string[] = []
+
   let scheduled = 0
   for (const t of tasks) {
     if (!t.source_id) continue
     const { error } = await supabase.from('master_tasks').update({ due_date: date }).eq('id', t.source_id)
-    if (!error) scheduled++
+    if (!error) { scheduled++; taskIds.push(t.source_id) }
   }
 
-  // Everything else: insert new tasks, skipping any source_id that
-  // already has an active (not done, not archived) task somewhere.
-  const toInsert = [...youtube, ...etsy, ...x, ...vault]
   let created = 0
-  if (toInsert.length > 0) {
-    const ids = toInsert.map(d => d.source_id).filter(Boolean) as string[]
-    const { data: existing } = await supabase
-      .from('master_tasks')
-      .select('source_id')
-      .in('source_id', ids)
-      .neq('status', 'Done')
-    const existingIds = new Set((existing ?? []).map((r: { source_id: string | null }) => r.source_id))
-    const rows = toInsert
+  if (others.length > 0) {
+    const ids = others.map(d => d.source_id).filter(Boolean) as string[]
+    const existingIds = new Set<string | null>()
+    if (ids.length > 0) {
+      const { data: existing } = await supabase
+        .from('master_tasks').select('source_id').in('source_id', ids).neq('status', 'Done')
+      for (const r of (existing ?? []) as { source_id: string | null }[]) existingIds.add(r.source_id)
+    }
+    const rows = others
       .filter(d => !d.source_id || !existingIds.has(d.source_id))
       .map(d => ({
         title: d.title, due_date: date, status: 'Not started', task_type: 'Flow',
         source_section: d.section, source_id: d.source_id,
       }))
     if (rows.length > 0) {
-      const { data, error } = await supabase.from('master_tasks').insert(rows).select()
+      const { data, error } = await supabase.from('master_tasks').insert(rows).select('id')
       if (error) throw error
       created = data?.length ?? 0
+      for (const r of (data ?? []) as { id: string }[]) taskIds.push(r.id)
     }
   }
 
+  return { created, scheduled, taskIds }
+}
+
+// Convenience wrapper for the older "Weighted Plan" flow — gathers and
+// commits every candidate in one call, no review step.
+export async function generateDailyPlan(date: string): Promise<GeneratePlanResult> {
+  const candidates = await getDailyPlanCandidates(date)
+  const { created, scheduled } = await commitDailyPlan(date, candidates)
   return { created, scheduled }
 }
