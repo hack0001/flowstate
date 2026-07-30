@@ -21,6 +21,8 @@ type Task = {
   notion_id: string | null; notion_url: string | null; priority: string | null
 }
 
+type HoverTip = { x: number; y: number; color: string; title: string; lines: string[] }
+
 type OrgMove = { id: string; from: string; to: string; title: string }
 type OverdueMove = { id: string; title: string; task_type: string | null; fromDate: string; toDate: string; selected: boolean }
 type HabitBlock = { id: string; title: string; emoji: string; color: string; days: number[]; timeLabel: string }
@@ -148,7 +150,7 @@ function describeRecurrence(rec: ReminderRecurrence): string {
 }
 
 function TaskCard({
-  task, onComplete, onDelete, onDragStart, onEdit, onReschedule,
+  task, onComplete, onDelete, onDragStart, onEdit, onReschedule, onHover, onHoverEnd,
 }: {
   task: Task
   onComplete: (id: string) => void
@@ -156,6 +158,8 @@ function TaskCard({
   onDragStart: (e: React.DragEvent, task: Task) => void
   onEdit: (task: Task) => void
   onReschedule: (task: Task) => void
+  onHover?: (e: React.MouseEvent, task: Task) => void
+  onHoverEnd?: () => void
 }) {
   const [busy, setBusy] = useState(false)
   const [rescheduling, setRescheduling] = useState(false)
@@ -165,6 +169,8 @@ function TaskCard({
       draggable
       onDragStart={e => { e.stopPropagation(); onDragStart(e, task) }}
       onClick={() => onEdit(task)}
+      onMouseEnter={e => onHover?.(e, task)}
+      onMouseLeave={() => onHoverEnd?.()}
       style={{ display:'flex', alignItems:'flex-start', gap:'0.375rem', padding:'0.45rem 0.5rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', marginBottom:'0.3rem', opacity:(busy||rescheduling)?0.5:1, cursor:'pointer' }}>
       <button onClick={e => { e.stopPropagation(); setBusy(true); onComplete(task.id) }}
         style={{ width:'14px', height:'14px', borderRadius:'50%', border:'2px solid '+C.border, background:'transparent', cursor:'pointer', flexShrink:0, marginTop:'2px', padding:0 }} />
@@ -246,6 +252,29 @@ export default function CalendarPage() {
   const [showReminderModal, setShowReminderModal] = useState(false)
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null)
   const [reminderDraft, setReminderDraft] = useState<{ title:string; emoji:string; color:string; startDate:string; recurrence:ReminderRecurrence; timeLabel:string }>({ title:'', emoji:'', color:C.green, startDate:todayStr, recurrence:{ type:'daily' }, timeLabel:'' })
+
+  // Hover tooltip — schedule items (task cards, reminder chips, habit chips)
+  // truncate their title in the compact day column, so hovering shows the
+  // full thing in a small floating chip. Fixed-position so it isn't clipped
+  // by the day column's own scroll/overflow.
+  const [hoverTip, setHoverTip] = useState<HoverTip | null>(null)
+  function showTip(e: React.MouseEvent, color: string, title: string, lines: string[]) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const x = Math.min(rect.left, window.innerWidth - 240)
+    setHoverTip({ x: Math.max(8, x), y: rect.top - 8, color, title, lines })
+  }
+  function hideTip() { setHoverTip(null) }
+  function handleTaskHover(e: React.MouseEvent, task: Task) {
+    const color = task.task_type === 'Flow' ? C.cyan : task.task_type === 'Personal' ? C.purple : task.task_type === 'Admin' ? C.muted : C.amber
+    const lines: string[] = []
+    if (task.is_frog) lines.push('Frog -- top priority today')
+    if (task.task_type) lines.push('Type: ' + task.task_type)
+    if (task.urgency) lines.push('Urgency: ' + task.urgency)
+    if (task.importance) lines.push('Importance: ' + task.importance)
+    if (task.time_commitment) lines.push('Time: ' + task.time_commitment)
+    if (task.why_note) lines.push('Why: ' + task.why_note)
+    showTip(e, color, task.title, lines)
+  }
 
   const calYear = calDate.getFullYear()
   const calMonth = calDate.getMonth()
@@ -883,7 +912,10 @@ export default function CalendarPage() {
                   {reminders.filter(r => reminderOccursOn(r, date)).length > 0 && (
                     <div style={{ marginBottom:'0.4rem', display:'flex', flexDirection:'column', gap:'0.18rem' }}>
                       {reminders.filter(r => reminderOccursOn(r, date)).map(r => (
-                        <div key={r.id} onClick={() => openReminderForm(r)} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.18rem 0.35rem', borderRadius:'0.3rem', background:r.color+'18', border:'1px solid '+r.color+'45', cursor:'pointer' }}>
+                        <div key={r.id} onClick={() => openReminderForm(r)}
+                          onMouseEnter={e => showTip(e, r.color, (r.emoji ? r.emoji + ' ' : '') + r.title, [describeRecurrence(r.recurrence) + (r.timeLabel ? ' - ' + r.timeLabel : '')])}
+                          onMouseLeave={hideTip}
+                          style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.18rem 0.35rem', borderRadius:'0.3rem', background:r.color+'18', border:'1px solid '+r.color+'45', cursor:'pointer' }}>
                           <Bell size={8} color={r.color} style={{ flexShrink:0 }} />
                           {r.emoji && <span style={{ fontSize:'0.72rem', lineHeight:1, flexShrink:0 }}>{r.emoji}</span>}
                           <span style={{ fontSize:'0.6rem', fontWeight:600, color:r.color, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</span>
@@ -896,7 +928,10 @@ export default function CalendarPage() {
                   {habits.filter(h => h.days.includes(dow)).length > 0 && (
                     <div style={{ marginBottom:'0.5rem', display:'flex', flexDirection:'column', gap:'0.2rem' }}>
                       {habits.filter(h => h.days.includes(dow)).map(h => (
-                        <div key={h.id} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.2rem 0.4rem', borderRadius:'0.375rem', background:h.color+'20', border:'1px solid '+h.color+'50' }}>
+                        <div key={h.id}
+                          onMouseEnter={e => showTip(e, h.color, (h.emoji ? h.emoji + ' ' : '') + h.title, [h.days.map(d => DAY_ABBR[d]).join(', ') + (h.timeLabel ? ' - ' + h.timeLabel : '')])}
+                          onMouseLeave={hideTip}
+                          style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.2rem 0.4rem', borderRadius:'0.375rem', background:h.color+'20', border:'1px solid '+h.color+'50' }}>
                           {h.emoji && <span style={{ fontSize:'0.8rem', lineHeight:1, flexShrink:0 }}>{h.emoji}</span>}
                           <span style={{ fontSize:'0.63rem', fontWeight:600, color:h.color, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{h.title}</span>
                           {h.timeLabel && <span style={{ fontSize:'0.55rem', color:h.color, opacity:0.7, flexShrink:0 }}>{h.timeLabel}</span>}
@@ -911,7 +946,7 @@ export default function CalendarPage() {
                       <span style={{ fontSize:'0.58rem', fontWeight:700, color:hasOverflow?C.red:flowTasks.length===2?C.amber:C.muted }}>{Math.min(flowTasks.length,2)}/2{hasOverflow?' !':''}</span>
                     </div>
                     {flowTasks.slice(0,2).map(t => (
-                      <TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} onEdit={openEdit} onReschedule={t => handleReschedule(t, date)} />
+                      <TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} onEdit={openEdit} onReschedule={t => handleReschedule(t, date)} onHover={handleTaskHover} onHoverEnd={hideTip} />
                     ))}
                     {flowTasks.length === 0 && (
                       <div style={{ height:'36px', border:'1px dashed rgba(0,212,255,0.2)', borderRadius:'0.5rem', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -924,13 +959,13 @@ export default function CalendarPage() {
                   {otherTasks.length > 0 && (
                     <div style={{ marginBottom:'0.625rem' }}>
                       <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.amber, margin:'0 0 0.3rem' }}>Tasks</p>
-                      {otherTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} onEdit={openEdit} onReschedule={t => handleReschedule(t, date)} />))}
+                      {otherTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} onEdit={openEdit} onReschedule={t => handleReschedule(t, date)} onHover={handleTaskHover} onHoverEnd={hideTip} />))}
                     </div>
                   )}
 
                   <div style={{ borderTop:'1px solid rgba(139,92,246,0.2)', paddingTop:'0.5rem', marginTop:'auto' }}>
                     <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.purple, margin:'0 0 0.3rem' }}>Evening</p>
-                    {personalTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} onEdit={openEdit} onReschedule={t => handleReschedule(t, date)} />))}
+                    {personalTasks.map(t => (<TaskCard key={t.id} task={t} onComplete={id => handleComplete(id,date)} onDelete={id => handleDelete(id,date)} onDragStart={handleDragStart} onEdit={openEdit} onReschedule={t => handleReschedule(t, date)} onHover={handleTaskHover} onHoverEnd={hideTip} />))}
                     {personalTasks.length === 0 && (
                       <div style={{ height:'32px', border:'1px dashed rgba(139,92,246,0.2)', borderRadius:'0.5rem', display:'flex', alignItems:'center', justifyContent:'center' }}>
                         <span style={{ fontSize:'0.6rem', color:C.muted }}>personal tasks</span>
@@ -1362,6 +1397,21 @@ export default function CalendarPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Hover tooltip — full schedule item, fixed-position so the day column's own overflow can't clip it */}
+      {hoverTip && (
+        <div style={{
+          position:'fixed', left:hoverTip.x, top:hoverTip.y, transform:'translateY(-100%)',
+          zIndex:80, maxWidth:'230px', padding:'0.5rem 0.65rem', borderRadius:'0.5rem',
+          background:C.card, border:'1px solid '+hoverTip.color+'55', boxShadow:'0 8px 20px rgba(0,0,0,0.5)',
+          pointerEvents:'none',
+        }}>
+          <p style={{ margin:'0 0 0.2rem', fontSize:'0.76rem', fontWeight:700, color:hoverTip.color, lineHeight:1.35, wordBreak:'break-word' }}>{hoverTip.title}</p>
+          {hoverTip.lines.map((line, i) => (
+            <p key={i} style={{ margin:'0.1rem 0 0', fontSize:'0.66rem', color:C.sec, lineHeight:1.4, wordBreak:'break-word' }}>{line}</p>
+          ))}
         </div>
       )}
 
