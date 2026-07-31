@@ -10,6 +10,30 @@ const C = {
   red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
 }
 
+// Local-date helpers for the reschedule quick-picks — avoid toISOString's
+// UTC shift, which can land on the wrong day near midnight.
+function toDateStr(d: Date): string {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+}
+function addDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate()+n); return r }
+function addMonths(d: Date, n: number): Date { const r = new Date(d); r.setMonth(r.getMonth()+n); return r }
+
+// Reschedule quick-picks shown in the task modal. "Later this week" and
+// "Next week" assume a Monday-start week (matching the Calendar page);
+// "Next month" / "2 months" are straight date offsets, not month starts.
+function rescheduleOptions(from: Date = new Date()): { label: string; date: string }[] {
+  const dow = from.getDay() // 0=Sun..6=Sat
+  const daysLeftInWeek = dow === 0 ? 0 : 7 - dow
+  const laterThisWeekStep = Math.min(2, Math.max(1, daysLeftInWeek))
+  const daysUntilNextMonday = ((8 - dow) % 7) || 7
+  return [
+    { label: 'Later this week', date: toDateStr(addDays(from, laterThisWeekStep)) },
+    { label: 'Next week', date: toDateStr(addDays(from, daysUntilNextMonday)) },
+    { label: 'Next month', date: toDateStr(addMonths(from, 1)) },
+    { label: '2 months from now', date: toDateStr(addMonths(from, 2)) },
+  ]
+}
+
 const TYPE_META: Record<string, { color: string }> = {
   'Flow':       { color: '#00d4ff' },
   'Personal':   { color: '#8b5cf6' },
@@ -298,6 +322,24 @@ function TaskDrawer({
                 style={{ ...inputStyle, colorScheme:'dark' }}
               />
             </Field>
+          </div>
+
+          <div style={{ marginTop:'-0.65rem', marginBottom:'1rem' }}>
+            <p style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', margin:'0 0 0.4rem' }}>Reschedule</p>
+            <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' as const }}>
+              {rescheduleOptions().map(o => (
+                <button key={o.label} type="button" onClick={() => set('due_date', o.date)}
+                  title={o.date}
+                  style={{
+                    padding:'0.35rem 0.65rem', borderRadius:'0.5rem', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:600, cursor:'pointer',
+                    background: draft.due_date === o.date ? 'rgba(0,212,255,0.12)' : C.card,
+                    border:'1px solid '+(draft.due_date === o.date ? C.cyan : C.border),
+                    color: draft.due_date === o.date ? C.cyan : C.sec,
+                  }}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <Field label="Notion URL">
