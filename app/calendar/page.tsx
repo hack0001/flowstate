@@ -56,9 +56,12 @@ function toDateStr(d: Date): string {
 }
 function addMonths(d: Date, n: number): Date { const r = new Date(d); r.setMonth(r.getMonth()+n); return r }
 
-// Reschedule quick-picks for the Edit Task modal. "Later this week"/"Next
-// week" assume a Monday-start week; "Next month"/"2 months" are straight
-// date offsets from today, not calendar-month starts.
+// Reschedule quick-picks for the Edit Task modal. Offsets are relative to
+// `from` — the task's own current due date, not always today — so
+// rescheduling a task that's already a few weeks out moves further from
+// where it sits rather than snapping back near the present. "Later this
+// week"/"Next week" assume a Monday-start week; "Next month"/"2 months"
+// are straight date offsets, not calendar-month starts.
 function rescheduleOptions(from: Date = new Date()): { label: string; date: string }[] {
   const dow = from.getDay() // 0=Sun..6=Sat
   const daysLeftInWeek = dow === 0 ? 0 : 7 - dow
@@ -1671,7 +1674,7 @@ export default function CalendarPage() {
                 <input type="date" value={editDueDate} onChange={e => setEditDueDate(e.target.value)}
                   style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', colorScheme:'dark' }} />
                 <div style={{ display:'flex', gap:'0.35rem', flexWrap:'wrap', marginTop:'0.5rem' }}>
-                  {rescheduleOptions().map(o => (
+                  {rescheduleOptions(editDueDate ? new Date(editDueDate + 'T12:00:00') : undefined).map(o => (
                     <button key={o.label} onClick={() => setEditDueDate(o.date)} title={o.date}
                       style={{
                         padding:'0.3rem 0.55rem', borderRadius:'0.4rem', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:600, cursor:'pointer',

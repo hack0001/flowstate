@@ -18,9 +18,13 @@ function toDateStr(d: Date): string {
 function addDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate()+n); return r }
 function addMonths(d: Date, n: number): Date { const r = new Date(d); r.setMonth(r.getMonth()+n); return r }
 
-// Reschedule quick-picks shown in the task modal. "Later this week" and
-// "Next week" assume a Monday-start week (matching the Calendar page);
-// "Next month" / "2 months" are straight date offsets, not month starts.
+// Reschedule quick-picks shown in the task modal. Offsets are relative to
+// `from` — the task's own current due date when it has one, falling back
+// to today only for a task with no due date yet — NOT always today, so
+// rescheduling an already-future task moves it further out from where it
+// already sits rather than snapping it back near the present. "Later this
+// week" and "Next week" assume a Monday-start week (matching the Calendar
+// page); "Next month" / "2 months" are straight date offsets, not month starts.
 function rescheduleOptions(from: Date = new Date()): { label: string; date: string }[] {
   const dow = from.getDay() // 0=Sun..6=Sat
   const daysLeftInWeek = dow === 0 ? 0 : 7 - dow
@@ -327,7 +331,7 @@ function TaskDrawer({
           <div style={{ marginTop:'-0.65rem', marginBottom:'1rem' }}>
             <p style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', margin:'0 0 0.4rem' }}>Reschedule</p>
             <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' as const }}>
-              {rescheduleOptions().map(o => (
+              {rescheduleOptions(draft.due_date ? new Date(draft.due_date + 'T12:00:00') : undefined).map(o => (
                 <button key={o.label} type="button" onClick={() => set('due_date', o.date)}
                   title={o.date}
                   style={{
