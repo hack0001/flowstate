@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X, RefreshCw, Bell, Settings2, Sparkles } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X, RefreshCw, Bell, Settings2, Sparkles, ZoomIn, ZoomOut } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { generateDailyPlan, getDailyPlanSettings, saveDailyPlanSettings, getDailyPlanCandidates, commitDailyPlan, SECTION_LABEL, type DailyPlanSettings, type PlanCandidate } from '@/lib/dailyPlan'
 
@@ -72,8 +72,12 @@ function fmtWeekRange(start: Date, days: number = 7): string {
 // commits a real start_time so it stops floating.
 const TL_START_MIN = 6 * 60   // 06:00
 const TL_END_MIN = 23 * 60    // 23:00
-const TL_PX_PER_MIN = 1       // 60px/hour
 const TL_SNAP_MIN = 15
+// Zoom presets (px/minute) — low end shows the whole 06:00-23:00 day in one
+// screen ("all of today's tasks"), high end spreads a single hour out for
+// precise placement ("some in the next hour"). Default sits in the middle.
+const TL_ZOOM_LEVELS = [0.35, 0.55, 0.85, 1.3, 2, 3]
+const TL_DEFAULT_ZOOM_IDX = 2
 const TL_ANCHOR_MORNING = 9 * 60   // Flow
 const TL_ANCHOR_MIDDAY = 13 * 60   // Quick Task / unclassified
 const TL_ANCHOR_EVENING = 19 * 60  // Personal / Admin
@@ -301,9 +305,10 @@ function TaskCard({
 // TL_SNAP_MIN and commit via onCommit on mouse-up; while dragging the block
 // shows a live preview computed from the in-progress delta.
 function TimelineBlock({
-  block, onCommit, onOpen, onHover, onHoverEnd,
+  block, pxPerMin, onCommit, onOpen, onHover, onHoverEnd,
 }: {
   block: TLBlock & { lane: number; lanes: number }
+  pxPerMin: number
   onCommit?: (startMin: number, durationMin: number) => void
   onOpen?: () => void
   onHover?: (e: React.MouseEvent) => void
@@ -316,7 +321,7 @@ function TimelineBlock({
     if (!drag) return
     const startY = drag.startY
     function onMove(e: MouseEvent) {
-      const rawDelta = (e.clientY - startY) / TL_PX_PER_MIN
+      const rawDelta = (e.clientY - startY) / pxPerMin
       const snapped = Math.round(rawDelta / TL_SNAP_MIN) * TL_SNAP_MIN
       setDrag(d => (d ? { ...d, deltaMin: snapped } : d))
     }
@@ -337,12 +342,12 @@ function TimelineBlock({
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-  }, [drag, onCommit, block.start, block.duration])
+  }, [drag, onCommit, block.start, block.duration, pxPerMin])
 
   const liveStart = drag?.mode === 'move' ? Math.min(TL_END_MIN - 10, Math.max(TL_START_MIN, block.start + drag.deltaMin)) : block.start
   const liveDuration = drag?.mode === 'resize' ? Math.max(TL_SNAP_MIN, block.duration + drag.deltaMin) : block.duration
-  const top = (liveStart - TL_START_MIN) * TL_PX_PER_MIN
-  const height = Math.max(16, liveDuration * TL_PX_PER_MIN)
+  const top = (liveStart - TL_START_MIN) * pxPerMin
+  const height = Math.max(16, liveDuration * pxPerMin)
   const widthPct = 100 / block.lanes
   const leftPct = block.lane * widthPct
 
@@ -381,7 +386,7 @@ function TimelineBlock({
 // out by time with lane-splitting for overlaps, plus an "Anytime" strip
 // above the grid for reminders/habits with no parseable time.
 function TimelineDay({
-  date, tasks, reminders, habits, isToday,
+  date, tasks, reminders, habits, isToday, pxPerMin,
   onCommitTask, onOpenTask, onOpenReminder, onOpenHabit, onHoverTask, onHoverGeneric, onHoverEnd,
 }: {
   date: string
@@ -389,6 +394,7 @@ function TimelineDay({
   reminders: Reminder[]
   habits: HabitBlock[]
   isToday: boolean
+  pxPerMin: number
   onCommitTask: (task: Task, startMin: number, durationMin: number) => void
   onOpenTask: (task: Task) => void
   onOpenReminder: (r: Reminder) => void
@@ -412,7 +418,7 @@ function TimelineDay({
 
   const laidOut = layoutTimelineBlocks([...taskBlocks, ...reminderBlocks, ...habitBlocks])
   const hours = Array.from({ length: Math.ceil((TL_END_MIN - TL_START_MIN) / 60) + 1 }, (_, i) => TL_START_MIN + i * 60)
-  const gridHeight = (TL_END_MIN - TL_START_MIN) * TL_PX_PER_MIN
+  const gridHeight = (TL_END_MIN - TL_START_MIN) * pxPerMin
   const anytimeItems = [...anytimeReminders.map(r => ({ kind:'reminder' as const, r })), ...anytimeHabits.map(h => ({ kind:'habit' as const, h }))]
 
   const dow = new Date(date+'T12:00:00').getDay()
@@ -420,7 +426,7 @@ function TimelineDay({
   const dayNum = parseInt(date.split('-')[2])
 
   return (
-    <div style={{ flex:'1 1 160px', minWidth:'160px', maxWidth:'260px', display:'flex', flexDirection:'column', border:'1px solid '+(isToday?'rgba(0,212,255,0.25)':C.border), borderRadius:'0.75rem', overflow:'hidden' }}>
+    <div style={{ flex:'1 1 160px', minWidth:'160px', maxWidth:'260px', display:'flex', flexDirection:'column', border:'1px solid '+(isToday?'rgba(0,212,255,0.25)':C.border), borderRadius:'0.75rem' }}>
       <div style={{ textAlign:'center', padding:'0.4rem 0', borderBottom:'1px solid '+C.border, flexShrink:0 }}>
         <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 0.1rem', color:isToday?C.cyan:C.sec }}>{dayName}</p>
         <p style={{ fontSize:'1.1rem', fontWeight:900, margin:0, color:isToday?C.cyan:C.text }}>{dayNum}</p>
@@ -444,10 +450,10 @@ function TimelineDay({
           ))}
         </div>
       )}
-      <div style={{ flex:1, overflowY:'auto', position:'relative' }}>
+      <div style={{ position:'relative', flexShrink:0 }}>
         <div style={{ position:'relative', height:gridHeight }}>
           {hours.map(h => (
-            <div key={h} style={{ position:'absolute', top:(h-TL_START_MIN)*TL_PX_PER_MIN, left:0, right:0, borderTop:'1px solid '+C.border+'88', display:'flex' }}>
+            <div key={h} style={{ position:'absolute', top:(h-TL_START_MIN)*pxPerMin, left:0, right:0, borderTop:'1px solid '+C.border+'88', display:'flex' }}>
               <span style={{ fontSize:'0.53rem', color:C.muted, transform:'translateY(-6px)', paddingLeft:'2px', background:C.bg }}>{fmtHour12(h)}</span>
             </div>
           ))}
@@ -456,6 +462,7 @@ function TimelineDay({
               <TimelineBlock
                 key={b.id}
                 block={b}
+                pxPerMin={pxPerMin}
                 onCommit={b.kind === 'task' && b.task ? (start, duration) => onCommitTask(b.task!, start, duration) : undefined}
                 onOpen={() => b.kind === 'task' && b.task ? onOpenTask(b.task) : undefined}
                 onHover={e => b.kind === 'task' && b.task ? onHoverTask(e, b.task) : onHoverGeneric(e, b.color, b.title, [fmtHour12(b.start) + ' · ' + b.duration + 'min'])}
@@ -503,6 +510,10 @@ export default function CalendarPage() {
   // 'list' = existing section-grouped cards. 'timeline' = hourly grid where
   // items are placed by time-of-day and can be dragged to reschedule.
   const [dayViewMode, setDayViewMode] = useState<'list' | 'timeline'>('list')
+  // Timeline zoom — index into TL_ZOOM_LEVELS. Zoom out to see the whole
+  // day's tasks at a glance, zoom in to space out the next hour or so.
+  const [tlZoomIdx, setTlZoomIdx] = useState(TL_DEFAULT_ZOOM_IDX)
+  const tlPxPerMin = TL_ZOOM_LEVELS[tlZoomIdx]
   const [weekTasks, setWeekTasks] = useState<Record<string, Task[]>>({})
   const [loading, setLoading] = useState(false)
   const [orgPlan, setOrgPlan] = useState<OrgMove[] | null>(null)
@@ -1255,10 +1266,17 @@ export default function CalendarPage() {
                 <button key={m} onClick={() => setDayViewMode(m)} style={{ padding:'0.3rem 0.6rem', background:dayViewMode===m?C.cyan:'transparent', border:'none', borderRadius:'0.35rem', color:dayViewMode===m?'#000':C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:700, textTransform:'capitalize' }}>{m}</button>
               ))}
             </div>
+            {dayViewMode === 'timeline' && (
+              <div style={{ display:'flex', alignItems:'center', gap:'2px', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'2px' }}>
+                <button onClick={() => setTlZoomIdx(i => Math.max(0, i - 1))} disabled={tlZoomIdx === 0} title="Zoom out — see more of the day at once" style={{ width:'24px', height:'24px', display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'none', borderRadius:'0.35rem', color:tlZoomIdx===0?C.muted:C.sec, cursor:tlZoomIdx===0?'not-allowed':'pointer', opacity:tlZoomIdx===0?0.4:1 }}><ZoomOut size={13} /></button>
+                <span style={{ fontSize:'0.62rem', color:C.muted, width:'2.2rem', textAlign:'center' }}>{Math.round(tlPxPerMin * 60)}px/hr</span>
+                <button onClick={() => setTlZoomIdx(i => Math.min(TL_ZOOM_LEVELS.length - 1, i + 1))} disabled={tlZoomIdx === TL_ZOOM_LEVELS.length - 1} title="Zoom in — space out the next hour" style={{ width:'24px', height:'24px', display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'none', borderRadius:'0.35rem', color:tlZoomIdx===TL_ZOOM_LEVELS.length-1?C.muted:C.sec, cursor:tlZoomIdx===TL_ZOOM_LEVELS.length-1?'not-allowed':'pointer', opacity:tlZoomIdx===TL_ZOOM_LEVELS.length-1?0.4:1 }}><ZoomIn size={13} /></button>
+              </div>
+            )}
           </div>
 
           {dayViewMode === 'list' ? (
-          <div style={{ flex:1, display:'flex', overflowX:'auto', overflowY:'hidden', padding:'0.75rem', gap:'0.5rem' }}>
+          <div style={{ flex:1, display:'flex', overflow:'auto', padding:'0.75rem', gap:'0.5rem' }}>
             {weekDates.map(date => {
               const tasks = weekTasks[date] ?? []
               const flowTasks = tasks.filter(t => t.task_type === 'Flow')
@@ -1276,7 +1294,7 @@ export default function CalendarPage() {
                   onDragOver={e => handleDragOver(e, date)}
                   onDragLeave={() => setDragOverDate(null)}
                   onDrop={e => handleDrop(e, date)}
-                  style={{ flex:'1 1 140px', minWidth:'140px', maxWidth:'220px', display:'flex', flexDirection:'column', overflowY:'auto', borderRadius:'0.75rem', border:'1px solid '+(isDragOver?C.cyan:isToday?'rgba(0,212,255,0.25)':C.border), padding:'0.625rem', background:isDragOver?'rgba(0,212,255,0.04)':isWeekend?'rgba(255,255,255,0.01)':'transparent', transition:'border-color 0.15s, background 0.15s' }}>
+                  style={{ flex:'1 1 140px', minWidth:'140px', maxWidth:'220px', display:'flex', flexDirection:'column', borderRadius:'0.75rem', border:'1px solid '+(isDragOver?C.cyan:isToday?'rgba(0,212,255,0.25)':C.border), padding:'0.625rem', background:isDragOver?'rgba(0,212,255,0.04)':isWeekend?'rgba(255,255,255,0.01)':'transparent', transition:'border-color 0.15s, background 0.15s' }}>
                   <div
                     style={{ textAlign:'center', marginBottom:'0.5rem', paddingBottom:'0.5rem', borderBottom:'1px solid '+C.border, transition:'border-color 0.2s' }}>
                     <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 0.1rem', color:isToday?C.cyan:isWeekend?C.muted:C.sec }}>{dayName}</p>
@@ -1365,7 +1383,7 @@ export default function CalendarPage() {
             })}
           </div>
           ) : (
-          <div style={{ flex:1, display:'flex', overflowX:'auto', overflowY:'hidden', padding:'0.75rem', gap:'0.5rem' }}>
+          <div style={{ flex:1, display:'flex', overflow:'auto', padding:'0.75rem', gap:'0.5rem', alignItems:'flex-start' }}>
             {weekDates.map(date => {
               const tasks = weekTasks[date] ?? []
               const dow = new Date(date+'T12:00:00').getDay()
@@ -1379,6 +1397,7 @@ export default function CalendarPage() {
                   reminders={dateReminders}
                   habits={dateHabits}
                   isToday={date === todayStr}
+                  pxPerMin={tlPxPerMin}
                   onCommitTask={commitTaskTime}
                   onOpenTask={openEdit}
                   onOpenReminder={openReminderForm}
