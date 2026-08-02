@@ -103,12 +103,41 @@ function calcStreakFromDates(dates: string[]): number {
 }
 
 // ---- Today / Tomorrow adjustable lists ----
-// Self-contained widget: pulls master_tasks due today/tomorrow, orders them
-// against the SAME 'tasks_priority' list the /tasks page drag-reorders, so
-// reordering here moves the task's real priority everywhere -- that's the
-// "sync with others" behaviour. Complete/add write straight to Supabase so
-// it's cross-device like everything else on this page.
-type HomeTask = { id: string; title: string; status: string; due_date: string | null; is_frog: boolean }
+// Pulls straight from master_tasks the same way Calendar does (due_date +
+// start_time/duration_min), and orders each day by start_time first --
+// Calendar is where that time actually gets set, so this list reflects
+// whatever's been organised there rather than keeping its own order.
+// Tasks with no time yet fall back to the shared 'tasks_priority' order
+// (same list /tasks drag-reorders) so reordering here still syncs. Complete
+// / add / reschedule all write straight to Supabase -- cross-device.
+type HomeTask = { id: string; title: string; status: string; due_date: string | null; is_frog: boolean; start_time: string | null; duration_min: number | null }
+
+function homeAddDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate() + n); return r }
+function homeAddMonths(d: Date, n: number): Date { const r = new Date(d); r.setMonth(r.getMonth() + n); return r }
+
+// Same quick-pick logic as Calendar/Tasks reschedule buttons -- offsets are
+// relative to the task's own current due date, never "today".
+function rescheduleOptions(from: Date): { label: string; date: string }[] {
+  const dow = from.getDay()
+  const daysLeftInWeek = dow === 0 ? 0 : 7 - dow
+  const laterThisWeekStep = Math.min(2, Math.max(1, daysLeftInWeek))
+  const daysUntilNextMonday = ((8 - dow) % 7) || 7
+  return [
+    { label: 'Later this week', date: toDateStr(homeAddDays(from, laterThisWeekStep)) },
+    { label: 'Next week', date: toDateStr(homeAddDays(from, daysUntilNextMonday)) },
+    { label: 'Next month', date: toDateStr(homeAddMonths(from, 1)) },
+    { label: '2 months', date: toDateStr(homeAddMonths(from, 2)) },
+  ]
+}
+
+function fmtTimeLabel(hhmm: string | null): string | null {
+  if (!hhmm) return null
+  const [h, m] = hhmm.split(':').map(Number)
+  if (Number.isNaN(h)) return null
+  const period = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return h12 + ':' + String(m).padStart(2, '0') + ' ' + period
+}
 
 function TodayTomorrowLists() {
   const todayStr = toDateStr(new Date())
@@ -120,10 +149,11 @@ function TodayTomorrowLists() {
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [addingFor, setAddingFor] = useState<'today' | 'tomorrow' | null>(null)
   const [addText, setAddText] = useState('')
+  const [rescheduleId, setRescheduleId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const [{ data: taskData }, { data: pdata }] = await Promise.all([
-      supabase.from('master_tasks').select('id,title,status,due_date,is_frog')
+      supabase.from('master_tasks').select('id,title,status,due_date,is_frog,start_time,duration_min')
         .in('due_date', [todayStr, tomorrowStr]).neq('archived', true),
       supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').maybeSingle(),
     ])
@@ -134,8 +164,16 @@ function TodayTomorrowLists() {
 
   useEffect(() => { load() }, [load])
 
-  function sortByOrder(list: HomeTask[]) {
+  // Calendar-driven ordering: whatever has a start_time (set on Calendar's
+  // Timeline) leads, earliest first; anything not yet time-blocked falls
+  // back to the shared priority order.
+  function sortByCalendar(list: HomeTask[]) {
     return [...list].sort((a, b) => {
+      const at = a.start_time ? Number(a.start_time.slice(0,2)) * 60 + Number(a.start_time.slice(3,5)) : null
+      const bt = b.start_time ? Number(b.start_time.slice(0,2)) * 60 + Number(b.start_time.slice(3,5)) : null
+      if (at !== null && bt !== null) return at - bt
+      if (at !== null) return -1
+      if (bt !== null) return 1
       const ai = order.indexOf(a.id), bi = order.indexOf(b.id)
       if (ai === -1 && bi === -1) return 0
       if (ai === -1) return 1
@@ -144,8 +182,8 @@ function TodayTomorrowLists() {
     })
   }
 
-  const todayTasks = sortByOrder(tasks.filter(t => t.due_date === todayStr))
-  const tomorrowTasks = sortByOrder(tasks.filter(t => t.due_date === tomorrowStr))
+  const todayTasks = sortByCalendar(tasks.filter(t => t.due_date === todayStr))
+  const tomorrowTasks = sortByCalendar(tasks.filter(t => t.due_date === tomorrowStr))
 
   async function toggleDone(task: HomeTask) {
     const next = task.status === 'Done' ? 'Not started' : 'Done'
@@ -178,7 +216,7 @@ function TodayTomorrowLists() {
     setAddingFor(null)
     const { data, error } = await supabase.from('master_tasks')
       .insert({ title, status: 'Not started', due_date: dueDate, task_type: 'Quick Task', archived: false, is_frog: false })
-      .select('id,title,status,due_date,is_frog').single()
+      .select('id,title,status,due_date,is_frog,start_time,duration_min').single()
     if (!error && data) {
       const row = data as HomeTask
       setTasks(prev => [...prev, row])
@@ -188,6 +226,12 @@ function TodayTomorrowLists() {
         return next
       })
     }
+  }
+
+  async function reschedule(task: HomeTask, dateStr: string) {
+    setRescheduleId(null)
+    setTasks(prev => prev.filter(t => t.id !== task.id))
+    await supabase.from('master_tasks').update({ due_date: dateStr, start_time: null }).eq('id', task.id)
   }
 
   function Column({ label, dayKey, dueDate, list }: { label: string; dayKey: 'today' | 'tomorrow'; dueDate: string; list: HomeTask[] }) {
@@ -200,29 +244,50 @@ function TodayTomorrowLists() {
           )}
           {list.map(task => {
             const done = task.status === 'Done'
+            const timeLabel = fmtTimeLabel(task.start_time)
+            const rescheduling = rescheduleId === task.id
+            const opts = rescheduling ? rescheduleOptions(task.due_date ? new Date(task.due_date + 'T12:00:00') : new Date()) : []
             return (
-              <div key={task.id}
-                draggable
-                onDragStart={() => setDragId(task.id)}
-                onDragEnd={() => { setDragId(null); setDragOver(null) }}
-                onDragOver={e => { e.preventDefault(); setDragOver(task.id) }}
-                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && dragOver === task.id) setDragOver(null) }}
-                onDrop={e => { e.preventDefault(); if (dragId) reorderWithin(list, dragId, task.id); setDragId(null); setDragOver(null) }}
-                style={{
-                  display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
-                  background: C.surface, border:'1px solid '+(dragOver===task.id?C.cyan+'80':C.border),
-                  borderRadius:'0.6rem', opacity: dragId===task.id ? 0.4 : 1, cursor:'grab', transition:'opacity 0.1s,border-color 0.1s',
-                }}>
-                <GripVertical size={12} color={C.muted} style={{ flexShrink:0 }} />
-                <button type="button" onClick={() => toggleDone(task)} style={{
-                  width:'16px', height:'16px', borderRadius:'50%', flexShrink:0, padding:0, cursor:'pointer',
-                  border:'2px solid '+(done?C.green:C.muted), background: done ? C.green : 'transparent',
-                  display:'flex', alignItems:'center', justifyContent:'center',
-                }}>
-                  {done && <span style={{ fontSize:'0.5rem', color:'#000', fontWeight:900 }}>&#10003;</span>}
-                </button>
-                {task.is_frog && <span style={{ fontSize:'0.7rem', flexShrink:0 }}>&#128054;</span>}
-                <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color: done?C.muted:C.text, textDecoration: done?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.title}</span>
+              <div key={task.id}>
+                <div
+                  draggable
+                  onDragStart={() => setDragId(task.id)}
+                  onDragEnd={() => { setDragId(null); setDragOver(null) }}
+                  onDragOver={e => { e.preventDefault(); setDragOver(task.id) }}
+                  onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && dragOver === task.id) setDragOver(null) }}
+                  onDrop={e => { e.preventDefault(); if (dragId) reorderWithin(list, dragId, task.id); setDragId(null); setDragOver(null) }}
+                  style={{
+                    display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
+                    background: C.surface, border:'1px solid '+(dragOver===task.id?C.cyan+'80':C.border),
+                    borderRadius:'0.6rem', opacity: dragId===task.id ? 0.4 : 1, cursor:'grab', transition:'opacity 0.1s,border-color 0.1s',
+                  }}>
+                  <GripVertical size={12} color={C.muted} style={{ flexShrink:0 }} />
+                  <button type="button" onClick={() => toggleDone(task)} style={{
+                    width:'16px', height:'16px', borderRadius:'50%', flexShrink:0, padding:0, cursor:'pointer',
+                    border:'2px solid '+(done?C.green:C.muted), background: done ? C.green : 'transparent',
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                  }}>
+                    {done && <span style={{ fontSize:'0.5rem', color:'#000', fontWeight:900 }}>&#10003;</span>}
+                  </button>
+                  {task.is_frog && <span style={{ fontSize:'0.7rem', flexShrink:0 }}>&#128054;</span>}
+                  {timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:C.cyan, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{timeLabel}</span>}
+                  <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color: done?C.muted:C.text, textDecoration: done?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.title}</span>
+                  <button type="button" draggable={false} onClick={() => setRescheduleId(rescheduling ? null : task.id)} title="Reschedule" style={{
+                    background:'none', border:'none', color: rescheduling ? C.cyan : C.muted, cursor:'pointer', padding:'0.2rem', flexShrink:0, display:'flex', alignItems:'center',
+                  }}>
+                    <CalendarDays size={13} />
+                  </button>
+                </div>
+                {rescheduling && (
+                  <div style={{ display:'flex', gap:'0.35rem', flexWrap:'wrap', padding:'0.4rem 0.65rem 0.15rem' }}>
+                    {opts.map(o => (
+                      <button key={o.label} type="button" onClick={() => reschedule(task, o.date)} style={{
+                        padding:'0.25rem 0.55rem', background:C.card, border:'1px solid '+C.border, borderRadius:'9999px',
+                        color:C.sec, fontSize:'0.65rem', fontWeight:600, cursor:'pointer', fontFamily:'inherit',
+                      }}>{o.label}</button>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}
