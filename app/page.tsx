@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, ChevronDown, Plus, Edit3, Trash2 } from 'lucide-react'
 import { getActiveFocusVideos, type ActiveFocusVideo } from '@/lib/supabase'
-import { supabase, getPageVisits, recordPageVisit } from '@/lib/supabase'
+import { supabase, getPageVisits, recordPageVisit, getEveningReview } from '@/lib/supabase'
 import { sopForStage } from '@/lib/sops'
 import { useLanguage } from '@/context/LanguageContext'
 
@@ -291,6 +291,49 @@ export default function Home() {
     const isAfternoon = hour >= 13 && hour < 20
     const dismissed = (() => { try { return localStorage.getItem('flowstate_reminder_dismissed') === toDateStr(now) } catch { return false } })()
     setShowReminder(isWeekday && isAfternoon && !dismissed)
+  }, [])
+
+  // Auto-launch the Morning/Evening Routine on the first app open of the
+  // day/evening — cross-device, so opening on a different phone or laptop
+  // still counts as "already been on the app" rather than firing again.
+  // Uses the existing page_visits table (route text PK, last_visited_at)
+  // as a same-day marker rather than localStorage, which is per-device.
+  // Gated on the routine actually being undone, so it never yanks you back
+  // in after you've already finished it (on any device).
+  useEffect(() => {
+    (async () => {
+      try {
+        const now = new Date()
+        const hour = now.getHours()
+        const todayStr = toDateStr(now)
+        const EVENING_HOUR = 20
+
+        const [{ data: routineRow }, eveningRes, { visits }] = await Promise.all([
+          supabase.from('routine_completions').select('routine_date').eq('routine_date', todayStr).maybeSingle(),
+          getEveningReview(todayStr),
+          getPageVisits(),
+        ])
+
+        if (hour >= EVENING_HOUR) {
+          const eveningDone = !!eveningRes.review?.completedAt
+          const marker = visits['__evening_auto_launch__']
+          const alreadyTonight = !!marker && toDateStr(new Date(marker)) === todayStr
+          if (!eveningDone && !alreadyTonight) {
+            await recordPageVisit('__evening_auto_launch__')
+            router.push('/evening')
+          }
+        } else {
+          const morningDone = !!routineRow
+          const marker = visits['__morning_auto_launch__']
+          const alreadyToday = !!marker && toDateStr(new Date(marker)) === todayStr
+          if (!morningDone && !alreadyToday) {
+            await recordPageVisit('__morning_auto_launch__')
+            router.push('/morning')
+          }
+        }
+      } catch { /* never block the home page over this */ }
+    })()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {

@@ -184,6 +184,24 @@ export async function getMorningCompletionCounts(days: number): Promise<{ counts
   return { counts, error: null }
 }
 
+// Marks the seeded "Morning routine" row in the general Habit Tracker
+// (habits/habit_completions from 006_habits.sql) complete for `date`, so
+// finishing the Morning Routine flow automatically extends its streak on
+// the Tracking page too, instead of requiring a second manual tick there.
+// Upsert (not insert) so re-running it — e.g. the routine page reloading
+// after the last item — never errors on the unique(habit_id, completed_date)
+// constraint. Silently no-ops if the seed row was ever deleted/renamed.
+export async function completeMorningRoutineHabit(date: string): Promise<{ error: string | null }> {
+  const { data: habit, error: findError } = await supabase
+    .from('habits').select('id').eq('title', 'Morning routine').maybeSingle()
+  if (findError) return { error: findError.message }
+  if (!habit) return { error: null }
+  const { error } = await supabase
+    .from('habit_completions')
+    .upsert({ habit_id: habit.id, completed_date: date }, { onConflict: 'habit_id,completed_date' })
+  return { error: error ? error.message : null }
+}
+
 // ---- Evening review (tomorrow's MIT + routine completion) ----
 // Was evening_mit_<date> / evening_done_<date> in localStorage only.
 // Requires 023_localstorage_to_db.sql.

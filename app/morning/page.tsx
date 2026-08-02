@@ -16,6 +16,7 @@ import {
   addErrorLogEntry,
   deleteErrorLogEntry,
   getMobilityProgramStart,
+  completeMorningRoutineHabit,
 } from '@/lib/supabase'
 import type { MorningRoutineItem } from '@/lib/supabase'
 import { getMobilityDay, type MobilityDayPlan } from '@/lib/mobility'
@@ -302,6 +303,9 @@ export default function MorningPage() {
     markMorningItemComplete(id, today)
     if (next.length >= items.length) {
       await supabase.from('routine_completions').upsert({ routine_date:today }, { onConflict:'routine_date' })
+      // Also extends the "Morning routine" streak in the general Habit
+      // Tracker (Tracking page) automatically — no separate manual tick.
+      completeMorningRoutineHabit(today)
       setCelebrating(true)
     }
   }
