@@ -1,9 +1,10 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, ChevronDown, Plus, Edit3, Trash2 } from 'lucide-react'
+import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, ChevronDown, Plus, Edit3, Trash2, Flame, GripVertical, ShoppingCart } from 'lucide-react'
 import { getActiveFocusVideos, type ActiveFocusVideo } from '@/lib/supabase'
 import { supabase, getPageVisits, recordPageVisit, getEveningReview } from '@/lib/supabase'
+import { getDailyPlanCandidates, SECTION_LABEL, type PlanCandidate, type DailyPlanSection } from '@/lib/dailyPlan'
 import { sopForStage } from '@/lib/sops'
 import { useLanguage } from '@/context/LanguageContext'
 
@@ -78,6 +79,267 @@ const FOCUS_ITEMS = [
 
 function toDateStr(d: Date) {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+}
+
+// ---- Streaks row (encouragement) ----
+// Same consecutive-day walk as app/tracking/page.tsx's calcStreak, but
+// fetched over a 60-day window (not tracking's 7-day window) so streaks
+// longer than a week still show their real length here.
+type HabitStreak = { id: string; title: string; emoji: string; color: string; streak: number }
+
+function calcStreakFromDates(dates: string[]): number {
+  const sorted = [...dates].sort().reverse()
+  if (sorted.length === 0) return 0
+  const today = toDateStr(new Date())
+  const yesterday = toDateStr(new Date(Date.now() - 86400000))
+  if (sorted[0] !== today && sorted[0] !== yesterday) return 0
+  let streak = 1
+  for (let i = 1; i < sorted.length; i++) {
+    const diff = Math.round((new Date(sorted[i-1]).getTime() - new Date(sorted[i]).getTime()) / 86400000)
+    if (diff === 1) streak++
+    else break
+  }
+  return streak
+}
+
+// ---- Today / Tomorrow adjustable lists ----
+// Self-contained widget: pulls master_tasks due today/tomorrow, orders them
+// against the SAME 'tasks_priority' list the /tasks page drag-reorders, so
+// reordering here moves the task's real priority everywhere -- that's the
+// "sync with others" behaviour. Complete/add write straight to Supabase so
+// it's cross-device like everything else on this page.
+type HomeTask = { id: string; title: string; status: string; due_date: string | null; is_frog: boolean }
+
+function TodayTomorrowLists() {
+  const todayStr = toDateStr(new Date())
+  const tomorrowStr = toDateStr(new Date(Date.now() + 86400000))
+  const [tasks, setTasks] = useState<HomeTask[]>([])
+  const [order, setOrder] = useState<string[]>([])
+  const [ready, setReady] = useState(false)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState<string | null>(null)
+  const [addingFor, setAddingFor] = useState<'today' | 'tomorrow' | null>(null)
+  const [addText, setAddText] = useState('')
+
+  const load = useCallback(async () => {
+    const [{ data: taskData }, { data: pdata }] = await Promise.all([
+      supabase.from('master_tasks').select('id,title,status,due_date,is_frog')
+        .in('due_date', [todayStr, tomorrowStr]).neq('archived', true),
+      supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').maybeSingle(),
+    ])
+    setTasks((taskData ?? []) as HomeTask[])
+    setOrder(((pdata?.ordered_ids as string[]) ?? []))
+    setReady(true)
+  }, [todayStr, tomorrowStr])
+
+  useEffect(() => { load() }, [load])
+
+  function sortByOrder(list: HomeTask[]) {
+    return [...list].sort((a, b) => {
+      const ai = order.indexOf(a.id), bi = order.indexOf(b.id)
+      if (ai === -1 && bi === -1) return 0
+      if (ai === -1) return 1
+      if (bi === -1) return -1
+      return ai - bi
+    })
+  }
+
+  const todayTasks = sortByOrder(tasks.filter(t => t.due_date === todayStr))
+  const tomorrowTasks = sortByOrder(tasks.filter(t => t.due_date === tomorrowStr))
+
+  async function toggleDone(task: HomeTask) {
+    const next = task.status === 'Done' ? 'Not started' : 'Done'
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: next } : t))
+    await supabase.from('master_tasks').update({ status: next }).eq('id', task.id)
+  }
+
+  function reorderWithin(list: HomeTask[], fromId: string, toId: string) {
+    if (fromId === toId) return
+    const ids = list.map(t => t.id)
+    const fromIdx = ids.indexOf(fromId)
+    const toIdx = ids.indexOf(toId)
+    if (fromIdx === -1 || toIdx === -1) return
+    const reordered = [...ids]
+    reordered.splice(fromIdx, 1)
+    reordered.splice(toIdx, 0, fromId)
+    const base = order.length > 0 ? order : tasks.map(t => t.id)
+    const withoutDay = base.filter(id => !ids.includes(id))
+    const firstPos = base.findIndex(id => ids.includes(id))
+    const insertAt = firstPos === -1 ? withoutDay.length : Math.min(firstPos, withoutDay.length)
+    const newOrder = [...withoutDay.slice(0, insertAt), ...reordered, ...withoutDay.slice(insertAt)]
+    setOrder(newOrder)
+    supabase.from('priority_lists').upsert({ key: 'tasks_priority', ordered_ids: newOrder, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+  }
+
+  async function addQuickTask(dueDate: string) {
+    const title = addText.trim()
+    if (!title) return
+    setAddText('')
+    setAddingFor(null)
+    const { data, error } = await supabase.from('master_tasks')
+      .insert({ title, status: 'Not started', due_date: dueDate, task_type: 'Quick Task', archived: false, is_frog: false })
+      .select('id,title,status,due_date,is_frog').single()
+    if (!error && data) {
+      const row = data as HomeTask
+      setTasks(prev => [...prev, row])
+      setOrder(prev => {
+        const next = [...prev, row.id]
+        supabase.from('priority_lists').upsert({ key: 'tasks_priority', ordered_ids: next, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+        return next
+      })
+    }
+  }
+
+  function Column({ label, dayKey, dueDate, list }: { label: string; dayKey: 'today' | 'tomorrow'; dueDate: string; list: HomeTask[] }) {
+    return (
+      <div style={{ flex:1, minWidth:'240px' }}>
+        <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>{label}</p>
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
+          {list.length === 0 && addingFor !== dayKey && (
+            <p style={{ fontSize:'0.75rem', color:C.muted, margin:'0 0 0.25rem' }}>Nothing scheduled.</p>
+          )}
+          {list.map(task => {
+            const done = task.status === 'Done'
+            return (
+              <div key={task.id}
+                draggable
+                onDragStart={() => setDragId(task.id)}
+                onDragEnd={() => { setDragId(null); setDragOver(null) }}
+                onDragOver={e => { e.preventDefault(); setDragOver(task.id) }}
+                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && dragOver === task.id) setDragOver(null) }}
+                onDrop={e => { e.preventDefault(); if (dragId) reorderWithin(list, dragId, task.id); setDragId(null); setDragOver(null) }}
+                style={{
+                  display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
+                  background: C.surface, border:'1px solid '+(dragOver===task.id?C.cyan+'80':C.border),
+                  borderRadius:'0.6rem', opacity: dragId===task.id ? 0.4 : 1, cursor:'grab', transition:'opacity 0.1s,border-color 0.1s',
+                }}>
+                <GripVertical size={12} color={C.muted} style={{ flexShrink:0 }} />
+                <button type="button" onClick={() => toggleDone(task)} style={{
+                  width:'16px', height:'16px', borderRadius:'50%', flexShrink:0, padding:0, cursor:'pointer',
+                  border:'2px solid '+(done?C.green:C.muted), background: done ? C.green : 'transparent',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                }}>
+                  {done && <span style={{ fontSize:'0.5rem', color:'#000', fontWeight:900 }}>&#10003;</span>}
+                </button>
+                {task.is_frog && <span style={{ fontSize:'0.7rem', flexShrink:0 }}>&#128054;</span>}
+                <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color: done?C.muted:C.text, textDecoration: done?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.title}</span>
+              </div>
+            )
+          })}
+          {addingFor === dayKey ? (
+            <div style={{ display:'flex', gap:'0.4rem' }}>
+              <input autoFocus value={addText} onChange={e => setAddText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addQuickTask(dueDate); if (e.key === 'Escape') { setAddingFor(null); setAddText('') } }}
+                placeholder="New task..." style={{ flex:1, padding:'0.4rem 0.6rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', outline:'none' }} />
+              <button type="button" onClick={() => addQuickTask(dueDate)} style={{ padding:'0.4rem 0.6rem', background:C.cyan, border:'none', borderRadius:'0.5rem', color:'#000', fontWeight:700, fontSize:'0.75rem', cursor:'pointer', fontFamily:'inherit' }}>Add</button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => { setAddingFor(dayKey); setAddText('') }} style={{
+              display:'flex', alignItems:'center', gap:'0.3rem', background:'none', border:'1px dashed '+C.border, borderRadius:'0.5rem',
+              padding:'0.4rem 0.6rem', color:C.muted, fontSize:'0.75rem', cursor:'pointer', fontFamily:'inherit', width:'fit-content',
+            }}>
+              <Plus size={11} /> Add task
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  if (!ready) return null
+
+  return (
+    <div style={{ display:'flex', gap:'1.5rem', flexWrap:'wrap' }}>
+      <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} />
+      <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} />
+    </div>
+  )
+}
+
+// ---- Weekly Targets ----
+// "3 Shorts, 1 Long-form, 4 Etsy listings, Website work" style counters.
+// Shorts/Long-form auto-count from content_items reaching the Live stage
+// this week (no manual bookkeeping); Etsy/Website have no pipeline table
+// yet so they're a simple cross-device +/- tally against the week.
+type WeeklyTarget = { id: string; label: string; emoji: string; color: string; target_count: number; tracking: string; sort_order: number }
+
+function mondayOf(d: Date): Date {
+  const day = d.getDay() // 0=Sun..6=Sat
+  const diff = day === 0 ? -6 : 1 - day
+  const r = new Date(d)
+  r.setDate(r.getDate() + diff)
+  r.setHours(0, 0, 0, 0)
+  return r
+}
+
+function WeeklyTargets() {
+  const weekStart = toDateStr(mondayOf(new Date()))
+  const [targets, setTargets] = useState<WeeklyTarget[]>([])
+  const [counts, setCounts] = useState<Record<string, number>>({})
+  const [ready, setReady] = useState(false)
+
+  const load = useCallback(async () => {
+    const { data: targetRows } = await supabase.from('weekly_targets')
+      .select('id,label,emoji,color,target_count,tracking,sort_order').eq('active', true).order('sort_order')
+    const rows = (targetRows ?? []) as WeeklyTarget[]
+    setTargets(rows)
+
+    const next: Record<string, number> = {}
+    await Promise.all(rows.map(async t => {
+      if (t.tracking === 'auto_shorts' || t.tracking === 'auto_longform') {
+        const formats = t.tracking === 'auto_shorts' ? ['Short', 'Both'] : ['Long form', 'Both']
+        const { count } = await supabase.from('content_items').select('id', { count: 'exact', head: true })
+          .ilike('pipeline_stage', '%Live%').in('format', formats).gte('updated_at', weekStart)
+        next[t.id] = count ?? 0
+      } else {
+        const { data } = await supabase.from('weekly_target_progress').select('manual_count').eq('target_id', t.id).eq('week_start', weekStart).maybeSingle()
+        next[t.id] = data?.manual_count ?? 0
+      }
+    }))
+    setCounts(next)
+    setReady(true)
+  }, [weekStart])
+
+  useEffect(() => { load() }, [load])
+
+  async function bump(t: WeeklyTarget, delta: number) {
+    const current = counts[t.id] ?? 0
+    const next = Math.max(0, current + delta)
+    setCounts(prev => ({ ...prev, [t.id]: next }))
+    await supabase.from('weekly_target_progress').upsert(
+      { target_id: t.id, week_start: weekStart, manual_count: next, updated_at: new Date().toISOString() },
+      { onConflict: 'target_id,week_start' }
+    )
+  }
+
+  if (!ready || targets.length === 0) return null
+
+  return (
+    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))', gap:'0.75rem' }}>
+      {targets.map(t => {
+        const current = counts[t.id] ?? 0
+        const pct = Math.min(100, Math.round((current / Math.max(1, t.target_count)) * 100))
+        const met = current >= t.target_count
+        return (
+          <div key={t.id} style={{ padding:'0.75rem 0.85rem', background:C.surface, border:'1px solid '+(met?t.color+'50':C.border), borderRadius:'0.75rem' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.4rem' }}>
+              <span style={{ fontSize:'0.78rem', color:C.text, fontWeight:600 }}>{t.emoji} {t.label}</span>
+              <span style={{ fontSize:'0.75rem', fontWeight:700, color: met?t.color:C.sec }}>{current}/{t.target_count}</span>
+            </div>
+            <div style={{ height:'4px', background:C.border, borderRadius:'2px', overflow:'hidden', marginBottom: t.tracking==='manual' ? '0.5rem' : 0 }}>
+              <div style={{ height:'100%', width:pct+'%', background:t.color, borderRadius:'2px', transition:'width 0.3s ease' }} />
+            </div>
+            {t.tracking === 'manual' && (
+              <div style={{ display:'flex', gap:'0.4rem' }}>
+                <button type="button" onClick={() => bump(t, -1)} style={{ flex:1, padding:'0.25rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>-</button>
+                <button type="button" onClick={() => bump(t, 1)} style={{ flex:1, padding:'0.25rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>+</button>
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 // ---- Isolated clock -- only this re-renders every second ----
@@ -215,6 +477,8 @@ export default function Home() {
   const [ideaEditingId, setIdeaEditingId] = useState<string | null>(null)
   const [ideaDraft, setIdeaDraft] = useState<IdeaDraft>(EMPTY_IDEA_DRAFT)
   const [ideaSaving, setIdeaSaving] = useState(false)
+  const [streaks, setStreaks] = useState<HabitStreak[]>([])
+  const [workflowTop, setWorkflowTop] = useState<Partial<Record<DailyPlanSection, PlanCandidate>>>({})
 
   const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','goals','youtube','links','etsy','niche-calendar','x','nsdr','physical','instagram','tabs']
 
@@ -291,6 +555,42 @@ export default function Home() {
     const isAfternoon = hour >= 13 && hour < 20
     const dismissed = (() => { try { return localStorage.getItem('flowstate_reminder_dismissed') === toDateStr(now) } catch { return false } })()
     setShowReminder(isWeekday && isAfternoon && !dismissed)
+  }, [])
+
+  // Streaks row — active habits from the general Habit Tracker, including
+  // the Morning routine (which now auto-ticks itself when the flow
+  // finishes). 60-day lookback so multi-week streaks show their real count.
+  useEffect(() => {
+    const from = toDateStr(new Date(Date.now() - 60 * 86400000))
+    Promise.all([
+      supabase.from('habits').select('id,title,emoji,color').eq('active', true).order('sort_order'),
+      supabase.from('habit_completions').select('habit_id,completed_date').gte('completed_date', from),
+    ]).then(([{ data: habits }, { data: completions }]) => {
+      const byHabit = new Map<string, string[]>()
+      for (const c of (completions ?? []) as { habit_id: string; completed_date: string }[]) {
+        if (!byHabit.has(c.habit_id)) byHabit.set(c.habit_id, [])
+        byHabit.get(c.habit_id)!.push(c.completed_date)
+      }
+      const rows = ((habits ?? []) as { id: string; title: string; emoji: string; color: string }[])
+        .map(h => ({ id: h.id, title: h.title, emoji: h.emoji, color: h.color, streak: calcStreakFromDates(byHabit.get(h.id) ?? []) }))
+        .filter(h => h.streak > 0)
+        .sort((a, b) => b.streak - a.streak)
+        .slice(0, 6)
+      setStreaks(rows)
+    }).catch(() => {})
+  }, [])
+
+  // Top priority per workflow — reuses the same ranked-candidate engine
+  // behind the Calendar's "Recommend for Tomorrow" (each workflow's own
+  // priority-ordered list, already built into Etsy/Tasks/Vault/X), just
+  // takes the #1 item per section instead of building a whole day plan.
+  useEffect(() => {
+    getDailyPlanCandidates(today).then(candidates => {
+      const top: Partial<Record<DailyPlanSection, PlanCandidate>> = {}
+      for (const c of candidates) if (!top[c.section]) top[c.section] = c
+      setWorkflowTop(top)
+    }).catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Auto-launch the Morning/Evening Routine on the first app open of the
@@ -551,6 +851,65 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* Overview strip — streaks, top workflow priorities, today/tomorrow, weekly targets */}
+      {!loading && (streaks.length > 0 || Object.keys(workflowTop).length > 0) && (
+        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.012)' }}>
+          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
+
+            {streaks.length > 0 && (
+              <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', flexWrap:'wrap', marginBottom: Object.keys(workflowTop).length > 0 ? '1rem' : 0 }}>
+                {streaks.map(s => (
+                  <div key={s.id} title={s.title} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.35rem 0.7rem', background:s.color+'14', border:'1px solid '+s.color+'40', borderRadius:'9999px' }}>
+                    <Flame size={12} color={s.color} />
+                    {s.emoji && <span style={{ fontSize:'0.8rem', lineHeight:1 }}>{s.emoji}</span>}
+                    <span style={{ fontSize:'0.72rem', fontWeight:700, color:s.color }}>{s.streak}</span>
+                    <span style={{ fontSize:'0.72rem', color:C.sec }}>{s.title}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {Object.keys(workflowTop).length > 0 && (
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:'0.6rem' }}>
+                {(['youtube','etsy','tasks','vault','x'] as DailyPlanSection[]).map(section => {
+                  const item = section === 'youtube' && focusVideos[0]
+                    ? { title: sopForStage(focusVideos[0].pipeline_stage) ? sopForStage(focusVideos[0].pipeline_stage)!.title + ' — ' + focusVideos[0].title : focusVideos[0].title }
+                    : workflowTop[section]
+                  if (!item) return null
+                  return (
+                    <button key={section} onClick={() => navTo(section === 'tasks' ? 'tasks' : section === 'youtube' ? 'content' : section === 'x' ? 'x' : section)}
+                      style={{ textAlign:'left', padding:'0.7rem 0.85rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.75rem', cursor:'pointer', fontFamily:'inherit' }}>
+                      <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.3rem' }}>{SECTION_LABEL[section]}</p>
+                      <p style={{ fontSize:'0.8rem', color:C.text, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</p>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* Today / Tomorrow adjustable lists */}
+      {!loading && (
+        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
+          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
+            <TodayTomorrowLists />
+          </div>
+        </div>
+      )}
+
+      {/* Weekly targets */}
+      {!loading && (
+        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.012)' }}>
+          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
+            <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.6rem' }}>This week&apos;s targets</p>
+            <WeeklyTargets />
+          </div>
+        </div>
+      )}
 
       {/* Weekday afternoon reminder banner */}
       {showReminder && (
