@@ -545,7 +545,7 @@ export default function Home() {
   const [streaks, setStreaks] = useState<HabitStreak[]>([])
   const [workflowTop, setWorkflowTop] = useState<Partial<Record<DailyPlanSection, PlanCandidate>>>({})
 
-  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','goals','youtube','links','etsy','niche-calendar','x','nsdr','physical','instagram','tabs']
+  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs']
 
   const today = toDateStr(new Date())
   const quote = QUOTES[new Date().getDate() % QUOTES.length]
@@ -882,11 +882,8 @@ export default function Home() {
               { route:'projects', icon:<FolderOpen size={14}/>, label:t('projects'), bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
               { route:'tasks', icon:<CheckSquare size={14}/>, label:t('tasks'), bg:'rgba(0,255,136,0.06)', border:'rgba(0,255,136,0.18)', color:'#00ff88' },
               { route:'personal', icon:<User size={14}/>, label:t('personal'), bg:'rgba(139,92,246,0.06)', border:'rgba(139,92,246,0.18)', color:'#8b5cf6' },
-              { route:'goals', icon:<Target size={14}/>, label:t('goals'), bg:'rgba(0,255,136,0.06)', border:'rgba(0,255,136,0.18)', color:'#00ff88' },
               { route:'youtube', icon:<Tv size={14}/>, label:t('youtube'), bg:'rgba(255,68,102,0.07)', border:'rgba(255,68,102,0.2)', color:'#ff4466' },
-              { route:'links', icon:<Link2 size={14}/>, label:t('links'), bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
               { route:'etsy', icon:<ShoppingBag size={14}/>, label:t('etsy'), bg:'rgba(249,115,22,0.07)', border:'rgba(249,115,22,0.22)', color:'#f97316' },
-              { route:'niche-calendar', icon:<CalendarDays size={14}/>, label:'Niche Cal', bg:'rgba(20,184,166,0.07)', border:'rgba(20,184,166,0.22)', color:'#14b8a6' },
               { route:'x', icon:<X size={14}/>, label:'X / Social', bg:'rgba(249,115,22,0.07)', border:'rgba(249,115,22,0.22)', color:'#f97316' },
               { route:'nsdr', icon:<Moon size={14}/>, label:'NSDR', bg:'rgba(139,92,246,0.07)', border:'rgba(139,92,246,0.22)', color:'#8b5cf6' },
               { route:'physical', icon:<Activity size={14}/>, label:'Physical', bg:'rgba(0,255,136,0.06)', border:'rgba(0,255,136,0.2)', color:'#00ff88' },

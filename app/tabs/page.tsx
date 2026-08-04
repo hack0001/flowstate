@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Layers, Plus, ExternalLink, Archive, Trash2,
-  Search, X, Copy, Check, RotateCcw, BookmarkIcon,
+  Search, X, Copy, Check, RotateCcw, BookmarkIcon, Link2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -272,6 +272,100 @@ function PopupSave({ url,title,favicon }:{ url:string;title:string;favicon:strin
   )
 }
 
+// ── Workspace Links (merged in) ─────────────────────────────────────────────
+type LinkRow = {
+  id: string
+  notion_id: string | null
+  name: string
+  url: string | null
+  select_type: string | null
+  priority: string | null
+  checked: boolean
+}
+
+const LINKS_PRIORITY_ORDER: Record<string, number> = { Important: 0, Medium: 1, 'Long Term': 2 }
+
+function linkPriorityBadge(p: string | null) {
+  if (!p) return null
+  const cfg: Record<string, { bg: string; color: string }> = {
+    Important:   { bg:'rgba(255,68,102,0.12)', color:'#ff4466' },
+    Medium:      { bg:'rgba(255,184,0,0.12)',  color:'#ffb800' },
+    'Long Term': { bg:'rgba(0,212,255,0.1)',   color:'#00d4ff' },
+  }
+  const s = cfg[p]
+  if (!s) return null
+  return (
+    <span style={{ display:'inline-block', padding:'0.15rem 0.5rem', borderRadius:'9999px', fontSize:'0.62rem', fontWeight:700, background:s.bg, color:s.color, whiteSpace:'nowrap', letterSpacing:'0.04em' }}>
+      {p}
+    </span>
+  )
+}
+
+function linkDomainOf(url: string | null): string {
+  if (!url) return ''
+  try {
+    return new URL(url).hostname.replace('www.', '')
+  } catch { return url.slice(0, 40) }
+}
+
+function linkTypeBadge(t: string | null) {
+  if (!t) return null
+  const isWatch = t === 'Watch'
+  return (
+    <span style={{ display:'inline-block', padding:'0.15rem 0.5rem', borderRadius:'9999px', fontSize:'0.62rem', fontWeight:700, background: isWatch ? 'rgba(139,92,246,0.12)' : 'rgba(0,255,136,0.1)', color: isWatch ? C.purple : C.green, whiteSpace:'nowrap' }}>
+      {t}
+    </span>
+  )
+}
+
+function LinkCard({ row, onToggle }: { row: LinkRow; onToggle: (id: string, checked: boolean) => void }) {
+  return (
+    <div style={{
+      display:'flex', alignItems:'center', gap:'0.875rem',
+      padding:'0.875rem 1rem',
+      background: C.card, border:'1px solid '+C.border,
+      borderRadius:'0.875rem', transition:'border-color 0.15s',
+    }}>
+      <button
+        onClick={() => onToggle(row.id, !row.checked)}
+        title={row.checked ? 'Mark undone' : 'Mark done'}
+        style={{
+          flexShrink:0, width:'28px', height:'28px', borderRadius:'50%',
+          border:'2px solid '+(row.checked ? C.green : C.border),
+          background: row.checked ? 'rgba(0,255,136,0.12)' : 'transparent',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          cursor:'pointer', transition:'all 0.15s',
+        }}>
+        {row.checked && <Check size={13} color={C.green} />}
+      </button>
+
+      <div style={{ flex:1, minWidth:0 }}>
+        <p style={{ fontSize:'0.85rem', fontWeight:600, color: row.checked ? C.muted : C.text, margin:'0 0 0.2rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textDecoration: row.checked ? 'line-through' : 'none', opacity: row.checked ? 0.6 : 1 }}>
+          {row.name}
+        </p>
+        <p style={{ fontSize:'0.7rem', color:C.muted, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          {linkDomainOf(row.url)}
+        </p>
+      </div>
+
+      <div style={{ display:'flex', gap:'0.4rem', alignItems:'center', flexShrink:0 }}>
+        {linkPriorityBadge(row.priority)}
+        {linkTypeBadge(row.select_type)}
+      </div>
+
+      {row.url && (
+        <a href={row.url} target="_blank" rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          style={{ flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', width:'28px', height:'28px', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.5rem', color:C.cyan, textDecoration:'none' }}>
+          <ExternalLink size={13} />
+        </a>
+      )}
+    </div>
+  )
+}
+
+type LinksSubTab = 'watch' | 'read' | 'done'
+
 // ── Main Tab Manager ──────────────────────────────────────────────────────────
 function TabsInner(){
   const router  = useRouter()
@@ -291,6 +385,33 @@ function TabsInner(){
   const [showBM,setShowBM]           = useState(false)
   const [showSQL,setShowSQL]         = useState(false)
   const [origin,setOrigin]           = useState('')
+  const [section,setSection]         = useState<'tabs'|'links'>('tabs')
+  const [linkRows,setLinkRows]       = useState<LinkRow[]>([])
+  const [linksLoading,setLinksLoading] = useState(true)
+  const [linksSubTab,setLinksSubTab] = useState<LinksSubTab>('watch')
+
+  async function loadLinks(){
+    setLinksLoading(true)
+    const { data } = await supabase
+      .from('workspace_links')
+      .select('*')
+      .order('priority', { ascending: true })
+      .order('created_at', { ascending: true })
+    setLinkRows((data ?? []) as LinkRow[])
+    setLinksLoading(false)
+  }
+
+  async function toggleLinkChecked(id: string, checked: boolean) {
+    setLinkRows(prev => prev.map(l => l.id === id ? { ...l, checked } : l))
+    await supabase.from('workspace_links').update({ checked }).eq('id', id)
+  }
+
+  async function resetLinksDone() {
+    const doneIds = linkRows.filter(l => l.checked).map(l => l.id)
+    if (!doneIds.length) return
+    setLinkRows(prev => prev.map(l => ({ ...l, checked: false })))
+    await supabase.from('workspace_links').update({ checked: false }).in('id', doneIds)
+  }
 
   useEffect(()=>{
     setOrigin(window.location.origin)
@@ -298,6 +419,8 @@ function TabsInner(){
 
     // Popup mode — skip all tab manager init, let PopupSave handle everything
     if(new URLSearchParams(window.location.search).get('add')) return
+
+    loadLinks()
 
     // Load from localStorage immediately (instant, no spinner)
     const local=lsRead()
@@ -410,6 +533,88 @@ function TabsInner(){
       {/* Body */}
       <div style={{ maxWidth:'800px',margin:'0 auto',padding:'1.5rem 2rem',opacity:mounted?1:0,transition:'opacity 0.3s',animation:'fadeInUp 0.3s ease both' }}>
 
+        {/* Section toggle */}
+        <div style={{ display:'flex',background:C.card,border:'1px solid '+C.border,borderRadius:'0.75rem',overflow:'hidden',marginBottom:'1.25rem',width:'fit-content' }}>
+          <button onClick={()=>setSection('tabs')} style={{ display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.5rem 1rem',border:'none',fontFamily:'inherit',cursor:'pointer',fontSize:'0.78rem',fontWeight:section==='tabs'?700:500,background:section==='tabs'?C.cyan+'18':'transparent',color:section==='tabs'?C.cyan:C.muted,transition:'all 0.15s' }}>
+            <Layers size={13}/> Tab Sheet
+          </button>
+          <button onClick={()=>setSection('links')} style={{ display:'flex',alignItems:'center',gap:'0.4rem',padding:'0.5rem 1rem',border:'none',fontFamily:'inherit',cursor:'pointer',fontSize:'0.78rem',fontWeight:section==='links'?700:500,background:section==='links'?C.cyan+'18':'transparent',color:section==='links'?C.cyan:C.muted,transition:'all 0.15s' }}>
+            <Link2 size={13}/> Links
+          </button>
+        </div>
+
+        {section==='links' && (()=>{
+          const linkActive = linkRows.filter(l => !l.checked)
+          const linkDone   = linkRows.filter(l =>  l.checked)
+          const watchItems = linkActive
+            .filter(l => l.select_type === 'Watch' || l.select_type === null)
+            .sort((a, b) => (LINKS_PRIORITY_ORDER[a.priority ?? ''] ?? 99) - (LINKS_PRIORITY_ORDER[b.priority ?? ''] ?? 99))
+          const readItems = linkActive
+            .filter(l => l.select_type === 'Read')
+            .sort((a, b) => (LINKS_PRIORITY_ORDER[a.priority ?? ''] ?? 99) - (LINKS_PRIORITY_ORDER[b.priority ?? ''] ?? 99))
+          const subTabItems = linksSubTab === 'watch' ? watchItems : linksSubTab === 'read' ? readItems : linkDone
+          const SUBTABS: { key: LinksSubTab; label: string; count: number; color: string }[] = [
+            { key:'watch', label:'Watch',    count: watchItems.length, color: C.purple },
+            { key:'read',  label:'Read',     count: readItems.length,  color: C.green  },
+            { key:'done',  label:'Complete', count: linkDone.length,   color: C.cyan   },
+          ]
+          return (
+            <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+              <div style={{ display:'flex',alignItems:'flex-end',justifyContent:'space-between',flexWrap:'wrap' as const,gap:'0.75rem',marginBottom:'1rem' }}>
+                <div>
+                  <h2 style={{ fontSize:'1.1rem',fontWeight:900,margin:0,letterSpacing:'-0.02em' }}>My Workspace Links</h2>
+                  <p style={{ fontSize:'0.78rem',color:C.sec,margin:'0.2rem 0 0' }}>{linkActive.length} to go &bull; {linkDone.length} done</p>
+                </div>
+              </div>
+
+              <div style={{ borderBottom:'1px solid '+C.border,marginBottom:'1.25rem',display:'flex',gap:'0.25rem' }}>
+                {SUBTABS.map(t => (
+                  <button key={t.key} onClick={() => setLinksSubTab(t.key)} style={{
+                    padding:'0.6rem 0.9rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit',
+                    fontSize:'0.8rem', fontWeight: linksSubTab === t.key ? 700 : 500,
+                    color: linksSubTab === t.key ? t.color : C.muted,
+                    borderBottom: linksSubTab === t.key ? '2px solid '+t.color : '2px solid transparent',
+                    marginBottom:'-1px', transition:'all 0.15s',
+                    display:'flex', alignItems:'center', gap:'0.4rem',
+                  }}>
+                    {t.label}
+                    <span style={{ fontSize:'0.65rem', background:'rgba(255,255,255,0.06)', padding:'0.1rem 0.4rem', borderRadius:'9999px' }}>
+                      {t.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {linksSubTab === 'done' && linkDone.length > 0 && (
+                <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:'1rem' }}>
+                  <button onClick={resetLinksDone} style={{ display:'flex', alignItems:'center', gap:'0.35rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, padding:'0.3rem 0.7rem' }}>
+                    <RotateCcw size={11} /> Reset all
+                  </button>
+                </div>
+              )}
+
+              {linksLoading ? (
+                <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', color:C.muted, fontSize:'0.85rem' }}>
+                  <div style={{ width:'1rem', height:'1rem', borderRadius:'50%', border:'2px solid '+C.muted, borderTopColor:C.cyan, animation:'spin 0.8s linear infinite' }} />
+                  Loading...
+                </div>
+              ) : subTabItems.length === 0 ? (
+                <div style={{ textAlign:'center', padding:'3rem 1rem', color:C.muted }}>
+                  <Link2 size={32} style={{ marginBottom:'0.75rem', opacity:0.3 }} />
+                  <p style={{ margin:0, fontSize:'0.875rem' }}>{linksSubTab === 'done' ? 'Nothing completed yet' : 'No '+linksSubTab+' links pending'}</p>
+                </div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.5rem', opacity: linksSubTab === 'done' ? 0.7 : 1 }}>
+                  {subTabItems.map(row => (
+                    <LinkCard key={row.id} row={row} onToggle={toggleLinkChecked} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
+        {section==='tabs' && (<>
         {/* Supabase error banner */}
         {syncError&&(
           <div style={{ background:'rgba(255,68,102,0.08)',border:'1px solid '+C.red+'44',borderRadius:'0.875rem',padding:'0.875rem 1rem',marginBottom:'1.25rem' }}>
@@ -538,10 +743,11 @@ create policy "allow_all" on tabs
             ))}
           </div>
         )}
+        </>)}
       </div>
 
       {/* FAB */}
-      <button onClick={()=>setShowAdd(true)} style={{ position:'fixed',bottom:'1.75rem',right:'1.75rem',width:52,height:52,borderRadius:'50%',border:'none',background:C.cyan,color:'#000',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 20px rgba(0,212,255,0.35)',zIndex:100,fontFamily:'inherit' }}><Plus size={22}/></button>
+      {section==='tabs'&&<button onClick={()=>setShowAdd(true)} style={{ position:'fixed',bottom:'1.75rem',right:'1.75rem',width:52,height:52,borderRadius:'50%',border:'none',background:C.cyan,color:'#000',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 20px rgba(0,212,255,0.35)',zIndex:100,fontFamily:'inherit' }}><Plus size={22}/></button>}
 
       {showAdd&&<AddModal onClose={()=>setShowAdd(false)} onSave={p=>saveTab(p)} existingGroups={allGroups}/>}
     </main>

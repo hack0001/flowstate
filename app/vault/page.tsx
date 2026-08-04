@@ -14,6 +14,13 @@ const CATEGORIES = ['All','Book','Article','Tool / Software','Business Idea','Re
 const CATEGORY_OPTS = ['Book','Article','Tool / Software','Business Idea','Reference','Movie','Academic','Audiobook / Podcast','Video','Spreadsheet','Buy']
 const STATUS_OPTS = ['', 'To Read', 'In Progress', 'Read', 'Done', 'On Hold']
 
+const VAULT_SORTS = [
+  { key: 'priority',        label: 'Priority order' },
+  { key: 'created_at_desc', label: 'Newest first' },
+  { key: 'created_at_asc',  label: 'Oldest first' },
+  { key: 'category',        label: 'Category' },
+]
+
 const CAT_META: Record<string, { icon: React.ReactNode; color: string }> = {
   'Book':               { icon: <BookOpen size={13}/>,   color: '#8b5cf6' },
   'Article':            { icon: <FileText size={13}/>,    color: '#00d4ff' },
@@ -256,6 +263,7 @@ export default function VaultPage() {
   const [vDragOver, setVDragOver] = useState<string|null>(null)
   const [vDragFrom, setVDragFrom] = useState<'unassigned'|'priority'|null>(null)
   const [vGroupByType, setVGroupByType] = useState(false)
+  const [vSort, setVSort] = useState('priority')
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -319,13 +327,19 @@ export default function VaultPage() {
       (item.tag ?? '').toLowerCase().includes(q)
     return matchCat && matchSearch
   }).sort((a, b) => {
-    // All Items follows the same ranking Priority View drag-reorders --
-    // reordering there is reflected here immediately, no separate sort.
-    const ai = vPriorityOrder.indexOf(a.id), bi = vPriorityOrder.indexOf(b.id)
-    if (ai === -1 && bi === -1) return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    if (ai === -1) return 1
-    if (bi === -1) return -1
-    return ai - bi
+    if (vSort === 'priority') {
+      // Same ranking Priority View drag-reorders -- reordering there is
+      // reflected here immediately, no separate sort to keep in sync.
+      const ai = vPriorityOrder.indexOf(a.id), bi = vPriorityOrder.indexOf(b.id)
+      if (ai === -1 && bi === -1) return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      if (ai === -1) return 1
+      if (bi === -1) return -1
+      return ai - bi
+    }
+    if (vSort === 'created_at_desc') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    if (vSort === 'created_at_asc')  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    if (vSort === 'category') return (a.category ?? 'z').localeCompare(b.category ?? 'z')
+    return 0
   })
 
   const catCounts: Record<string, number> = {}
@@ -682,6 +696,16 @@ export default function VaultPage() {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search title, author, notes, tags..."
             style={{ width:'100%', padding:'0.65rem 2.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', color:C.text, fontFamily:'inherit', fontSize:'0.88rem', boxSizing:'border-box', outline:'none' }}/>
           {search && <button onClick={() => setSearch('')} style={{ position:'absolute', right:'0.875rem', top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex' }}><X size={14}/></button>}
+        </div>
+
+        {/* Sort -- same options/default as the Tasks page: Priority order
+            first, following whatever Priority View is currently ranked. */}
+        <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'1.25rem' }}>
+          <label style={{ fontSize:'0.7rem', color:C.muted, fontWeight:600, textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>Sort</label>
+          <select value={vSort} onChange={e => setVSort(e.target.value)}
+            style={{ padding:'0.5rem 0.75rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', cursor:'pointer' }}>
+            {VAULT_SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
         </div>
 
         {/* Category filter pills */}
