@@ -28,7 +28,7 @@ export const MOBILITY_POOL: MobilityExercise[] = [
   { id:'deep-squat-hold',       name:'Deep Squat Hold',                     cue:'Hold with counterweight, work the hips at the bottom, knees toward the ground', categories:['ankle','squat'] },
   { id:'90-90',                 name:'90/90 Hip Switch',                    cue:'Add weight -- 2 minutes total',                              categories:['hip','lowerback'] },
   { id:'cobra',                 name:'Cobra Hold',                          cue:'Hold 1 minute',                                              categories:['lowerback'] },
-  { id:'cossacks',              name:'Cossack Squats',                      cue:'10 each side',                                               categories:['ankle','knee'] },
+  { id:'cossacks',              name:'Cossack Squat Flow',                  cue:'Deep squat, shift weight side to side extending the opposite leg straight -- flow continuously for 20-30 sec (Vladislav Tretiak\'s warm-up flow)', categories:['ankle','knee','hip'] },
   { id:'overhead-squat-lunge',  name:'Weighted Overhead Squats & Lunges',   cue:'Weight in one or both arms',                                 categories:['snatch','squat'] },
   { id:'heel-dips',             name:'Heel Dips / Step Downs',              cue:'10 reps',                                                    categories:['ankle'] },
   { id:'kneeling-thoracic-ext', name:'Kneeling Thoracic Extension vs Wall', cue:'Add weight',                                                 categories:['lowerback','snatch'] },
@@ -50,12 +50,24 @@ export const MOBILITY_POOL: MobilityExercise[] = [
   { id:'pancakes',              name:'Pancakes',                            cue:'Pancake stretch',                                            categories:['hip','squat'] },
   { id:'squat-rotate-in',       name:'Squat Then Rotate In',                cue:'',                                                            categories:['squat','lowerback'] },
   { id:'butterfly-hold',        name:'Butterfly Holds',                     cue:'',                                                            categories:['hip','ankle'] },
+  { id:'sissy-squat',           name:'Sissy Squats',                        cue:'10-12 reps, control the descent',                            categories:['knee','squat'] },
+  { id:'farmer-walk',           name:"Farmer's Walk",                       cue:'40m each way, heavy as you can hold with good posture',      categories:['hip','snatch'] },
+  { id:'lowerback-hold',        name:'Lower Back Holds',                    cue:'Hold, 3 minutes total -- gym',                               categories:['lowerback'] },
+  { id:'lizard-reach',          name:'Lizard Reaches',                      cue:'Deep lunge, reach overhead and rotate -- 10 each side',       categories:['hip','lowerback'] },
+  { id:'squat-twist',           name:'Squat Twists',                        cue:'Hold bottom of squat, rotate through the torso -- 10 each side', categories:['squat','lowerback'] },
+  { id:'pump-stretch',          name:'Pump Stretches',                      cue:'Straight-leg hamstring pump -- 15 each side',                categories:['hip','knee'] },
+  { id:'pigeon-pulse',          name:'Pigeon Pulses',                       cue:'Hold pigeon pose, small pulses -- 20 each side',             categories:['hip'] },
+  { id:'windshield-wipers',     name:'Windshield Wipers',                   cue:'Lying, knees side to side -- 12 each way',                   categories:['hip','lowerback'] },
+  { id:'plow-pose',             name:'Plow Pose',                           cue:'Hold 30-60 seconds',                                         categories:['lowerback','hip'] },
 ]
 
-// Runs every day regardless of the day's rotation -- always shown first.
-export const MOBILITY_DAILY_ANCHOR: MobilityExercise = {
-  id:'reverse-plank', name:'Reverse Planks', cue:'Hold 1 minute x5 -- every day', categories:['lowerback'],
-}
+// Run every day regardless of the day's rotation -- always shown first, in
+// this order. Supermans added per Tom's request to run daily for months,
+// same treatment as the existing Reverse Plank anchor.
+export const MOBILITY_DAILY_ANCHORS: MobilityExercise[] = [
+  { id:'reverse-plank', name:'Reverse Planks', cue:'Hold 1 minute x5 -- every day', categories:['lowerback'] },
+  { id:'supermans',     name:'Supermans',      cue:'Face down, arms and legs raised in a V, hold -- every day for months', categories:['lowerback'] },
+]
 
 export const MOBILITY_PROGRAM_WEEKS = 4
 
@@ -109,6 +121,6 @@ export function getMobilityDay(date: Date, startDate: Date, size = 5): MobilityD
     weekNumber,
     dayLabel: template.day,
     focus: template.focus,
-    exercises: [MOBILITY_DAILY_ANCHOR, ...picked],
+    exercises: [...MOBILITY_DAILY_ANCHORS, ...picked],
   }
 }

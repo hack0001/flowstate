@@ -491,6 +491,50 @@ function PhaseSleep({ onComplete }: { onComplete: () => void }) {
       }}>
         {allDone ? '&#127769; Sleep well — great day' : checked.size + ' / ' + SLEEP_ITEMS.length + ' complete'}
       </button>
+
+      {/* The Practical Protocol — longevity system for sleep + hair, not a
+          nightly tick-list (most of it is daytime/weekly habits), so it sits
+          here as reference rather than another checkbox row. */}
+      <div style={{ marginTop:'2rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem' }}>
+        <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.25rem' }}>The Practical Protocol</p>
+        <p style={{ fontSize:'0.78rem', color:C.muted, margin:'0 0 1.125rem' }}>&#8220;DO THIS&#8221; &#8212; the underlying system for sleep quality and hair health. Daily/weekly habits, not a tonight-only checklist.</p>
+
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+          {([
+            {
+              n:1, name:'Fix your sleep', color:C.purple,
+              how:'7&ndash;9 hours, aiming for at least 1 hour of REM. Magnesium glycinate 300&ndash;400mg + 3g glycine before bed.',
+            },
+            {
+              n:2, name:'Lower the oxidative load', color:C.cyan,
+              how:'Get outside and walk. Drink high quality water. Eat real food. Don&#39;t smoke. Don&#39;t graze &#8212; 2 or 3 meals a day, not constant snacking.',
+            },
+            {
+              n:3, name:'Protect the mitochondria', color:C.amber,
+              how:'3 &#215; 20-minute weight workouts a week. Get sunlight. Take creatine.',
+            },
+            {
+              n:4, name:'Master cortisol like your life depends on it', color:'#f97316',
+              how:'Grounding &#8212; bare feet on grass/earth, daily if possible.',
+            },
+            {
+              n:5, name:'Take vitamin D', color:C.green,
+              how:'Daily, consistently &#8212; especially through the darker months.',
+            },
+          ] as {n:number;name:string;color:string;how:string}[]).map((item) => (
+            <div key={item.n} style={{ display:'flex', gap:'0.875rem', padding:'0.875rem 1rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.875rem', borderLeft:'3px solid '+item.color }}>
+              <span style={{ fontSize:'0.72rem', fontWeight:900, color:item.color, flexShrink:0, marginTop:'1px' }}>{item.n}</span>
+              <div>
+                <p style={{ fontSize:'0.85rem', fontWeight:800, color:item.color, margin:'0 0 0.3rem' }}>{item.name}</p>
+                <p style={{ fontSize:'0.77rem', color:C.sec, margin:0, lineHeight:1.65 }} dangerouslySetInnerHTML={{ __html: item.how }}/>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.875rem 0 0', fontStyle:'italic', lineHeight:1.6 }}>
+          Consistency across all five compounds &#8212; sleep quality and hair health are both downstream of the same system, not fixed by any single habit alone.
+        </p>
+      </div>
     </div>
   )
 }

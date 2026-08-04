@@ -38,13 +38,17 @@ const HEALTH_ITEMS = [
 ]
 
 const SHORTS_CHECKLIST = [
-  { id:'sh-hook',     label:'First second: text on screen + 2 sounds + circle highlight on subject', note:'The only moment you have to stop the scroll &mdash; miss this and the short fails' },
+  { id:'sh-hook',     label:'First 3 seconds: bold statement, striking visual, or a question that needs answering', note:'No slow intros &mdash; the first 3 seconds are the most important thing in the whole short. Miss this and it fails regardless of what comes after.' },
   { id:'sh-length',   label:'Script is 60&ndash;80 words max', note:'One topic, one punchline, one twist. No padding whatsoever.' },
+  { id:'sh-duration', label:'Runtime is 40&ndash;60 seconds', note:'Long enough to land the payoff, short enough that nobody swipes away out of boredom.' },
   { id:'sh-edit',     label:'New visual cut every 2 seconds minimum', note:'No static shots. If it stops moving, they stop watching.' },
   { id:'sh-captions', label:'Full captions burned in for every word', note:'85% of Shorts are watched with sound off &mdash; captions are not optional' },
   { id:'sh-sfx',      label:'Sound effects on key moments (pop, whoosh, ding)', note:'Build a dedicated sound effects folder &mdash; reuse across every short' },
   { id:'sh-loop',     label:'End frame connects back to start (plays on a loop)', note:'A loopable short increases watch time &mdash; first and last frames should match' },
-  { id:'sh-cover',    label:'Cover frame is strong before posting', note:'The still frame the algorithm shows before anyone presses play' },
+  { id:'sh-title',    label:'Title is keyword-friendly, keyword first', note:'Lead with the searchable term, not the hook &mdash; YouTube weighs the opening words of the title for search and suggested placement.' },
+  { id:'sh-desc',     label:'Description is natural, not just tags &mdash; includes the important links', note:'A sentence or two a human would actually write, plus a link to the related long-form video, product, or socials.' },
+  { id:'sh-hashtags', label:'5&ndash;7 relevant hashtags', note:'More than that reads as spam and dilutes the relevance signal instead of strengthening it.' },
+  { id:'sh-cover',    label:'Custom thumbnail set &mdash; never let YouTube auto-pick one', note:'The still frame the algorithm shows before anyone presses play. Skipping this is skipping free clicks.' },
   { id:'sh-watch',    label:'Watch it as a viewer at 1x &mdash; does it hold every second?', note:'If you want to skip, they will swipe. Re-edit that moment.' },
 ]
 const LS_SHORTS = 'flowstate_yt_shorts'
@@ -391,8 +395,10 @@ export default function YouTubePage() {
                 {([
                   { icon:'&#128337;', title:'Wait for the previous short to drop below 100 views/hour for 12 hours &mdash; or flatline completely', note:'Uploading too early splits the algorithm&apos;s focus. Let one short die before feeding it another.' },
                   { icon:'&#128198;', title:'New channel: 7 days of watching before your first upload', note:'Seed the algorithm with your niche. Watch competitors and top-performing shorts in your space first.' },
-                  { icon:'&#128200;', title:'3&ndash;5 Shorts per week. Do not flood.', note:'Volume is good but flooding the algorithm hurts distribution. Consistency beats bursts.' },
+                  { icon:'&#128200;', title:'3&ndash;5 Shorts per week minimum &mdash; 1 a day once the format is working', note:'Posting daily is the strongest consistency signal you can send YouTube that the channel is serious. Do not flood beyond that, but do not undersell it either.' },
+                  { icon:'&#128276;', title:'Post about 30 minutes before your audience is typically online', note:'Gives the algorithm a runway to start testing the short before the biggest wave of potential viewers arrives.' },
                   { icon:'&#9201;', title:'Expect a test phase then a 7&ndash;30 day flat period before a short goes viral', note:'If it is flat it is not dead. Give it time. Do not delete.' },
+                  { icon:'&#128269;', title:'Look for outliers before you script the next one', note:'Videos in your niche performing way above a channel&apos;s normal view count are the strongest idea signal available &mdash; use the Outlier finder in Content &gt; Find Ideas.' },
                 ] as {icon:string;title:string;note:string}[]).map((item, i) => (
                   <div key={i} style={{ display:'flex', gap:'0.875rem', padding:'0.875rem 1rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.875rem' }}>
                     <span style={{ fontSize:'1.1rem', flexShrink:0 }} dangerouslySetInnerHTML={{ __html: item.icon }} />

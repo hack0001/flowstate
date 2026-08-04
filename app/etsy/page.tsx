@@ -1057,14 +1057,30 @@ export default function EtsyPage() {
                 )
               })}
             </div>
+            {(() => {
+              // "All" (and the active-stage filters) only ever show
+              // active todos, ordered the same way Priority View ranks
+              // them -- reorder there and it's reflected here immediately.
+              // Completed todos only appear once "Completed" is picked
+              // explicitly, same rule as the Tasks page's Done status.
+              const base = todoFilter === 'Completed' ? ETSY_TODOS.filter(td => td.stage === 'Completed') : ACTIVE_TODOS
+              const ordered = todoFilter === 'Completed' ? base : [...base].sort((a, b) => {
+                const ai = priorityOrder.indexOf(getTodoId(a)), bi = priorityOrder.indexOf(getTodoId(b))
+                if (ai === -1 && bi === -1) return 0
+                if (ai === -1) return 1
+                if (bi === -1) return -1
+                return ai - bi
+              })
+              const visible = ordered
+                .filter(td => !search || td.name.toLowerCase().includes(search.toLowerCase()) || td.notes.toLowerCase().includes(search.toLowerCase()))
+                .filter(td => todoFilter === 'All' || todoFilter === 'Completed' || td.stage === todoFilter)
+              return (
+            <>
             <p style={{ fontSize:'0.7rem', color:C.muted, margin:'-0.25rem 0 1rem' }}>
-              {ETSY_TODOS.filter(td => (!search || td.name.toLowerCase().includes(search.toLowerCase())) && (todoFilter === 'All' || td.stage === todoFilter)).length} todos
+              {visible.length} todos
             </p>
             <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-              {ETSY_TODOS
-                .filter(td => !search || td.name.toLowerCase().includes(search.toLowerCase()) || td.notes.toLowerCase().includes(search.toLowerCase()))
-                .filter(td => todoFilter === 'All' || td.stage === todoFilter)
-                .map((td, i) => (
+              {visible.map((td, i) => (
                   <div key={i} style={{ background:C.card, border:'1px solid '+(td.stage === 'Completed' ? 'rgba(0,255,136,0.12)' : C.border), borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'flex-start', gap:'0.625rem' }}>
                     <div style={{ display:'flex', flexDirection:'column', gap:'0.25rem', flexShrink:0, paddingTop:'1px' }}>
                       <Badge label={td.stage} color={stageColor(td.stage)} />
@@ -1082,6 +1098,9 @@ export default function EtsyPage() {
                   </div>
                 ))}
             </div>
+            </>
+              )
+            })()}
           </div>
         )}
 

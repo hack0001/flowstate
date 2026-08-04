@@ -65,6 +65,7 @@ const IMPORTANCE_OPTS = ['', 'Moved the Needle', 'Important', 'Not Important']
 const PRIORITY_OPTS = ['', 'High', 'Medium', 'Low']
 const TIME_OPTS = ['', 'Quick (< 15 min)', 'Short (15–30 min)', 'Medium (30–60 min)', 'Long (1–2 hrs)', 'Deep (2+ hrs)']
 const SORTS = [
+  { key: 'priority',        label: 'Priority order' },
   { key: 'created_at_desc', label: 'Newest first' },
   { key: 'created_at_asc',  label: 'Oldest first' },
   { key: 'deadline_asc',    label: 'Deadline (soonest)' },
@@ -174,8 +175,19 @@ function TypeBadge({ type }: { type: string | null }) {
   )
 }
 
-function sortTasks(tasks: Task[], sort: string): Task[] {
+// priorityOrder is the same tPriorityOrder array Priority View drag-reorders
+// (backed by the 'tasks_priority' row in priority_lists) -- passing it in
+// here means All Tasks reflects whatever ranking was set in Priority View,
+// live, with no separate ordering to keep in sync.
+function sortTasks(tasks: Task[], sort: string, priorityOrder: string[] = []): Task[] {
   return [...tasks].sort((a, b) => {
+    if (sort === 'priority') {
+      const ai = priorityOrder.indexOf(a.id), bi = priorityOrder.indexOf(b.id)
+      if (ai === -1 && bi === -1) return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      if (ai === -1) return 1
+      if (bi === -1) return -1
+      return ai - bi
+    }
     if (sort === 'created_at_desc') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     if (sort === 'created_at_asc')  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     if (sort === 'deadline_asc') {
@@ -403,7 +415,7 @@ export default function TasksPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('All')
   const [statusFilter, setStatusFilter] = useState('All')
-  const [sort, setSort] = useState('deadline_asc')
+  const [sort, setSort] = useState('priority')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [draft, setDraft] = useState<DraftTask>(EMPTY_DRAFT)
@@ -564,6 +576,11 @@ export default function TasksPage() {
 
   const filtered = sortTasks(
     tasks.filter(t => {
+      // Done tasks only ever show up under the explicit "Done" status
+      // filter -- every other section (type filters, "All" status) is
+      // active-only, so a finished task doesn't linger in views it no
+      // longer belongs in.
+      if (t.status === 'Done' && statusFilter !== 'Done') return false
       if (typeFilter === 'No Type' && t.task_type) return false
       if (typeFilter !== 'All' && typeFilter !== 'No Type' && t.task_type !== typeFilter) return false
       if (statusFilter !== 'All' && t.status !== statusFilter) return false
@@ -578,12 +595,16 @@ export default function TasksPage() {
       }
       return true
     }),
-    sort
+    sort,
+    tPriorityOrder
   )
 
+  // Type-pill counts reflect active (non-Done) tasks -- matches what's
+  // actually visible under each pill now that Done is hidden outside the
+  // dedicated Done status filter.
   const typeCounts: Record<string, number> = {}
-  tasks.forEach(t => { if (t.task_type) typeCounts[t.task_type] = (typeCounts[t.task_type] ?? 0) + 1 })
-  typeCounts['No Type'] = tasks.filter(t => !t.task_type).length
+  tasks.filter(t => t.status !== 'Done').forEach(t => { if (t.task_type) typeCounts[t.task_type] = (typeCounts[t.task_type] ?? 0) + 1 })
+  typeCounts['No Type'] = tasks.filter(t => t.status !== 'Done' && !t.task_type).length
   const statusCounts: Record<string, number> = {}
   tasks.forEach(t => { statusCounts[t.status] = (statusCounts[t.status] ?? 0) + 1 })
 
@@ -750,7 +771,7 @@ export default function TasksPage() {
             {STATUSES.map(s => {
               const active = statusFilter === s
               const sm = s !== 'All' ? STATUS_META[s] : null
-              const count = s === 'All' ? tasks.length : (statusCounts[s] ?? 0)
+              const count = s === 'All' ? activeCount : (statusCounts[s] ?? 0)
               if (s !== 'All' && count === 0) return null
               return (
                 <button key={s} onClick={() => setStatusFilter(s)} style={{

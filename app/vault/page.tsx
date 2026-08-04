@@ -318,6 +318,14 @@ export default function VaultPage() {
       (item.notes ?? '').toLowerCase().includes(q) ||
       (item.tag ?? '').toLowerCase().includes(q)
     return matchCat && matchSearch
+  }).sort((a, b) => {
+    // All Items follows the same ranking Priority View drag-reorders --
+    // reordering there is reflected here immediately, no separate sort.
+    const ai = vPriorityOrder.indexOf(a.id), bi = vPriorityOrder.indexOf(b.id)
+    if (ai === -1 && bi === -1) return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    if (ai === -1) return 1
+    if (bi === -1) return -1
+    return ai - bi
   })
 
   const catCounts: Record<string, number> = {}
