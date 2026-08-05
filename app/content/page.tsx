@@ -1867,7 +1867,18 @@ export default function ContentPage() {
     }
   }
 
-  const ideas    = items.filter(i => i.pipeline_stage === '💡 Idea' || !i.pipeline_stage || !STAGE_KEYS.includes(i.pipeline_stage ?? ''))
+  // Ideas Bank follows the Priority tab's ranking (cPriorityOrder) — reorder
+  // there and the bank re-sorts to match. Ideas with no rank yet fall in
+  // after the ranked ones, keeping their normal created_at-desc order.
+  const ideas    = items
+    .filter(i => i.pipeline_stage === '💡 Idea' || !i.pipeline_stage || !STAGE_KEYS.includes(i.pipeline_stage ?? ''))
+    .sort((a, b) => {
+      const ai = cPriorityOrder.indexOf(a.id), bi = cPriorityOrder.indexOf(b.id)
+      if (ai === -1 && bi === -1) return 0
+      if (ai === -1) return 1
+      if (bi === -1) return -1
+      return ai - bi
+    })
   const pipeline = items.filter(i => i.pipeline_stage && STAGE_KEYS.includes(i.pipeline_stage) && i.pipeline_stage !== '💡 Idea')
   const liveCount = items.filter(i => i.pipeline_stage === '📣 Live').length
 
@@ -1976,14 +1987,21 @@ export default function ContentPage() {
                 <table style={{ width:'100%', borderCollapse:'collapse' as const, fontSize:'0.82rem' }}>
                   <thead>
                     <tr style={{ borderBottom:'1px solid '+C.border }}>
-                      {['Focus','Title','Type','Format','Alpha (unique angle)','Notes / Angle','Added','Actions'].map(h => (
+                      {['#','Focus','Title','Type','Format','Alpha (unique angle)','Notes / Angle','Added','Actions'].map(h => (
                         <th key={h} style={{ padding:'0.5rem 0.875rem', textAlign:'left' as const, fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase' as const, color:C.muted, whiteSpace:'nowrap' as const }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {ideas.map(item => (
+                    {ideas.map(item => {
+                      const rank = cPriorityOrder.indexOf(item.id)
+                      return (
                       <tr key={item.id} style={{ borderBottom:'1px solid '+C.border+'60' }}>
+                        <td style={{ padding:'0.75rem 0.875rem', whiteSpace:'nowrap' as const }}>
+                          {rank === -1
+                            ? <span style={{ fontSize:'0.7rem', color:C.muted }}>&mdash;</span>
+                            : <span style={{ fontSize:'0.7rem', fontWeight:800, color:C.orange }}>{rank + 1}</span>}
+                        </td>
                         <td style={{ padding:'0.75rem 0.875rem', whiteSpace:'nowrap' as const }}>
                           <FocusStar active={item.is_active_focus} atCap={focusCount >= 2} onToggle={() => toggleFocus(item)}/>
                         </td>
@@ -2029,7 +2047,8 @@ export default function ContentPage() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

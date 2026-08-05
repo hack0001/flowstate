@@ -1,9 +1,37 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, CheckCircle2, Circle, Repeat, Droplets, Bell, BellOff, RotateCcw } from 'lucide-react'
-import { getDailyChecklistState, setDailyChecklistItem, getMobilityProgramStart, setMobilityProgramStart } from '@/lib/supabase'
+import { ChevronLeft, CheckCircle2, Circle, Repeat, Droplets, Bell, BellOff, RotateCcw, Plus, X } from 'lucide-react'
+import { getDailyChecklistState, setDailyChecklistItem, getMobilityProgramStart, setMobilityProgramStart, supabase } from '@/lib/supabase'
 import { getMobilityDay, MOBILITY_WEEK_TEMPLATE, MOBILITY_PROGRAM_WEEKS } from '@/lib/mobility'
+
+type PlanRow = { id: string; day_of_week: number; label: string; category: string | null; sort_order: number }
+
+const EXERCISE_CATALOGUE: { label: string; category: string }[] = [
+  { label:'Tib raises', category:'Knee routine' },
+  { label:'Leaning calf raise', category:'Knee routine' },
+  { label:'Bent-knee calf raise', category:'Knee routine' },
+  { label:'Step-downs', category:'Knee routine' },
+  { label:'Split squat', category:'Knee routine' },
+  { label:'Lower back raises', category:'Lower back' },
+  { label:'Reverse lower back raises', category:'Lower back' },
+  { label:'Straight-leg calf stretch', category:'Flexibility' },
+  { label:'Bent-knee calf stretch', category:'Flexibility' },
+  { label:'Horse stance', category:'Flexibility' },
+  { label:'Butterfly stretch', category:'Flexibility' },
+  { label:'Pancake stretch', category:'Flexibility' },
+  { label:'Ankle circles', category:'Ankle' },
+  { label:'Wall ankle leans', category:'Ankle' },
+  { label:'Foot alphabet', category:'Ankle' },
+  { label:'Deep squat hold', category:'Ankle' },
+  { label:'Jump rope', category:'Movement' },
+  { label:'High knee raises', category:'Movement' },
+  { label:'Side-to-side hops', category:'Movement' },
+  { label:'Sprint session', category:'Sprint' },
+]
+
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0] // Monday-first display, values match JS getDay()
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -62,6 +90,14 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10)
 }
 
+function weekStartStr() {
+  const d = new Date()
+  const day = d.getDay() // 0=Sun..6=Sat
+  const diff = (day === 0 ? -6 : 1) - day // back to Monday
+  d.setDate(d.getDate() + diff)
+  return d.toISOString().slice(0, 10)
+}
+
 function isTrainingDay() {
   return TRAINING_DAYS.includes(new Date().getDay())
 }
@@ -118,9 +154,21 @@ export default function PhysicalPage() {
   const [mobStart, setMobStart]   = useState<Date | null>(null)
   const [mobDone, setMobDone]     = useState<Record<string, boolean>>({})
   const [mobErr, setMobErr]       = useState<string | null>(null)
+  const [weekDone, setWeekDone]   = useState<Record<string, boolean>>({})
+
+  // Weekly exercise plan — organise exercises per day, today's list feeds the home page
+  const [plan, setPlan]           = useState<PlanRow[]>([])
+  const [planDone, setPlanDone]   = useState<Record<string, boolean>>({})
+  const [addDay, setAddDay]       = useState<number>(new Date().getDay())
+  const [addLabel, setAddLabel]   = useState('')
+  const [addCategory, setAddCategory] = useState('Custom')
 
   useEffect(() => {
     getDailyChecklistState('physical', todayStr()).then(({ state }) => setDone(state))
+    getDailyChecklistState('physical_weekly', weekStartStr()).then(({ state }) => setWeekDone(state))
+    getDailyChecklistState('physical_plan', todayStr()).then(({ state }) => setPlanDone(state))
+    supabase.from('weekly_exercise_plan').select('id,day_of_week,label,category,sort_order').order('day_of_week').order('sort_order')
+      .then(({ data }) => setPlan((data ?? []) as PlanRow[]))
 
     getMobilityProgramStart().then(({ startDate, error }) => {
       if (error) { setMobErr(error); return }
@@ -154,6 +202,41 @@ export default function PhysicalPage() {
     setDone(prev => {
       const nextDone = !prev[id]
       setDailyChecklistItem('physical', id, todayStr(), nextDone)
+      return { ...prev, [id]: nextDone }
+    })
+  }
+
+  function toggleWeek(id: string) {
+    setWeekDone(prev => {
+      const nextDone = !prev[id]
+      setDailyChecklistItem('physical_weekly', id, weekStartStr(), nextDone)
+      return { ...prev, [id]: nextDone }
+    })
+  }
+
+  async function addPlanItem() {
+    const label = addLabel.trim()
+    if (!label) return
+    const sort_order = plan.filter(p => p.day_of_week === addDay).length
+    const { data, error } = await supabase.from('weekly_exercise_plan')
+      .insert({ day_of_week: addDay, label, category: addCategory, sort_order })
+      .select('id,day_of_week,label,category,sort_order').single()
+    if (!error && data) {
+      setPlan(prev => [...prev, data as PlanRow])
+      setAddLabel('')
+      setAddCategory('Custom')
+    }
+  }
+
+  async function removePlanItem(id: string) {
+    setPlan(prev => prev.filter(p => p.id !== id))
+    await supabase.from('weekly_exercise_plan').delete().eq('id', id)
+  }
+
+  function togglePlanDone(id: string) {
+    setPlanDone(prev => {
+      const nextDone = !prev[id]
+      setDailyChecklistItem('physical_plan', id, todayStr(), nextDone)
       return { ...prev, [id]: nextDone }
     })
   }
@@ -207,6 +290,66 @@ export default function PhysicalPage() {
       </div>
 
       <div style={{ maxWidth:'820px', margin:'0 auto', padding:'2rem' }}>
+
+        {/* Weekly Exercise Plan — organise exercises per day, today's list feeds the home page */}
+        <div style={{ marginBottom:'2.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem' }}>
+          <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.25rem' }}>Weekly Plan</p>
+          <p style={{ fontSize:'0.78rem', color:C.muted, margin:'0 0 1.125rem' }}>Assign exercises to days of the week &#8212; today&#39;s list shows up on the home page, checkable from either place.</p>
+
+          <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', alignItems:'center', margin:'0 0 1.25rem', padding:'0.875rem 1rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.75rem' }}>
+            <select value={addDay} onChange={e => setAddDay(Number(e.target.value))} style={{ padding:'0.4rem 0.6rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.75rem' }}>
+              {DAY_ORDER.map(d => <option key={d} value={d}>{DAY_NAMES[d]}</option>)}
+            </select>
+            <select value={EXERCISE_CATALOGUE.some(x => x.label === addLabel) ? addLabel : ''} onChange={e => {
+              const v = e.target.value
+              if (!v) return
+              const found = EXERCISE_CATALOGUE.find(x => x.label === v)
+              setAddLabel(v)
+              setAddCategory(found ? found.category : 'Custom')
+            }} style={{ padding:'0.4rem 0.6rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.75rem' }}>
+              <option value="">Pick an exercise&#8230;</option>
+              {EXERCISE_CATALOGUE.map(x => <option key={x.label} value={x.label}>{x.label}</option>)}
+            </select>
+            <input value={addLabel} onChange={e => { setAddLabel(e.target.value); setAddCategory('Custom') }}
+              onKeyDown={e => { if (e.key === 'Enter') addPlanItem() }}
+              placeholder="&#8230;or type a custom exercise" style={{ flex:1, minWidth:'160px', padding:'0.4rem 0.6rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.75rem', outline:'none' }} />
+            <button onClick={addPlanItem} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.4rem 0.75rem', background:C.green, border:'none', borderRadius:'0.5rem', color:'#000', fontWeight:700, fontSize:'0.75rem', cursor:'pointer', fontFamily:'inherit' }}>
+              <Plus size={12}/> Add
+            </button>
+          </div>
+
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:'0.6rem' }}>
+            {DAY_ORDER.map(d => {
+              const items = plan.filter(p => p.day_of_week === d).sort((a, b) => a.sort_order - b.sort_order)
+              const isToday = d === new Date().getDay()
+              return (
+                <div key={d} style={{ padding:'0.65rem 0.7rem', background: isToday ? 'rgba(0,212,255,0.05)' : C.surface, border:'1px solid '+(isToday ? 'rgba(0,212,255,0.3)' : C.border), borderRadius:'0.75rem' }}>
+                  <p style={{ fontSize:'0.62rem', fontWeight:800, color:isToday ? C.cyan : C.sec, margin:'0 0 0.4rem' }}>{DAY_NAMES[d].slice(0, 3)}{isToday ? ' • today' : ''}</p>
+                  {items.length === 0 ? (
+                    <p style={{ fontSize:'0.7rem', color:C.muted, margin:0 }}>&mdash;</p>
+                  ) : (
+                    <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+                      {items.map(item => {
+                        const isDone = isToday && !!planDone[item.id]
+                        return (
+                          <div key={item.id} style={{ display:'flex', alignItems:'flex-start', gap:'0.3rem' }}>
+                            {isToday && (
+                              <button onClick={() => togglePlanDone(item.id)} style={{ width:'13px', height:'13px', marginTop:'2px', borderRadius:'50%', flexShrink:0, padding:0, cursor:'pointer', border:'2px solid '+(isDone ? C.green : C.muted), background: isDone ? C.green : 'transparent' }} />
+                            )}
+                            <span style={{ flex:1, fontSize:'0.72rem', color: isDone ? C.muted : C.text, textDecoration: isDone ? 'line-through' : 'none', lineHeight:1.4 }}>{item.label}</span>
+                            <button onClick={() => removePlanItem(item.id)} title="Remove" style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:0, flexShrink:0, display:'flex' }}>
+                              <X size={10}/>
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
 
         {/* Squat & Snatch Mobility Program */}
         <div style={{ marginBottom:'2.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem' }}>
@@ -283,6 +426,28 @@ export default function PhysicalPage() {
               Pick an exercise and do sets at roughly <strong style={{ color:C.text }}>two-thirds of your max reps</strong> &#8212; never to failure. Spread these sessions across <strong style={{ color:C.text }}>2&#8211;3 days</strong> a week. Progressively add a small amount of <strong style={{ color:C.text }}>weight or reps</strong> each time, and <strong style={{ color:C.text }}>track what you did</strong> so you can see the trend. Frequent, sub-maximal practice grooves the movement pattern and builds strength faster than occasional all-out sessions &#8212; and it doesn&#39;t trash your recovery.
             </p>
           </div>
+        </div>
+
+        {/* Weekly Sprint Session */}
+        <div style={{ marginBottom:'2.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem' }}>
+          <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.25rem' }}>Weekly &#8212; Sprint Session</p>
+          <p style={{ fontSize:'0.78rem', color:C.muted, margin:'0 0 1.125rem' }}>Once a week &bull; ~20&#8211;25 minutes &bull; Any day with full recovery &#8212; avoid stacking straight onto a knee-routine day</p>
+
+          <div style={{ padding:'0.875rem 1rem', background:'rgba(255,68,102,0.04)', border:'1px solid rgba(255,68,102,0.18)', borderRadius:'0.875rem', marginBottom:'1.125rem' }}>
+            <p style={{ fontSize:'0.82rem', color:C.sec, margin:0, lineHeight:1.7 }}>
+              <strong style={{ color:C.text }}>5&#8211;10 min warm-up</strong> &#8212; easy jog, high knees, leg swings. Then <strong style={{ color:C.text }}>6&#8211;8 sprints of 20&#8211;30 seconds</strong> at 90&#8211;95% effort, flat ground or a gentle hill. Full recovery between reps &#8212; walk back and rest <strong style={{ color:C.text }}>2&#8211;3 minutes</strong>, never rush the next one. Finish with a 5 minute walk to cool down. Sprints build fast-twitch fibre, VO2 max and a growth-hormone response that steady-state cardio doesn&#39;t touch.
+            </p>
+          </div>
+
+          <button onClick={() => toggleWeek('weekly-sprint')} style={{ width:'100%', display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', background:weekDone['weekly-sprint'] ? 'rgba(0,255,136,0.06)' : 'rgba(255,255,255,0.02)', border:'1px solid '+(weekDone['weekly-sprint'] ? 'rgba(0,255,136,0.3)' : C.border), borderRadius:'0.75rem', cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const }}>
+            {weekDone['weekly-sprint']
+              ? <CheckCircle2 size={18} color={C.green} style={{ flexShrink:0 }}/>
+              : <Circle size={18} color={C.red} style={{ flexShrink:0 }}/>}
+            <span style={{ fontSize:'0.86rem', fontWeight:700, color:weekDone['weekly-sprint'] ? C.muted : C.text, textDecoration:weekDone['weekly-sprint'] ? 'line-through' : 'none' }}>
+              {weekDone['weekly-sprint'] ? 'Sprint session done this week' : "Mark this week's sprint session done"}
+            </span>
+            <span style={{ marginLeft:'auto', fontSize:'0.68rem', color:C.muted, flexShrink:0 }}>Resets Monday</span>
+          </button>
         </div>
 
         {/* Training day status banner */}
