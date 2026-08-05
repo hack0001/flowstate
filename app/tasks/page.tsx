@@ -1,6 +1,6 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { sounds } from '@/lib/sounds'
 import { useCelebration } from '@/hooks/useCelebration'
@@ -408,11 +408,13 @@ function TaskDrawer({
   )
 }
 
-export default function TasksPage() {
+function TasksInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { celebrate } = useCelebration()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
+  const [highlightId, setHighlightId] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [importMsg, setImportMsg] = useState('')
   const [search, setSearch] = useState('')
@@ -474,6 +476,23 @@ export default function TasksPage() {
     }
     init()
   }, [load])
+
+  // Deep link from the home page's Top 5 ("...?focus=<id>") — expand and
+  // scroll to that task once it's loaded, then let the glow fade.
+  useEffect(() => {
+    const f = searchParams.get('focus')
+    if (!f) return
+    setHighlightId(f)
+    setExpanded(f)
+  }, [searchParams])
+
+  useEffect(() => {
+    if (!highlightId || loading) return
+    const el = document.getElementById('task-row-' + highlightId)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const t = setTimeout(() => setHighlightId(null), 4000)
+    return () => clearTimeout(t)
+  }, [highlightId, loading])
 
   function saveTPriority(order: string[]) {
     const y = window.scrollY
@@ -1016,14 +1035,15 @@ export default function TasksPage() {
                 const typeM = task.task_type ? TYPE_META[task.task_type] : null
                 const isOverdue = task.due_date && task.due_date < today && task.status !== 'Done'
                 const needsSetup = task.from_vault && !task.task_type && !task.urgency && !task.priority
+                const isHighlighted = highlightId === task.id
                 return (
-                  <div key={task.id} onClick={() => setExpanded(isExp ? null : task.id)}
+                  <div key={task.id} id={'task-row-' + task.id} onClick={() => setExpanded(isExp ? null : task.id)}
                     style={{
                       background:C.card,
-                      border:'1px solid '+(isExp?(typeM?.color??C.cyan)+'40':needsSetup?C.amber+'50':C.border),
+                      border:'1px solid '+(isHighlighted?C.cyan:isExp?(typeM?.color??C.cyan)+'40':needsSetup?C.amber+'50':C.border),
                       borderRadius:'1rem', padding:'1rem', cursor:'pointer',
-                      transition:'border-color 0.2s ease',
-                      boxShadow: isExp ? '0 0 18px '+(typeM?.color??C.cyan)+'12' : needsSetup ? '0 0 12px rgba(255,184,0,0.08)' : 'none',
+                      transition:'border-color 0.2s ease, box-shadow 0.2s ease',
+                      boxShadow: isHighlighted ? '0 0 0 3px rgba(0,212,255,0.25)' : isExp ? '0 0 18px '+(typeM?.color??C.cyan)+'12' : needsSetup ? '0 0 12px rgba(255,184,0,0.08)' : 'none',
                     }}>
 
                     {/* Top row: type badge + frog + vault badges + status (click-to-cycle) */}
@@ -1130,4 +1150,8 @@ export default function TasksPage() {
       `}</style>
     </main>
   )
+}
+
+export default function TasksPage() {
+  return <Suspense><TasksInner/></Suspense>
 }

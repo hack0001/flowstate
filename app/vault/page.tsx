@@ -1,6 +1,6 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { sounds } from '@/lib/sounds'
 import { useCelebration } from '@/hooks/useCelebration'
@@ -248,11 +248,13 @@ function VaultDrawer({
   )
 }
 
-export default function VaultPage() {
+function VaultInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { celebrate } = useCelebration()
   const [items, setItems] = useState<VaultItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [highlightId, setHighlightId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('All')
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -277,6 +279,23 @@ export default function VaultPage() {
     setItems(data ?? [])
     setLoading(false)
   }, [])
+
+  // Deep link from the home page's Top 5 ("...?focus=<id>") — expand and
+  // scroll to that item once it's loaded, then let the glow fade.
+  useEffect(() => {
+    const f = searchParams.get('focus')
+    if (!f) return
+    setHighlightId(f)
+    setExpanded(f)
+  }, [searchParams])
+
+  useEffect(() => {
+    if (!highlightId || loading) return
+    const el = document.getElementById('vault-row-' + highlightId)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const t = setTimeout(() => setHighlightId(null), 4000)
+    return () => clearTimeout(t)
+  }, [highlightId, loading])
 
   useEffect(() => {
     let vPLsLoaded = false
@@ -762,13 +781,14 @@ export default function VaultPage() {
               const takeawayStyle: React.CSSProperties = isExp
                 ? { fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5 }
                 : { fontSize:'0.78rem', color:C.sec, margin:0, lineHeight:1.5, overflow:'hidden', display:'-webkit-box' as React.CSSProperties['display'], WebkitLineClamp:2, WebkitBoxOrient:'vertical' as React.CSSProperties['WebkitBoxOrient'] }
+              const isHighlighted = highlightId === item.id
               return (
-                <div key={item.id} onClick={() => setExpanded(isExp ? null : item.id)}
+                <div key={item.id} id={'vault-row-' + item.id} onClick={() => setExpanded(isExp ? null : item.id)}
                   style={{
-                    background:C.card, border:'1px solid '+(isExp?(meta?.color??C.purple)+'40':C.border),
+                    background:C.card, border:'1px solid '+(isHighlighted?C.cyan:isExp?(meta?.color??C.purple)+'40':C.border),
                     borderRadius:'1rem', padding:'1rem', cursor:'pointer',
                     transition:'all 0.2s ease',
-                    boxShadow: isExp ? '0 0 20px '+(meta?.color??C.purple)+'15' : 'none',
+                    boxShadow: isHighlighted ? '0 0 0 3px rgba(0,212,255,0.25)' : isExp ? '0 0 20px '+(meta?.color??C.purple)+'15' : 'none',
                   }}>
 
                   {/* Top row */}
@@ -876,4 +896,8 @@ export default function VaultPage() {
       `}</style>
     </main>
   )
+}
+
+export default function VaultPage() {
+  return <Suspense><VaultInner/></Suspense>
 }

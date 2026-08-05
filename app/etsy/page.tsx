@@ -1,6 +1,6 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ShoppingBag, CheckCircle, Circle, RotateCcw, ChevronDown, ExternalLink, Search, BookOpen } from 'lucide-react'
 import { useLanguage } from '@/context/LanguageContext'
 import { ETSY_NOTES, SOFTWARE_PIPELINE, ETSY_TODOS, ETSY_LINKS, BATCH_WORKFLOW } from '@/lib/etsy-data'
@@ -733,11 +733,13 @@ const DESIGN_TYPES: { type:string; desc:string; color:string }[] = [
 
 const ETSY_PRIORITY_KEY = 'etsy_todos_priority'
 
-export default function EtsyPage() {
+function EtsyPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { t } = useLanguage()
   const { celebrate } = useCelebration()
   const [activeTab, setActiveTab] = useState<Tab>('checklists')
+  const [highlightId, setHighlightId] = useState<string | null>(null)
   const [checked, setChecked] = useState<Record<string,boolean>>({})
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['product']))
   const [mounted, setMounted] = useState(false)
@@ -795,6 +797,23 @@ export default function EtsyPage() {
     })
     setMounted(true)
   }, [])
+
+  // Deep link from the home page's Top 5 ("...?focus=<id>") — jump to the
+  // Todos tab and scroll/highlight that item once it's loaded.
+  useEffect(() => {
+    const f = searchParams.get('focus')
+    if (!f) return
+    setHighlightId(f)
+    setActiveTab('todos')
+  }, [searchParams])
+
+  useEffect(() => {
+    if (!highlightId || !mounted) return
+    const el = document.getElementById('etsy-todo-row-' + highlightId)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const t = setTimeout(() => setHighlightId(null), 4000)
+    return () => clearTimeout(t)
+  }, [highlightId, mounted, activeTab])
 
   function toggleCheck(id: string) {
     setChecked(prev => {
@@ -1240,8 +1259,10 @@ export default function EtsyPage() {
               {visible.length} todos
             </p>
             <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-              {visible.map((td, i) => (
-                  <div key={i} style={{ background:C.card, border:'1px solid '+(td.stage === 'Completed' ? 'rgba(0,255,136,0.12)' : C.border), borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'flex-start', gap:'0.625rem' }}>
+              {visible.map((td, i) => {
+                const isHighlighted = highlightId === getTodoId(td)
+                return (
+                  <div key={i} id={'etsy-todo-row-' + getTodoId(td)} style={{ background:C.card, border:'1px solid '+(isHighlighted ? C.teal : td.stage === 'Completed' ? 'rgba(0,255,136,0.12)' : C.border), borderRadius:'0.75rem', padding:'0.7rem 0.875rem', display:'flex', alignItems:'flex-start', gap:'0.625rem', boxShadow: isHighlighted ? '0 0 0 3px rgba(0,212,255,0.25)' : 'none' }}>
                     <div style={{ display:'flex', flexDirection:'column', gap:'0.25rem', flexShrink:0, paddingTop:'1px' }}>
                       <Badge label={td.stage} color={stageColor(td.stage)} />
                       <Badge label={td.priority} color={priorityColor(td.priority)} />
@@ -1256,7 +1277,8 @@ export default function EtsyPage() {
                       </div>
                     )}
                   </div>
-                ))}
+                )
+              })}
             </div>
             </>
               )
@@ -1638,4 +1660,8 @@ export default function EtsyPage() {
       </div>
     </main>
   )
+}
+
+export default function EtsyPage() {
+  return <Suspense><EtsyPageInner/></Suspense>
 }

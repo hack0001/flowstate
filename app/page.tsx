@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, ChevronDown, ChevronUp, Plus, Edit3, Trash2, Flame, GripVertical, ShoppingCart } from 'lucide-react'
-import { getActiveFocusVideos, type ActiveFocusVideo } from '@/lib/supabase'
+import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, ChevronDown, Plus, Edit3, Trash2, Flame, GripVertical, ShoppingCart } from 'lucide-react'
+import { getActiveFocusVideos } from '@/lib/supabase'
 import { supabase, getPageVisits, recordPageVisit, getEveningReview, getDailyChecklistState, setDailyChecklistItem } from '@/lib/supabase'
 import { SECTION_LABEL, type DailyPlanSection } from '@/lib/dailyPlan'
 import { sopForStage } from '@/lib/sops'
@@ -89,12 +89,35 @@ function toDateStr(d: Date) {
 // (same list each page's Priority View drag-reorders), items not yet ranked
 // fall in after the ranked ones, then takes the top N. Direct read of the
 // same source of truth each workflow page uses -- no time-budget filtering.
-type RankableItem = { id: string; title: string }
+type RankableItem = {
+  id: string
+  title: string
+  // Optional extras, only populated for the YouTube pipeline list -- lets
+  // its Top 5 card render the same rich row (stage/format/pin) as the old
+  // "Active YouTube Focus" block instead of a plain numbered line.
+  pipeline_stage?: string | null
+  format?: string | null
+  is_active_focus?: boolean
+}
 
-function rankTop(order: string[], items: RankableItem[], n = 5): RankableItem[] {
+function rankTop<T extends RankableItem>(order: string[], items: T[], n = 5): T[] {
   const byId = new Map(items.map(i => [i.id, i]))
   const ranked = [...order.filter(id => byId.has(id)), ...items.map(i => i.id).filter(id => !order.includes(id))]
   return ranked.map(id => byId.get(id)!).slice(0, n)
+}
+
+// Distinct accent colour + icon per workflow for the Top 5 grid — makes
+// "This week's overview" scannable at a glance instead of five identical
+// grey cards.
+const TOP5_COLOR: Record<DailyPlanSection, string> = {
+  youtube: '#ff4466', etsy: '#f97316', tasks: '#00ff88', vault: '#8b5cf6', x: '#00d4ff',
+}
+const SECTION_ICON: Record<DailyPlanSection, JSX.Element> = {
+  youtube: <Tv size={12} color={TOP5_COLOR.youtube} />,
+  etsy: <ShoppingBag size={12} color={TOP5_COLOR.etsy} />,
+  tasks: <CheckSquare size={12} color={TOP5_COLOR.tasks} />,
+  vault: <BookOpen size={12} color={TOP5_COLOR.vault} />,
+  x: <X size={12} color={TOP5_COLOR.x} />,
 }
 
 // ---- Streaks row (encouragement) ----
@@ -155,7 +178,7 @@ function fmtTimeLabel(hhmm: string | null): string | null {
   return h12 + ':' + String(m).padStart(2, '0') + ' ' + period
 }
 
-function TodayTomorrowLists() {
+function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
   const { celebrate } = useCelebration()
   const todayStr = toDateStr(new Date())
   const tomorrowStr = toDateStr(new Date(Date.now() + 86400000))
@@ -164,8 +187,6 @@ function TodayTomorrowLists() {
   const [ready, setReady] = useState(false)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
-  const [addingFor, setAddingFor] = useState<'today' | 'tomorrow' | null>(null)
-  const [addText, setAddText] = useState('')
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -179,7 +200,8 @@ function TodayTomorrowLists() {
     setReady(true)
   }, [todayStr, tomorrowStr])
 
-  useEffect(() => { load() }, [load])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [load, refreshKey])
 
   // Calendar-driven ordering: whatever has a start_time (set on Calendar's
   // Timeline) leads, earliest first; anything not yet time-blocked falls
@@ -227,37 +249,18 @@ function TodayTomorrowLists() {
     supabase.from('priority_lists').upsert({ key: 'tasks_priority', ordered_ids: newOrder, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
   }
 
-  async function addQuickTask(dueDate: string) {
-    const title = addText.trim()
-    if (!title) return
-    setAddText('')
-    setAddingFor(null)
-    const { data, error } = await supabase.from('master_tasks')
-      .insert({ title, status: 'Not started', due_date: dueDate, task_type: 'Quick Task', archived: false, is_frog: false })
-      .select('id,title,status,due_date,is_frog,start_time,duration_min').single()
-    if (!error && data) {
-      const row = data as HomeTask
-      setTasks(prev => [...prev, row])
-      setOrder(prev => {
-        const next = [...prev, row.id]
-        supabase.from('priority_lists').upsert({ key: 'tasks_priority', ordered_ids: next, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
-        return next
-      })
-    }
-  }
-
   async function reschedule(task: HomeTask, dateStr: string) {
     setRescheduleId(null)
     setTasks(prev => prev.filter(t => t.id !== task.id))
     await supabase.from('master_tasks').update({ due_date: dateStr, start_time: null }).eq('id', task.id)
   }
 
-  function Column({ label, dayKey, dueDate, list }: { label: string; dayKey: 'today' | 'tomorrow'; dueDate: string; list: HomeTask[] }) {
+  function Column({ label, list }: { label: string; dayKey: 'today' | 'tomorrow'; dueDate: string; list: HomeTask[] }) {
     return (
       <div style={{ flex:1, minWidth:'240px' }}>
         <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>{label}</p>
         <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
-          {list.length === 0 && addingFor !== dayKey && (
+          {list.length === 0 && (
             <p style={{ fontSize:'0.75rem', color:C.muted, margin:'0 0 0.25rem' }}>Nothing scheduled.</p>
           )}
           {list.map(task => {
@@ -309,21 +312,6 @@ function TodayTomorrowLists() {
               </div>
             )
           })}
-          {addingFor === dayKey ? (
-            <div style={{ display:'flex', gap:'0.4rem' }}>
-              <input autoFocus value={addText} onChange={e => setAddText(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') addQuickTask(dueDate); if (e.key === 'Escape') { setAddingFor(null); setAddText('') } }}
-                placeholder="New task..." style={{ flex:1, padding:'0.4rem 0.6rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', outline:'none' }} />
-              <button type="button" onClick={() => addQuickTask(dueDate)} style={{ padding:'0.4rem 0.6rem', background:C.cyan, border:'none', borderRadius:'0.5rem', color:'#000', fontWeight:700, fontSize:'0.75rem', cursor:'pointer', fontFamily:'inherit' }}>Add</button>
-            </div>
-          ) : (
-            <button type="button" onClick={() => { setAddingFor(dayKey); setAddText('') }} style={{
-              display:'flex', alignItems:'center', gap:'0.3rem', background:'none', border:'1px dashed '+C.border, borderRadius:'0.5rem',
-              padding:'0.4rem 0.6rem', color:C.muted, fontSize:'0.75rem', cursor:'pointer', fontFamily:'inherit', width:'fit-content',
-            }}>
-              <Plus size={11} /> Add task
-            </button>
-          )}
         </div>
       </div>
     )
@@ -662,6 +650,48 @@ function FocusCheck({ onProceed, onClose }: { onProceed: () => void; onClose: ()
   )
 }
 
+// ---- Add Task modal ----
+// Replaces the old inline "+ Add task" boxes inside Today/Tomorrow — opened
+// from a single button in the top-right bar instead, so the list itself
+// doesn't lose vertical space to an input row most of the time.
+function AddTaskModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+  const [title, setTitle] = useState('')
+  const [dueDate, setDueDate] = useState(toDateStr(new Date()))
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function submit() {
+    const t = title.trim()
+    if (!t || saving) return
+    setSaving(true)
+    const { error } = await supabase.from('master_tasks')
+      .insert({ title: t, status: 'Not started', due_date: dueDate || null, task_type: 'Quick Task', archived: false, is_frog: false })
+    setSaving(false)
+    if (error) { setErr(error.message); return }
+    onAdded()
+    onClose()
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:70, padding:'1rem' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'1.25rem', padding:'1.75rem', width:'100%', maxWidth:'24rem', animation:'fadeInUp 0.25s ease both' }}>
+        <p style={{ fontSize:'0.65rem', fontWeight:800, letterSpacing:'0.1em', textTransform:'uppercase', color:C.cyan, margin:'0 0 1rem' }}>Add task</p>
+        {err && <p style={{ fontSize:'0.75rem', color:C.amber, margin:'0 0 0.75rem' }}>{err}</p>}
+        <input autoFocus value={title} onChange={e => setTitle(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onClose() }}
+          placeholder="Task title..." style={{ width:'100%', padding:'0.65rem 0.8rem', background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'0.6rem', color:C.text, fontFamily:'inherit', fontSize:'0.85rem', outline:'none', marginBottom:'0.75rem', boxSizing:'border-box' }} />
+        <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
+          style={{ width:'100%', padding:'0.6rem 0.8rem', background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'0.6rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', marginBottom:'1.25rem', boxSizing:'border-box' }} />
+        <div style={{ display:'flex', gap:'0.6rem' }}>
+          <button onClick={onClose} style={{ flex:1, padding:'0.65rem', background:'none', border:'1px solid #2a2a3a', borderRadius:'0.6rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:600 }}>Cancel</button>
+          <button onClick={submit} disabled={saving || !title.trim()} style={{ flex:1, padding:'0.65rem', background: title.trim() ? C.cyan : '#2a2a3a', border:'none', borderRadius:'0.6rem', color: title.trim() ? '#000' : C.muted, cursor: title.trim() ? 'pointer' : 'default', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:800 }}>{saving ? 'Adding...' : 'Add task'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Home() {
   const router = useRouter()
   const { t, lang, toggle } = useLanguage()
@@ -677,12 +707,12 @@ export default function Home() {
   const lateStart = h >= 10 && h < 14
   const veryLate  = h >= 14
 
-  const [focusVideos, setFocusVideos] = useState<ActiveFocusVideo[]>([])
   const [focusError, setFocusError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [routineDone, setRoutineDone] = useState(false)
-  const [topTask, setTopTask] = useState<{ title: string; id: string } | null>(null)
+  const [topTask, setTopTask] = useState<{ title: string; id: string; instructions?: string[]; meta?: string } | null>(null)
+  const [eveningDone, setEveningDone] = useState(false)
   const [topTaskIsPipeline, setTopTaskIsPipeline] = useState(false)
   const [contentReady, setContentReady] = useState(false)
   const [showFocusCheck, setShowFocusCheck] = useState(false)
@@ -700,7 +730,8 @@ export default function Home() {
   const [streaks, setStreaks] = useState<HabitStreak[]>([])
   const [consistencyPct, setConsistencyPct] = useState<number | null>(null)
   const [top5, setTop5] = useState<Partial<Record<'tasks'|'vault'|'etsy'|'x'|'youtube', RankableItem[]>>>({})
-  const [showWeekOverview, setShowWeekOverview] = useState(false)
+  const [showAddTask, setShowAddTask] = useState(false)
+  const [taskRefresh, setTaskRefresh] = useState(0)
 
   const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs']
 
@@ -719,35 +750,48 @@ export default function Home() {
       supabase.from('routine_completions').select('routine_date').eq('routine_date', toDateStr(new Date())).maybeSingle(),
       // Query the tasks table for today's top task (frog first)
       supabase.from('master_tasks')
-        .select('id,title,urgency,importance,task_type,is_frog')
+        .select('id,title,urgency,importance,task_type,is_frog,why_note,time_commitment')
         .eq('due_date', toDateStr(new Date()))
         .eq('archived', false)
         .neq('status','Done')
         .order('is_frog', { ascending:false })
         .limit(10),
+      getEveningReview(toDateStr(new Date())),
     ])
-      .then(([focusResult, routineRes, tasksRes]) => {
-        setFocusVideos(focusResult.videos)
+      .then(([focusResult, routineRes, tasksRes, eveningRes]) => {
         setFocusError(focusResult.error)
         const done = !!routineRes.data || localDone
         setRoutineDone(done)
+        setEveningDone(!!eveningRes.review?.completedAt)
         try { if (done) localStorage.setItem('flowstate_routine_done', toDateStr(new Date())) } catch {}
 
         // The #1 task should generally point at the Pipeline — if there's an
         // active focus video, that's the thing to work on today. Only fall
         // back to a generic master_tasks pick (frog/urgent) when nothing is
-        // pinned or in production.
+        // pinned or in production. Either way, carry along "how to do it"
+        // instructions -- the SOP steps for a pipeline video, or the task's
+        // own why_note -- so the home page CTA can show more than a title.
         const topVideo = focusResult.videos[0]
         if (topVideo) {
           const sop = sopForStage(topVideo.pipeline_stage)
-          setTopTask({ id: topVideo.id, title: sop ? sop.title + ' — ' + topVideo.title : 'Advance "' + topVideo.title + '"' })
+          setTopTask({
+            id: topVideo.id,
+            title: sop ? sop.title + ' — ' + topVideo.title : 'Advance "' + topVideo.title + '"',
+            instructions: sop ? sop.steps.slice(0, 3) : undefined,
+            meta: topVideo.pipeline_stage ?? undefined,
+          })
           setTopTaskIsPipeline(true)
         } else {
-          const tasks: Array<{ id:string; title:string; urgency:string|null; importance:string|null; task_type:string|null; is_frog:boolean }> = tasksRes.data ?? []
+          const tasks: Array<{ id:string; title:string; urgency:string|null; importance:string|null; task_type:string|null; is_frog:boolean; why_note:string|null; time_commitment:string|null }> = tasksRes.data ?? []
           const frog   = tasks.find(t => t.is_frog)
           const urgent = tasks.find(t => t.urgency === 'Urgent' && t.importance === 'Moved the Needle')
           const top    = frog ?? urgent ?? tasks[0]
-          if (top) setTopTask({ id:top.id, title:top.title })
+          if (top) {
+            const meta = [top.task_type, top.urgency, top.time_commitment].filter(Boolean).join(' · ')
+            setTopTask({ id:top.id, title:top.title, instructions: top.why_note ? [top.why_note] : undefined, meta: meta || undefined })
+          } else {
+            setTopTask(null)
+          }
           setTopTaskIsPipeline(false)
         }
       })
@@ -763,9 +807,15 @@ export default function Home() {
     const onVisible = () => { if (!document.hidden) loadData() }
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', loadData)
+    // Also poll every 60s — if this tab stays open and focused while the
+    // morning routine gets completed elsewhere (another device, or just
+    // never blurring this window), visibilitychange/focus never fire and
+    // the "Morning routine pending" chip would otherwise go stale.
+    const poll = setInterval(loadData, 60_000)
     return () => {
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', loadData)
+      clearInterval(poll)
     }
   }, [loadData])
 
@@ -828,7 +878,7 @@ export default function Home() {
         supabase.from('master_tasks').select('id,title,status,archived').eq('archived', false).neq('status', 'Done'),
         supabase.from('vault_items').select('id,title,status').neq('archived', true),
         supabase.from('x_ideas').select('id,text,status').eq('archived', false),
-        supabase.from('content_items').select('id,title,pipeline_stage').neq('archived', true),
+        supabase.from('content_items').select('id,title,pipeline_stage,format,is_active_focus').neq('archived', true),
         supabase.from('priority_lists').select('ordered_ids').eq('key', 'etsy_todos_priority').maybeSingle(),
         supabase.from('checklist_state').select('state').eq('key', 'etsy_checklists').maybeSingle(),
         supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').maybeSingle(),
@@ -849,9 +899,9 @@ export default function Home() {
         .map(td => ({ id: td.notion_url || td.name, title: td.name, checked: !!checked[td.notion_url || td.name] }))
         .filter(td => !td.checked)
         .map(({ id, title }) => ({ id, title }))
-      const ytItems: RankableItem[] = ((ytRes.data ?? []) as { id:string; title:string; pipeline_stage:string|null }[])
+      const ytItems: RankableItem[] = ((ytRes.data ?? []) as { id:string; title:string; pipeline_stage:string|null; format:string|null; is_active_focus:boolean|null }[])
         .filter(v => v.pipeline_stage !== '📣 Live' && v.pipeline_stage !== '📊 Post-Published')
-        .map(v => ({ id:v.id, title:v.title }))
+        .map(v => ({ id:v.id, title:v.title, pipeline_stage:v.pipeline_stage, format:v.format, is_active_focus:!!v.is_active_focus }))
 
       setTop5({
         tasks:   rankTop((tasksPl.data?.ordered_ids as string[] | undefined) ?? [], tasksItems),
@@ -863,21 +913,6 @@ export default function Home() {
     })().catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  // Remember the "This week" overview open/closed state across visits —
-  // collapsed by default so the home page scans in a couple seconds
-  // (greeting, one CTA, today's list); the workflow/target detail is there
-  // when wanted, not shoved in front of you every time.
-  useEffect(() => {
-    try { if (localStorage.getItem('flowstate_week_overview_open') === '1') setShowWeekOverview(true) } catch {}
-  }, [])
-  function toggleWeekOverview() {
-    setShowWeekOverview(prev => {
-      const next = !prev
-      try { localStorage.setItem('flowstate_week_overview_open', next ? '1' : '0') } catch {}
-      return next
-    })
-  }
 
   // Auto-launch the Morning/Evening Routine on the first app open of the
   // day/evening — cross-device, so opening on a different phone or laptop
@@ -963,6 +998,34 @@ export default function Home() {
     router.push('/' + route)
   }
 
+  // Same as navTo but deep-links straight to one item — the target page
+  // reads ?focus=<id> on load and scrolls/highlights that row so clicking
+  // a Top 5 card actually lands you on the thing, not just the list.
+  function navToItem(route: string, id: string) {
+    recordPageVisit(route)
+    setPageWarn(prev => {
+      if (!prev.has(route)) return prev
+      const next = new Set(prev)
+      next.delete(route)
+      return next
+    })
+    setPageAlerts(prev => {
+      if (!(route in prev)) return prev
+      const next = { ...prev }
+      delete next[route]
+      return next
+    })
+    router.push('/' + route + '?focus=' + encodeURIComponent(id))
+  }
+
+  // YouTube Top 5 items go through the same Pre-Flight Check -> content-focus
+  // flow as the old "Active YouTube Focus" list — pin the clicked video first
+  // so it's the one waiting when the focus session actually opens.
+  async function focusYoutubeItem(id: string) {
+    supabase.from('content_items').update({ is_active_focus: true }).eq('id', id).then()
+    handleFocusClick()
+  }
+
   const loadIdeas = useCallback(async () => {
     setIdeasLoading(true)
     const { data, error } = await supabase
@@ -1045,6 +1108,12 @@ export default function Home() {
     : 'linear-gradient(135deg,'+C.cyan+',#0099cc)'
   const morningCtaGlow = veryLate ? 'rgba(139,92,246,0.3)' : lateStart ? 'rgba(255,184,0,0.3)' : 'rgba(0,212,255,0.25)'
 
+  // Three states for the main CTA card: morning routine not done yet,
+  // evening routine due and not done, or -- the common case -- neither
+  // routine is blocking, so show today's actual highest-priority task.
+  const isEveningReady = h >= 20 && !eveningDone
+  const ctaState: 'morning' | 'evening' | 'focus' = !routineDone ? 'morning' : isEveningReady ? 'evening' : 'focus'
+
   return (
     <main style={{ minHeight:'100vh', display:'flex', flexDirection:'column', background:C.bg, position:'relative', overflow:'hidden' }}>
 
@@ -1088,6 +1157,10 @@ export default function Home() {
           </div>
 
           <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', alignItems:'flex-start' }}>
+            {/* Add task — opens a modal instead of eating space in Today/Tomorrow */}
+            <button onClick={() => setShowAddTask(true)} title="Add task" style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:'0.75rem', color:C.green, cursor:'pointer', fontSize:'0.75rem', fontWeight:700, fontFamily:'inherit' }}>
+              <Plus size={14}/> Task
+            </button>
             {/* Welsh / English toggle */}
             <button onClick={toggle} title={lang === 'en' ? 'Switch to Welsh' : 'Newid i Saesneg'} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background: lang === 'cy' ? 'rgba(0,192,75,0.12)' : 'rgba(255,255,255,0.04)', border:'1px solid '+(lang === 'cy' ? 'rgba(0,192,75,0.3)' : C.border), borderRadius:'0.75rem', color: lang === 'cy' ? '#00c04b' : C.muted, cursor:'pointer', fontSize:'0.75rem', fontWeight:700, fontFamily:'inherit', letterSpacing:'0.05em' }}>
               {lang === 'en' ? 'CY' : 'EN'}
@@ -1162,11 +1235,71 @@ export default function Home() {
         </div>
       )}
 
-      {/* Today / Tomorrow adjustable lists — always visible, this is what's actionable today */}
+      {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} onAdded={() => setTaskRefresh(k => k + 1)} />}
+
+      {/* This week's overview — top 5 per workflow + weekly targets. First
+          thing after streaks/consistency, always expanded — this is the
+          real "what's queued" view of the app, not something to bury. */}
       {!loading && (
-        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
-          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
-            <TodayTomorrowLists />
+        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.015)' }}>
+          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.5rem 2rem' }}>
+            <div style={{ display:'flex', alignItems:'baseline', gap:'0.5rem', marginBottom:'0.9rem' }}>
+              <span style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted }}>This week&apos;s overview</span>
+              <span style={{ fontSize:'0.68rem', color:C.muted }}>&mdash; priorities &amp; targets</span>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))', gap:'0.7rem', marginBottom:'1.5rem' }}>
+              {(['youtube','etsy','tasks','vault','x'] as DailyPlanSection[]).map(section => {
+                const items: RankableItem[] = top5[section] ?? []
+                const route = section === 'tasks' ? 'tasks' : section === 'youtube' ? 'content' : section === 'x' ? 'x' : section
+                const accent = TOP5_COLOR[section]
+                return (
+                  <div key={section} style={{ padding:'0.8rem 0.85rem', background:C.surface, border:'1px solid '+accent+'35', borderTop:'2px solid '+accent, borderRadius:'0.75rem' }}>
+                    <button onClick={() => navTo(route)} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'0.35rem', width:'100%', textAlign:'left', marginBottom:'0.55rem' }}>
+                      {SECTION_ICON[section]}
+                      <p style={{ fontSize:'0.65rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase', color:accent, margin:0 }}>
+                        {SECTION_LABEL[section]}
+                      </p>
+                    </button>
+                    {items.length === 0 ? (
+                      <p style={{ fontSize:'0.72rem', color:C.muted, margin:0 }}>Nothing queued</p>
+                    ) : section === 'youtube' ? (
+                      <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
+                        {items.map(item => (
+                          <button key={item.id} onClick={() => focusYoutubeItem(item.id)}
+                            style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.6rem', padding:'0.45rem 0.55rem', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
+                            <div style={{ width:'1.5rem', height:'1.5rem', borderRadius:'0.4rem', background:C.card, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                              <Tv size={11} color={accent}/>
+                            </div>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <p style={{ fontSize:'0.76rem', fontWeight:600, color:C.text, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</p>
+                              <p style={{ fontSize:'0.63rem', color:C.muted, margin:0 }}>{item.pipeline_stage ?? 'Idea'}{item.format ? ' · '+item.format : ''}</p>
+                            </div>
+                            {item.is_active_focus
+                              ? <Star size={10} color={C.amber} fill="currentColor" style={{ flexShrink:0 }}/>
+                              : <ChevronRight size={12} color={C.muted} style={{ flexShrink:0 }}/>}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+                        {items.map((item, i) => (
+                          <button key={item.id} onClick={() => navToItem(route, item.id)}
+                            style={{ display:'flex', alignItems:'center', gap:'0.45rem', background:'none', border:'none', borderLeft:'2px solid '+accent+'50', padding:'0.2rem 0 0.2rem 0.5rem', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
+                            <span style={{ fontSize:'0.65rem', color:accent, fontWeight:800, flexShrink:0 }}>{i+1}</span>
+                            <span style={{ flex:1, fontSize:'0.78rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</span>
+                            <ChevronRight size={11} color={C.muted} style={{ flexShrink:0 }}/>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.6rem' }}>This week&apos;s targets</p>
+            <WeeklyTargets />
           </div>
         </div>
       )}
@@ -1174,53 +1307,11 @@ export default function Home() {
       {/* Today's physical — component renders nothing (no wrapper) if nothing's queued for today */}
       {!loading && <TodaysPhysical />}
 
-      {/* This week's overview — top 5 per workflow + weekly targets, collapsed by
-          default so the page scans fast; state remembered across visits. */}
+      {/* Today / Tomorrow adjustable lists — always visible, this is what's actionable today */}
       {!loading && (
-        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.012)' }}>
-          <div style={{ maxWidth:'900px', margin:'0 auto', padding: showWeekOverview ? '1.25rem 2rem' : '0.75rem 2rem' }}>
-            <button onClick={toggleWeekOverview} style={{ display:'flex', alignItems:'center', gap:'0.5rem', width:'100%', background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'inherit' }}>
-              <span style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted }}>This week&apos;s overview</span>
-              <span style={{ fontSize:'0.68rem', color:C.muted }}>&mdash; priorities &amp; targets</span>
-              <span style={{ marginLeft:'auto', display:'flex', color:C.muted }}>{showWeekOverview ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}</span>
-            </button>
-
-            {showWeekOverview && (
-              <div style={{ marginTop:'1rem' }}>
-                <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.6rem' }}>Top 5 per workflow</p>
-                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))', gap:'0.6rem', marginBottom:'1.5rem' }}>
-                  {(['youtube','etsy','tasks','vault','x'] as DailyPlanSection[]).map(section => {
-                    const items: RankableItem[] = top5[section] ?? []
-                    const route = section === 'tasks' ? 'tasks' : section === 'youtube' ? 'content' : section === 'x' ? 'x' : section
-                    return (
-                      <div key={section} style={{ padding:'0.7rem 0.85rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.75rem' }}>
-                        <button onClick={() => navTo(route)} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit', display:'block', width:'100%', textAlign:'left' }}>
-                          <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.4rem' }}>
-                            {SECTION_LABEL[section]}
-                          </p>
-                        </button>
-                        {items.length === 0 ? (
-                          <p style={{ fontSize:'0.72rem', color:C.muted, margin:0 }}>Nothing queued</p>
-                        ) : (
-                          <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
-                            {items.map((item, i) => (
-                              <button key={item.id} onClick={() => navTo(route)}
-                                style={{ display:'flex', alignItems:'baseline', gap:'0.4rem', background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
-                                <span style={{ fontSize:'0.65rem', color:C.muted, fontWeight:700, flexShrink:0 }}>{i+1}.</span>
-                                <span style={{ fontSize:'0.78rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-
-                <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.6rem' }}>This week&apos;s targets</p>
-                <WeeklyTargets />
-              </div>
-            )}
+        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
+          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
+            <TodayTomorrowLists refreshKey={taskRefresh} />
           </div>
         </div>
       )}
@@ -1264,155 +1355,117 @@ export default function Home() {
             <div style={{ width:'1rem', height:'1rem', borderRadius:'50%', border:'2px solid '+C.muted, borderTopColor:C.cyan, animation:'spin 0.8s linear infinite' }}/>
             Loading...
           </div>
-        ) : routineDone ? (
-          /* ---- Focus card ---- */
-          <>
-            <div style={{
-              width:'100%', maxWidth:'32rem',
-              background:'linear-gradient(135deg,rgba(0,255,136,0.07) 0%,rgba(0,212,255,0.04) 100%)',
-              border:'1px solid rgba(0,255,136,0.22)',
-              borderRadius:'1.5rem', padding:'2rem 2rem 1.75rem',
-              marginBottom:'2rem', position:'relative', overflow:'hidden',
-              animation:'fadeInUp 0.4s ease both',
-            }}>
-              <div style={{ position:'absolute', top:'-50px', right:'-50px', width:'200px', height:'200px', borderRadius:'50%', background:'radial-gradient(circle,rgba(0,255,136,0.13) 0%,transparent 70%)', pointerEvents:'none' }} />
-              <div style={{ position:'relative' }}>
-                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.5rem' }}>
-                  <span style={{ fontSize:'1rem' }}>&#128293;</span>
-                  <span style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.14em', textTransform:'uppercase', color:C.green }}>Focus time</span>
-                </div>
-                <h2 style={{ fontSize:'1.6rem', fontWeight:900, color:C.text, margin:'0 0 1.25rem', letterSpacing:'-0.02em', lineHeight:1.2 }}>
-                  Time to do<br/>deep work.
-                </h2>
-                {topTask ? (
-                  <div onClick={() => topTaskIsPipeline && handleFocusClick()}
-                    style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.5rem', cursor: topTaskIsPipeline ? 'pointer' : 'default' }}>
-                    <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.green, margin:'0 0 0.3rem' }}>Your #1 task today</p>
-                    <p style={{ fontSize:'1rem', fontWeight:700, color:C.text, margin:0, lineHeight:1.35 }}>{topTask.title}</p>
-                  </div>
-                ) : (
-                  <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.5rem' }}>
-                    <p style={{ fontSize:'0.85rem', color:C.sec, margin:0 }}>No task set &mdash; pin a video in the Content Pipeline or add tasks in Calendar.</p>
-                  </div>
-                )}
-                <button onClick={handleFocusClick} style={{
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:'0.6rem',
-                  width:'100%', padding:'0.95rem 1.5rem',
-                  background:'linear-gradient(135deg,'+C.green+',#00cc6a)',
-                  border:'none', borderRadius:'1rem', cursor:'pointer', fontFamily:'inherit',
-                  fontWeight:800, fontSize:'0.95rem', color:'#000',
-                  boxShadow:'0 4px 24px rgba(0,255,136,0.28)',
-                }}>
-                  &#9654;&nbsp; Start focus session
-                </button>
-              </div>
-            </div>
-
-            {focusError && (
-              <div style={{ width:'100%', maxWidth:'32rem', marginBottom:'0.75rem', padding:'0.75rem 1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem' }}>
-                <p style={{ fontSize:'0.75rem', color:C.amber, margin:0, lineHeight:1.5 }}>{focusError}</p>
-              </div>
-            )}
-            {focusVideos.length > 0 ? (
-              <div style={{ width:'100%', maxWidth:'32rem' }}>
-                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
-                <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-                  {focusVideos.map(v => (
-                    <div key={v.id} onClick={handleFocusClick}
-                      style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+(v.is_active_focus?'rgba(255,184,0,0.3)':C.border), borderRadius:'0.875rem', cursor:'pointer' }}>
-                      <div style={{ width:'2rem', height:'2rem', borderRadius:'0.625rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                        <Tv size={14} color={C.sec}/>
-                      </div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <p style={{ fontWeight:600, fontSize:'0.85rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{v.title}</p>
-                        <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>{v.pipeline_stage ?? 'Idea'}{v.format ? ' · '+v.format : ''}</p>
-                      </div>
-                      <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', flexShrink:0 }}>
-                        {v.is_active_focus
-                          ? <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', color:C.amber, padding:'0.15rem 0.5rem', borderRadius:'9999px', fontSize:'0.65rem', fontWeight:700 }}><Star size={9} fill="currentColor" />Pinned</span>
-                          : <span style={{ fontSize:'0.62rem', color:C.muted, padding:'0.15rem 0.4rem' }}>auto-filled</span>
-                        }
-                        <ChevronRight size={14} color={C.muted} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div style={{ width:'100%', maxWidth:'32rem' }}>
-                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
-                <div onClick={() => router.push('/content')} style={{ padding:'1rem', background:C.card, border:'1px dashed '+C.border, borderRadius:'0.875rem', cursor:'pointer', textAlign:'center' }}>
-                  <p style={{ fontSize:'0.8rem', color:C.sec, margin:0 }}>No videos in the pipeline yet &mdash; add one in Content</p>
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
+        ) : ctaState === 'morning' ? (
           /* ---- Morning card ---- */
-          <>
-            <div style={{ textAlign:'center', marginBottom:'2.5rem', animation:'fadeInUp 0.4s ease both' }}>
-              <div style={{ position:'relative', display:'inline-block', marginBottom:'1.5rem' }}>
-                <div style={{ position:'absolute', inset:'-28px', borderRadius:'50%', background:'radial-gradient(circle,'+morningCtaGlow+' 0%,transparent 70%)', animation:'breathe 3s ease-in-out infinite', pointerEvents:'none' }} />
-                <button onClick={() => router.push('/morning')} style={{
-                  position:'relative',
-                  display:'flex', flexDirection:'column', alignItems:'center', gap:'0.4rem',
-                  padding:'1.5rem 2.75rem', borderRadius:'1.5rem',
-                  background:morningCtaGrad,
-                  border:'none', cursor:'pointer', fontFamily:'inherit',
-                  boxShadow:'0 8px 32px rgba(0,0,0,0.4)',
-                }}>
-                  <span style={{ fontSize:'1rem', fontWeight:900, color:'#000', letterSpacing:'-0.01em' }}>{morningCtaLabel}</span>
-                  <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(0,0,0,0.65)' }}>
-                    {veryLate ? 'Do the routine, then lock in' : lateStart ? 'Morning routine — quick version' : 'Start your morning routine'}
-                  </span>
-                  <span style={{ fontSize:'1.1rem', marginTop:'0.15rem' }}>&#8594;</span>
-                </button>
-              </div>
-              <div style={{ maxWidth:'24rem', margin:'0 auto' }}>
-                <p style={{ fontSize:'0.85rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
-                {quote.a && <p style={{ fontSize:'0.72rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
-              </div>
+          <div style={{ textAlign:'center', animation:'fadeInUp 0.4s ease both' }}>
+            <div style={{ position:'relative', display:'inline-block', marginBottom:'1.5rem' }}>
+              <div style={{ position:'absolute', inset:'-28px', borderRadius:'50%', background:'radial-gradient(circle,'+morningCtaGlow+' 0%,transparent 70%)', animation:'breathe 3s ease-in-out infinite', pointerEvents:'none' }} />
+              <button onClick={() => router.push('/morning')} style={{
+                position:'relative',
+                display:'flex', flexDirection:'column', alignItems:'center', gap:'0.4rem',
+                padding:'1.5rem 2.75rem', borderRadius:'1.5rem',
+                background:morningCtaGrad,
+                border:'none', cursor:'pointer', fontFamily:'inherit',
+                boxShadow:'0 8px 32px rgba(0,0,0,0.4)',
+              }}>
+                <span style={{ fontSize:'1rem', fontWeight:900, color:'#000', letterSpacing:'-0.01em' }}>{morningCtaLabel}</span>
+                <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(0,0,0,0.65)' }}>
+                  {veryLate ? 'Do the routine, then lock in' : lateStart ? 'Morning routine — quick version' : 'Start your morning routine'}
+                </span>
+                <span style={{ fontSize:'1.1rem', marginTop:'0.15rem' }}>&#8594;</span>
+              </button>
             </div>
-
-            {focusError && (
-              <div style={{ width:'100%', maxWidth:'32rem', marginBottom:'0.75rem', padding:'0.75rem 1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem' }}>
-                <p style={{ fontSize:'0.75rem', color:C.amber, margin:0, lineHeight:1.5 }}>{focusError}</p>
+            <div style={{ maxWidth:'24rem', margin:'0 auto' }}>
+              <p style={{ fontSize:'0.85rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
+              {quote.a && <p style={{ fontSize:'0.72rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
+            </div>
+          </div>
+        ) : ctaState === 'evening' ? (
+          /* ---- Evening card ---- */
+          <div style={{ textAlign:'center', animation:'fadeInUp 0.4s ease both' }}>
+            <div style={{ position:'relative', display:'inline-block', marginBottom:'1.5rem' }}>
+              <div style={{ position:'absolute', inset:'-28px', borderRadius:'50%', background:'radial-gradient(circle,rgba(139,92,246,0.3) 0%,transparent 70%)', animation:'breathe 3s ease-in-out infinite', pointerEvents:'none' }} />
+              <button onClick={() => router.push('/evening')} style={{
+                position:'relative',
+                display:'flex', flexDirection:'column', alignItems:'center', gap:'0.4rem',
+                padding:'1.5rem 2.75rem', borderRadius:'1.5rem',
+                background:'linear-gradient(135deg,'+C.purple+',#6d28d9)',
+                border:'none', cursor:'pointer', fontFamily:'inherit',
+                boxShadow:'0 8px 32px rgba(0,0,0,0.4)',
+              }}>
+                <span style={{ fontSize:'1rem', fontWeight:900, color:'#fff', letterSpacing:'-0.01em' }}>Time to wind down</span>
+                <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(255,255,255,0.75)' }}>Evening routine &mdash; reflect &amp; reset</span>
+                <span style={{ fontSize:'1.1rem', marginTop:'0.15rem' }}>&#8594;</span>
+              </button>
+            </div>
+            <div style={{ maxWidth:'24rem', margin:'0 auto' }}>
+              <p style={{ fontSize:'0.85rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
+              {quote.a && <p style={{ fontSize:'0.72rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
+            </div>
+          </div>
+        ) : (
+          /* ---- Task-focus card ---- */
+          <div style={{
+            width:'100%', maxWidth:'32rem',
+            background:'linear-gradient(135deg,rgba(0,255,136,0.07) 0%,rgba(0,212,255,0.04) 100%)',
+            border:'1px solid rgba(0,255,136,0.22)',
+            borderRadius:'1.5rem', padding:'2rem 2rem 1.75rem',
+            position:'relative', overflow:'hidden',
+            animation:'fadeInUp 0.4s ease both',
+          }}>
+            <div style={{ position:'absolute', top:'-50px', right:'-50px', width:'200px', height:'200px', borderRadius:'50%', background:'radial-gradient(circle,rgba(0,255,136,0.13) 0%,transparent 70%)', pointerEvents:'none' }} />
+            <div style={{ position:'relative' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.5rem' }}>
+                <span style={{ fontSize:'1rem' }}>&#128293;</span>
+                <span style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.14em', textTransform:'uppercase', color:C.green }}>Next up</span>
               </div>
-            )}
-            {focusVideos.length > 0 ? (
-              <div style={{ width:'100%', maxWidth:'32rem' }}>
-                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
-                <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-                  {focusVideos.map(v => (
-                    <div key={v.id} onClick={handleFocusClick}
-                      style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+(v.is_active_focus?'rgba(255,184,0,0.3)':C.border), borderRadius:'0.875rem', cursor:'pointer' }}>
-                      <div style={{ width:'2rem', height:'2rem', borderRadius:'0.625rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                        <Tv size={14} color={C.sec}/>
-                      </div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <p style={{ fontWeight:600, fontSize:'0.85rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>{v.title}</p>
-                        <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>{v.pipeline_stage ?? 'Idea'}{v.format ? ' · '+v.format : ''}</p>
-                      </div>
-                      <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', flexShrink:0 }}>
-                        {v.is_active_focus
-                          ? <span style={{ display:'inline-flex', alignItems:'center', gap:'0.2rem', background:'rgba(255,184,0,0.1)', border:'1px solid rgba(255,184,0,0.3)', color:C.amber, padding:'0.15rem 0.5rem', borderRadius:'9999px', fontSize:'0.65rem', fontWeight:700 }}><Star size={9} fill="currentColor" />Pinned</span>
-                          : <span style={{ fontSize:'0.62rem', color:C.muted, padding:'0.15rem 0.4rem' }}>auto-filled</span>
-                        }
-                        <ChevronRight size={14} color={C.muted} />
+              <h2 style={{ fontSize:'1.4rem', fontWeight:900, color:C.text, margin:'0 0 1rem', letterSpacing:'-0.02em', lineHeight:1.25 }}>
+                {topTask ? topTask.title : 'Nothing queued for today.'}
+              </h2>
+
+              {topTask ? (
+                <>
+                  {topTask.meta && (
+                    <p style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.04em', textTransform:'uppercase', color:C.green, margin:'0 0 0.75rem' }}>{topTask.meta}</p>
+                  )}
+                  {topTask.instructions && topTask.instructions.length > 0 && (
+                    <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.25rem' }}>
+                      <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.green, margin:'0 0 0.5rem' }}>How to do it</p>
+                      <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+                        {topTask.instructions.map((step, i) => (
+                          <p key={i} style={{ fontSize:'0.82rem', color:C.sec, margin:0, lineHeight:1.5 }}>{i + 1}. {step}</p>
+                        ))}
                       </div>
                     </div>
-                  ))}
+                  )}
+                  <button onClick={() => topTaskIsPipeline ? handleFocusClick() : navToItem('tasks', topTask.id)} style={{
+                    display:'flex', alignItems:'center', justifyContent:'center', gap:'0.6rem',
+                    width:'100%', padding:'0.95rem 1.5rem',
+                    background:'linear-gradient(135deg,'+C.green+',#00cc6a)',
+                    border:'none', borderRadius:'1rem', cursor:'pointer', fontFamily:'inherit',
+                    fontWeight:800, fontSize:'0.95rem', color:'#000',
+                    boxShadow:'0 4px 24px rgba(0,255,136,0.28)',
+                    marginBottom:'1.25rem',
+                  }}>
+                    &#9654;&nbsp; {topTaskIsPipeline ? 'Start focus session' : 'Open task'}
+                  </button>
+                </>
+              ) : (
+                <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.25rem' }}>
+                  <p style={{ fontSize:'0.85rem', color:C.sec, margin:0 }}>No task set &mdash; pin a video in the Content Pipeline or add tasks in Calendar.</p>
                 </div>
-              </div>
-            ) : (
-              <div style={{ width:'100%', maxWidth:'32rem' }}>
-                <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
-                <div onClick={() => router.push('/content')} style={{ padding:'1rem', background:C.card, border:'1px dashed '+C.border, borderRadius:'0.875rem', cursor:'pointer', textAlign:'center' }}>
-                  <p style={{ fontSize:'0.8rem', color:C.sec, margin:0 }}>No videos in the pipeline yet &mdash; add one in Content</p>
-                </div>
-              </div>
-            )}
-          </>
+              )}
+
+              <p style={{ fontSize:'0.82rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
+              {quote.a && <p style={{ fontSize:'0.7rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
+            </div>
+          </div>
+        )}
+
+        {focusError && (
+          <div style={{ width:'100%', maxWidth:'32rem', marginTop:'0.75rem', padding:'0.75rem 1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem' }}>
+            <p style={{ fontSize:'0.75rem', color:C.amber, margin:0, lineHeight:1.5 }}>{focusError}</p>
+          </div>
         )}
       </div>
 

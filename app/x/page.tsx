@@ -1,6 +1,6 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ChevronLeft, Zap, Copy, Check, ExternalLink, ChevronDown, CheckCircle2, Circle, Calendar, Trash2, Plus, Search, TrendingUp, ListOrdered } from 'lucide-react'
 import { supabase, getDailyChecklistState, setDailyChecklistItem, getTweetModels, addTweetModels, deleteTweetModel } from '@/lib/supabase'
 import type { TweetModelRow } from '@/lib/supabase'
@@ -221,8 +221,10 @@ const WORKFLOW: {
   },
 ]
 
-export default function XPage() {
+function XPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const [highlightId, setHighlightId] = useState<string | null>(null)
   const [tab, setTab]         = useState<'generate'|'workflow'|'outliers'|'ideas'>('workflow')
   const [format, setFormat]   = useState('results-post')
   const [topic, setTopic]     = useState('inflation')
@@ -260,6 +262,23 @@ export default function XPage() {
   const [xDragId, setXDragId]         = useState<string|null>(null)
   const [xDragOver, setXDragOver]     = useState<string|null>(null)
   const [newIdeaText, setNewIdeaText] = useState('')
+
+  // Deep link from the home page's Top 5 ("...?focus=<id>") — jump to the
+  // Ideas tab and scroll/highlight that idea once it's loaded.
+  useEffect(() => {
+    const f = searchParams.get('focus')
+    if (!f) return
+    setHighlightId(f)
+    setTab('ideas')
+  }, [searchParams])
+
+  useEffect(() => {
+    if (!highlightId || xIdeas.length === 0) return
+    const el = document.getElementById('x-idea-row-' + highlightId)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const t = setTimeout(() => setHighlightId(null), 4000)
+    return () => clearTimeout(t)
+  }, [highlightId, xIdeas])
 
   useEffect(() => {
     supabase.from('x_ideas').select('*').eq('archived', false).order('created_at', { ascending: false }).then(({ data }) => setXIdeas(data ?? []))
@@ -576,12 +595,12 @@ export default function XPage() {
               <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem', marginBottom:'1.5rem' }}>
                 {orderedXIdeas.length === 0 && <p style={{ fontSize:'0.75rem', color:C.muted }}>No ideas yet &mdash; add one above.</p>}
                 {orderedXIdeas.map((idea, i) => (
-                  <div key={idea.id} draggable
+                  <div key={idea.id} id={'x-idea-row-' + idea.id} draggable
                     onDragStart={() => setXDragId(idea.id)}
                     onDragOver={e => { e.preventDefault(); setXDragOver(idea.id) }}
                     onDrop={() => { if (xDragId) moveXIdea(xDragId, idea.id); setXDragId(null); setXDragOver(null) }}
                     onDragEnd={() => { setXDragId(null); setXDragOver(null) }}
-                    style={{ display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.6rem 0.75rem', background:C.card, border:'1px solid '+(xDragOver===idea.id ? C.green : C.border), borderRadius:'0.65rem', cursor:'grab' }}>
+                    style={{ display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.6rem 0.75rem', background:C.card, border:'1px solid '+(highlightId===idea.id ? C.cyan : xDragOver===idea.id ? C.green : C.border), borderRadius:'0.65rem', cursor:'grab', boxShadow: highlightId===idea.id ? '0 0 0 3px rgba(0,212,255,0.25)' : 'none' }}>
                     <span style={{ fontSize:'0.65rem', color:C.muted, fontWeight:800, width:'1.1rem', flexShrink:0 }}>{i+1}</span>
                     <button onClick={() => toggleXIdeaDone(idea)} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', color:C.muted, padding:0, flexShrink:0 }}>
                       <Circle size={15}/>
@@ -1123,4 +1142,8 @@ export default function XPage() {
       <style>{`@keyframes xspin { to { transform:rotate(360deg) } }`}</style>
     </main>
   )
+}
+
+export default function XPage() {
+  return <Suspense><XPageInner/></Suspense>
 }
