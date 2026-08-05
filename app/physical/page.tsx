@@ -162,13 +162,21 @@ export default function PhysicalPage() {
   const [addDay, setAddDay]       = useState<number>(new Date().getDay())
   const [addLabel, setAddLabel]   = useState('')
   const [addCategory, setAddCategory] = useState('Custom')
+  const [planErr, setPlanErr]     = useState<string | null>(null)
 
   useEffect(() => {
     getDailyChecklistState('physical', todayStr()).then(({ state }) => setDone(state))
     getDailyChecklistState('physical_weekly', weekStartStr()).then(({ state }) => setWeekDone(state))
     getDailyChecklistState('physical_plan', todayStr()).then(({ state }) => setPlanDone(state))
     supabase.from('weekly_exercise_plan').select('id,day_of_week,label,category,sort_order').order('day_of_week').order('sort_order')
-      .then(({ data }) => setPlan((data ?? []) as PlanRow[]))
+      .then(({ data, error }) => {
+        if (error) {
+          setPlanErr(error.message.includes('does not exist')
+            ? 'Setup needed: run supabase/migrations/030_weekly_exercise_plan.sql against your database.'
+            : error.message)
+        }
+        setPlan((data ?? []) as PlanRow[])
+      })
 
     getMobilityProgramStart().then(({ startDate, error }) => {
       if (error) { setMobErr(error); return }
@@ -221,7 +229,14 @@ export default function PhysicalPage() {
     const { data, error } = await supabase.from('weekly_exercise_plan')
       .insert({ day_of_week: addDay, label, category: addCategory, sort_order })
       .select('id,day_of_week,label,category,sort_order').single()
-    if (!error && data) {
+    if (error) {
+      setPlanErr(error.message.includes('does not exist')
+        ? 'Setup needed: run supabase/migrations/030_weekly_exercise_plan.sql against your database.'
+        : error.message)
+      return
+    }
+    if (data) {
+      setPlanErr(null)
       setPlan(prev => [...prev, data as PlanRow])
       setAddLabel('')
       setAddCategory('Custom')
@@ -230,7 +245,8 @@ export default function PhysicalPage() {
 
   async function removePlanItem(id: string) {
     setPlan(prev => prev.filter(p => p.id !== id))
-    await supabase.from('weekly_exercise_plan').delete().eq('id', id)
+    const { error } = await supabase.from('weekly_exercise_plan').delete().eq('id', id)
+    if (error) setPlanErr(error.message)
   }
 
   function togglePlanDone(id: string) {
@@ -295,6 +311,12 @@ export default function PhysicalPage() {
         <div style={{ marginBottom:'2.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem' }}>
           <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.25rem' }}>Weekly Plan</p>
           <p style={{ fontSize:'0.78rem', color:C.muted, margin:'0 0 1.125rem' }}>Assign exercises to days of the week &#8212; today&#39;s list shows up on the home page, checkable from either place.</p>
+
+          {planErr && (
+            <div style={{ padding:'0.75rem 1rem', background:'rgba(255,184,0,0.06)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem', marginBottom:'1rem' }}>
+              <p style={{ fontSize:'0.75rem', color:C.amber, margin:0 }}>{planErr}</p>
+            </div>
+          )}
 
           <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', alignItems:'center', margin:'0 0 1.25rem', padding:'0.875rem 1rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.75rem' }}>
             <select value={addDay} onChange={e => setAddDay(Number(e.target.value))} style={{ padding:'0.4rem 0.6rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.75rem' }}>

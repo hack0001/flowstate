@@ -353,13 +353,19 @@ function TodaysPhysical() {
   const [items, setItems] = useState<PhysicalPlanItem[]>([])
   const [done, setDone] = useState<Record<string, boolean>>({})
   const [ready, setReady] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
     const dow = new Date().getDay()
     Promise.all([
       supabase.from('weekly_exercise_plan').select('id,label,category,sort_order').eq('day_of_week', dow).order('sort_order'),
       getDailyChecklistState('physical_plan', todayStr),
-    ]).then(([{ data }, { state }]) => {
+    ]).then(([{ data, error }, { state }]) => {
+      if (error) {
+        setErr(error.message.includes('does not exist')
+          ? 'Setup needed: run supabase/migrations/030_weekly_exercise_plan.sql against your database.'
+          : error.message)
+      }
       setItems((data ?? []) as PhysicalPlanItem[])
       setDone(state)
       setReady(true)
@@ -375,7 +381,7 @@ function TodaysPhysical() {
     })
   }
 
-  if (!ready || items.length === 0) return null
+  if (!ready) return null
   const doneCount = items.filter(i => done[i.id]).length
 
   return (
@@ -386,8 +392,15 @@ function TodaysPhysical() {
           <Activity size={13} color={C.green} />
           <span style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted }}>Today&apos;s physical</span>
         </button>
-        <span style={{ marginLeft:'auto', fontSize:'0.68rem', fontWeight:700, color: doneCount===items.length ? C.green : C.muted }}>{doneCount} / {items.length}</span>
+        {items.length > 0 && !err && (
+          <span style={{ marginLeft:'auto', fontSize:'0.68rem', fontWeight:700, color: doneCount===items.length ? C.green : C.muted }}>{doneCount} / {items.length}</span>
+        )}
       </div>
+      {err ? (
+        <p style={{ fontSize:'0.75rem', color:C.amber, margin:0 }}>{err}</p>
+      ) : items.length === 0 ? (
+        <p style={{ fontSize:'0.75rem', color:C.muted, margin:0 }}>Nothing planned for today &#8212; add exercises to today&#39;s column in the Weekly Plan on the Physical page.</p>
+      ) : (
       <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
         {items.map(item => {
           const isDone = !!done[item.id]
@@ -402,6 +415,7 @@ function TodaysPhysical() {
           )
         })}
       </div>
+      )}
     </div>
     </div>
   )
