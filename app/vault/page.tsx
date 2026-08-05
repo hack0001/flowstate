@@ -2,6 +2,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { sounds } from '@/lib/sounds'
+import { useCelebration } from '@/hooks/useCelebration'
 import { ChevronLeft, Search, ExternalLink, X, BookOpen, Wrench, Lightbulb, Film, FileText, Headphones, ShoppingCart, Star, Plus, Edit3, Trash2, ClipboardList, RotateCcw, Layers } from 'lucide-react'
 
 const C = {
@@ -248,6 +250,7 @@ function VaultDrawer({
 
 export default function VaultPage() {
   const router = useRouter()
+  const { celebrate } = useCelebration()
   const [items, setItems] = useState<VaultItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -372,6 +375,10 @@ export default function VaultPage() {
       notion_url: draft.notion_url || null,
     }
     if (draft.id) {
+      const prevStatus = items.find(i => i.id === draft.id)?.status ?? ''
+      const nowDone = payload.status === 'Done' || payload.status === 'Read'
+      const wasDone = prevStatus === 'Done' || prevStatus === 'Read'
+      if (nowDone && !wasDone) { sounds.playTaskComplete(); celebrate('task') }
       await supabase.from('vault_items').update(payload).eq('id', draft.id)
       setItems(prev => prev.map(i => i.id === draft.id ? { ...i, ...payload } as VaultItem : i))
     } else {

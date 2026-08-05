@@ -59,6 +59,15 @@ export const MOBILITY_POOL: MobilityExercise[] = [
   { id:'pigeon-pulse',          name:'Pigeon Pulses',                       cue:'Hold pigeon pose, small pulses -- 20 each side',             categories:['hip'] },
   { id:'windshield-wipers',     name:'Windshield Wipers',                   cue:'Lying, knees side to side -- 12 each way',                   categories:['hip','lowerback'] },
   { id:'plow-pose',             name:'Plow Pose',                           cue:'Hold 30-60 seconds',                                         categories:['lowerback','hip'] },
+  { id:'couch-stretch',         name:'Couch Stretch',                       cue:'Rear foot up on a couch/bench, hips driven forward, back knee down -- 60-90 sec each side', categories:['hip'] },
+]
+
+// Not part of the daily category rotation -- shown every OTHER day
+// (alternating on the days-since-program-start counter) regardless of the
+// day's focus, so it doesn't crowd out the regular rotation but still lands
+// roughly 3-4x a week. Consumed identically by Physical and Morning routine.
+export const MOBILITY_ALT_DAY_ANCHORS: MobilityExercise[] = [
+  { id:'kb-snatch', name:'Kettlebell Snatches', cue:'Explosive hip-driven snatch, both arms -- every other day', categories:['snatch','hip'] },
 ]
 
 // Run every day regardless of the day's rotation -- always shown first, in
@@ -117,10 +126,13 @@ export function getMobilityDay(date: Date, startDate: Date, size = 5): MobilityD
   const rotated = [...candidates.slice(offset), ...candidates.slice(0, offset)]
   const picked = rotated.slice(0, size)
 
+  const isAltDay = totalDays % 2 === 0
+  const anchors = isAltDay ? [...MOBILITY_DAILY_ANCHORS, ...MOBILITY_ALT_DAY_ANCHORS] : MOBILITY_DAILY_ANCHORS
+
   return {
     weekNumber,
     dayLabel: template.day,
     focus: template.focus,
-    exercises: [...MOBILITY_DAILY_ANCHORS, ...picked],
+    exercises: [...anchors, ...picked],
   }
 }

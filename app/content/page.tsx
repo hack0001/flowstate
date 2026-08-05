@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase, getStageNote, saveStageNote } from '@/lib/supabase'
 import { sopForStage, IDEA_VALIDATION_CHECKS, SOPS, type SOP } from '@/lib/sops'
 import { CHANNEL_BRIEF, SCRIPT_VOICE, OUTLIER_SEED_QUERIES } from '@/lib/channelBrief'
-import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check } from 'lucide-react'
+import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check, ArrowUpDown } from 'lucide-react'
 
 const IDEA_VALIDATION_SOP_ID = 'idea_validation'
 // Manual log of a Claude-chat consult (copy prompt -> paste into Claude ->
@@ -229,6 +229,7 @@ function buildFindIdeasPrompt(existingTitles: string[], count: number, scannedOu
     '1. RATIO outliers (primary, strongest evidence) — a video that got unusually high views (100,000+) relative to how few subscribers its channel has (well under 100,000 subscribers — ideally a 5:1+ view-to-subscriber ratio), AND whose packaging is mediocre or bad — a weak title, a cluttered or low-effort thumbnail, or a video that clearly underdelivers on its own premise. That combination (proven demand + weak execution) isolates the topic from the channel: the topic itself pulled an audience beyond the creator\'s own following, and nobody has made a great version of it yet.\n\n' +
     '2. VELOCITY outliers (secondary, corroborating evidence) — a video that racked up a large absolute view count in a short window (e.g. 300,000+ views within about 2 months), REGARDLESS of channel size or ratio. Do not dismiss these just because the channel is large. A gold video that hit 1 million views in a month is real evidence the topic has broad current appeal, even on a big channel where the ratio looks unremarkable or would get filtered out — that view count did not happen by accident. The caveat: on a large channel, some of that pull is the channel\'s own subscriber base and algorithmic authority rather than the topic alone, so it is weaker proof that a smaller channel like this one could replicate it. Use velocity outliers to justify an idea when: the same topic also shows up across multiple velocity results (not just one channel\'s fluke), or a velocity outlier corroborates a weaker ratio candidate, or there is a genuine timing/news reason the topic is hot right now. When an idea rests primarily on a velocity outlier rather than a ratio outlier, say so explicitly and flag the channel size so it can be weighed accordingly — do not present it with the same confidence as a ratio outlier.\n\n' +
     'A small channel with a great video getting modest views still proves nothing on its own (that\'s just a good video, not necessarily a hungry topic) — you still need either a ratio outlier or a velocity outlier (ideally both) as evidence.\n\n' +
+    'IDEA-GENERATION TECHNIQUE — combine two popular subjects: a reliable way to find a fresh angle is to take two topics that each independently pull an audience and collide them into one idea, e.g. "gold standard" + "money" -> "What is the gold standard, and how to create money?" Use this alongside the outlier method above (the combined topic still needs real outlier/velocity evidence backing it, not just being a clever mashup) when brainstorming candidate angles.\n\n' +
     'AUDIENCE GEOGRAPHY: this channel targets a predominantly American audience. Where a scanned candidate shows a country code in brackets (e.g. "[US]"), that\'s the channel\'s own declared country from its About page — a reasonable proxy for its audience, not confirmed viewer data (YouTube does not expose actual viewer geography for channels you don\'t own). Prefer candidates tagged [US] when picking which outlier/velocity evidence to build an idea on; a candidate with no country tag just means the channel never declared one, not that its audience isn\'t American — use judgment (title/thumbnail language, currency mentioned, etc.) rather than discarding it outright. If you use live web search, you may also independently judge a channel\'s likely audience from its content and say so.\n\n' +
     'Additionally, every idea you propose must:\n' +
     '- Be unambiguous about its topic in the title itself — YouTube\'s search and recommendation system needs to be able to tell what the video is about from the title/description, so a clever or vague hook must still contain a clear topical keyword or claim, not just curiosity with no subject.\n' +
@@ -365,7 +366,7 @@ function extractYouTubeId(url: string | null): string | null {
 
 type YtStats = { views: number; likes: number; comments: number; publishedAt: string; title: string }
 
-type View = 'ideas' | 'pipeline' | 'list'
+type View = 'ideas' | 'pipeline' | 'list' | 'priority'
 
 function stageStyle(key: string | null) {
   return ALL_STAGES.find(s => s.key === key) ?? { color:C.muted, bg:'transparent' }
@@ -1567,6 +1568,8 @@ export default function ContentPage() {
   const [validationMsg, setValidationMsg] = useState<string | null>(null)
   const [ideaLog, setIdeaLog] = useState<IdeaLog | null>(null)
   const [ideaLogMsg, setIdeaLogMsg] = useState<string | null>(null)
+  const [weeklyTargets, setWeeklyTargets] = useState<{ id:string; label:string; tracking:string }[]>([])
+  const [weeklyPicks, setWeeklyPicks] = useState<Record<string, string>>({}) // target_id -> content_item_id
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -1579,6 +1582,83 @@ export default function ContentPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // ── This week's Long-form / Short pick ─────────────────────────────────────
+  // Companion to the home page's auto-counted Weekly Targets (Shorts/Long-form
+  // count published-this-week already). This lets you SELECT which specific
+  // pipeline item you're actually committing to ship this week, so the home
+  // page can show a title, not just a bare count.
+  function weekStartStr(): string {
+    const d = new Date()
+    const day = d.getDay()
+    const diff = day === 0 ? -6 : 1 - day
+    const r = new Date(d)
+    r.setDate(r.getDate() + diff)
+    return r.getFullYear() + '-' + String(r.getMonth()+1).padStart(2,'0') + '-' + String(r.getDate()).padStart(2,'0')
+  }
+  const weekStart = weekStartStr()
+
+  useEffect(() => {
+    (async () => {
+      const { data: targets } = await supabase.from('weekly_targets')
+        .select('id,label,tracking').eq('active', true).in('tracking', ['auto_shorts', 'auto_longform'])
+      setWeeklyTargets(targets ?? [])
+      if (targets && targets.length > 0) {
+        const { data: picks } = await supabase.from('weekly_target_picks')
+          .select('target_id,content_item_id').eq('week_start', weekStart).in('target_id', targets.map(t => t.id))
+        const map: Record<string, string> = {}
+        for (const p of (picks ?? []) as { target_id:string; content_item_id:string|null }[]) if (p.content_item_id) map[p.target_id] = p.content_item_id
+        setWeeklyPicks(map)
+      }
+    })()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function setWeeklyPick(targetId: string, contentItemId: string) {
+    setWeeklyPicks(prev => ({ ...prev, [targetId]: contentItemId }))
+    await supabase.from('weekly_target_picks').upsert(
+      { target_id: targetId, week_start: weekStart, content_item_id: contentItemId || null, updated_at: new Date().toISOString() },
+      { onConflict: 'target_id,week_start' }
+    )
+  }
+
+  // ── Priority order (drag-rankable) ─────────────────────────────────────────
+  // Same pattern as Vault/Tasks/Etsy/X/Personal: cached in localStorage first,
+  // authoritative copy in priority_lists (key 'youtube_pipeline_priority'),
+  // synced on every reorder. Covers the whole pipeline (ideas through
+  // pre-Live) — Live/Post-Published items don't need ranking so they're
+  // excluded from the pool.
+  const CONTENT_PRIORITY_KEY = 'youtube_pipeline_priority'
+  const [cPriorityOrder, setCPriorityOrder] = useState<string[]>([])
+  const [cDragId, setCDragId]     = useState<string|null>(null)
+  const [cDragOver, setCDragOver] = useState<string|null>(null)
+  const [cDragFrom, setCDragFrom] = useState<'unassigned'|'priority'|null>(null)
+
+  useEffect(() => {
+    let cLsLoaded = false
+    let cLocalIds: string[] = []
+    try {
+      const raw = localStorage.getItem('fs_p_content')
+      if (raw) { const ids = JSON.parse(raw) as string[]; if (ids.length > 0) { setCPriorityOrder(ids); cLsLoaded = true; cLocalIds = ids } }
+    } catch {}
+    supabase.from('priority_lists').select('ordered_ids').eq('key', CONTENT_PRIORITY_KEY).single().then(({ data }) => {
+      if (data?.ordered_ids && Array.isArray(data.ordered_ids) && (data.ordered_ids as string[]).length > 0) {
+        const ids = data.ordered_ids as string[]
+        setCPriorityOrder(ids)
+        try { localStorage.setItem('fs_p_content', JSON.stringify(ids)) } catch {}
+      } else if (cLsLoaded) {
+        supabase.from('priority_lists').upsert({ key: CONTENT_PRIORITY_KEY, ordered_ids: cLocalIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+      }
+    })
+  }, [])
+
+  function saveContentPriority(order: string[]) {
+    const y = window.scrollY
+    setCPriorityOrder(order)
+    try { localStorage.setItem('fs_p_content', JSON.stringify(order)) } catch {}
+    supabase.from('priority_lists').upsert({ key: CONTENT_PRIORITY_KEY, ordered_ids: order, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+    requestAnimationFrame(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior }))
+  }
 
   // ── Live YouTube stats for published items ────────────────────────────────
   // One batched videos.list call (1 quota unit) for every item with a
@@ -1821,6 +1901,7 @@ export default function ContentPage() {
                 {([
                   { v:'ideas',    icon:<Lightbulb size={12}/>,  label:'Ideas' },
                   { v:'pipeline', icon:<LayoutGrid size={12}/>, label:'Pipeline' },
+                  { v:'priority', icon:<ArrowUpDown size={12}/>,label:'Priority' },
                   { v:'list',     icon:<List size={12}/>,       label:'All' },
                 ] as const).map(({ v, icon, label }) => (
                   <button key={v} onClick={() => setView(v)} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.4rem 0.8rem', background:view===v?C.surface:'transparent', border:'none', color:view===v?C.text:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700 }}>
@@ -1877,6 +1958,12 @@ export default function ContentPage() {
                   <Plus size={13}/>Add idea
                 </button>
               </div>
+            </div>
+
+            <div style={{ padding:'0.75rem 1rem', background:'rgba(255,184,0,0.05)', border:'1px solid rgba(255,184,0,0.18)', borderRadius:'0.75rem', marginBottom:'1.25rem' }}>
+              <p style={{ fontSize:'0.72rem', color:C.sec, margin:0, lineHeight:1.6 }}>
+                <strong style={{ color:C.amber }}>Idea technique:</strong> combine two popular subjects together and ask what the overlap looks like &mdash; e.g. <em>gold standard</em> + <em>money</em> &rarr; &ldquo;What is the gold standard, and how to create money?&rdquo; Two proven topics collide into one angle nobody else has made.
+              </p>
             </div>
 
             {ideas.length === 0 ? (
@@ -1956,6 +2043,29 @@ export default function ContentPage() {
             <p style={{ fontSize:'0.75rem', color:C.muted, margin:'0 0 1.25rem' }}>
               Hover a stage chip to see the SOP checklist for that step. {pipeline.length} videos in active production.
             </p>
+
+            {weeklyTargets.length > 0 && (
+              <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap', marginBottom:'1.25rem', padding:'0.75rem 1rem', background:'rgba(0,212,255,0.04)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.875rem' }}>
+                <p style={{ fontSize:'0.68rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase', color:C.cyan, margin:0, alignSelf:'center', flexShrink:0 }}>This week&apos;s pick:</p>
+                {weeklyTargets.map(t => {
+                  const wantsShort = t.tracking === 'auto_shorts'
+                  const candidates = items.filter(i =>
+                    (wantsShort ? (i.format === 'Short' || i.format === 'Both') : (i.format === 'Long-form' || i.format === 'Both')) &&
+                    i.pipeline_stage !== '📣 Live' && i.pipeline_stage !== '📊 Post-Published'
+                  )
+                  return (
+                    <div key={t.id} style={{ display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                      <span style={{ fontSize:'0.72rem', color:C.sec, flexShrink:0 }}>{t.label}:</span>
+                      <select value={weeklyPicks[t.id] ?? ''} onChange={e => setWeeklyPick(t.id, e.target.value)}
+                        style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.75rem', padding:'0.3rem 0.5rem', maxWidth:'220px' }}>
+                        <option value="">&mdash; none picked &mdash;</option>
+                        {candidates.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                      </select>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(195px,1fr))', gap:'0.625rem', alignItems:'start' }}>
               {byStage.map(stage => (
                 <div key={stage.key} style={{ background:stage.bg, border:'1px solid '+stage.color+'28', borderRadius:'1rem', padding:'0.875rem' }}>
@@ -1976,7 +2086,109 @@ export default function ContentPage() {
             </div>
           </div>
 
-        ) : (
+        ) : view === 'priority' ? (() => {
+
+          /* ── PRIORITY (drag to rank) ── */
+          const poolItems = items.filter(i => i.pipeline_stage !== '📣 Live' && i.pipeline_stage !== '📊 Post-Published')
+          const cValid = cPriorityOrder.filter(id => poolItems.some(i => i.id === id))
+          const cAssigned = new Set(cValid)
+          const cUnassigned = poolItems.filter(i => !cAssigned.has(i.id))
+          return (
+            <div>
+              <p style={{ fontSize:'0.78rem', color:C.muted, margin:'0 0 1.25rem' }}>
+                Drag ideas/pipeline items into rank order &mdash; this is what the home page&apos;s YouTube priority card reads from. Live and Post-Published items aren&apos;t included; they don&apos;t need ranking anymore.
+              </p>
+
+              {/* Unassigned zone */}
+              <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.25rem', marginBottom:'1.25rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem' }}>
+                  <h2 style={{ fontSize:'0.72rem', fontWeight:800, color:C.red, margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Unassigned</h2>
+                  {cUnassigned.length > 0 && <span style={{ background:C.red, color:'#fff', fontSize:'0.6rem', fontWeight:800, borderRadius:'9999px', padding:'0.15rem 0.45rem', lineHeight:1 }}>{cUnassigned.length}</span>}
+                  <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>Drag into priority list to rank</p>
+                </div>
+                {cUnassigned.length === 0 ? (
+                  <div style={{ padding:'1.5rem', textAlign:'center', border:'1px dashed rgba(0,255,136,0.3)', borderRadius:'0.875rem', background:'rgba(0,255,136,0.03)' }}>
+                    <p style={{ fontSize:'0.78rem', color:C.green, margin:0, fontWeight:700 }}>All items assigned</p>
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}
+                    onDragOver={e => { e.preventDefault(); setCDragOver('unassigned-zone') }}
+                    onDrop={e => {
+                      e.preventDefault()
+                      if (cDragFrom === 'priority' && cDragId) saveContentPriority(cValid.filter(i => i !== cDragId))
+                      setCDragId(null); setCDragOver(null); setCDragFrom(null)
+                    }}>
+                    {cUnassigned.map(item => (
+                      <div key={item.id} draggable
+                        onDragStart={() => { setCDragId(item.id); setCDragFrom('unassigned') }}
+                        onDragEnd={() => { setCDragId(null); setCDragOver(null); setCDragFrom(null) }}
+                        style={{ display:'flex', alignItems:'center', gap:'0.6rem', padding:'0.6rem 0.875rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.75rem', cursor:'grab', opacity: cDragId===item.id ? 0.4 : 1 }}>
+                        <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>
+                        <span style={{ flex:1, fontSize:'0.82rem', fontWeight:600, color:C.text }}>{item.title}</span>
+                        {item.format && <span style={{ fontSize:'0.62rem', color:C.muted, flexShrink:0 }}>{item.format}</span>}
+                        <span style={{ fontSize:'0.6rem', color:C.muted, flexShrink:0 }}>{item.pipeline_stage ?? '💡 Idea'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Priority list */}
+              <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.25rem' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.875rem' }}>
+                  <h2 style={{ fontSize:'0.72rem', fontWeight:800, color:C.orange, margin:0, letterSpacing:'0.07em', textTransform:'uppercase' as const }}>Priority Order</h2>
+                  <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>{cValid.length} items ranked</p>
+                </div>
+                {cValid.length === 0 ? (
+                  <div style={{ padding:'2.5rem 1.5rem', textAlign:'center', border:'2px dashed '+(cDragOver==='c-priority-empty' ? C.orange : C.border), borderRadius:'0.875rem', background: cDragOver==='c-priority-empty' ? 'rgba(249,115,22,0.05)' : 'transparent', transition:'all 0.15s' }}
+                    onDragOver={e => { e.preventDefault(); setCDragOver('c-priority-empty') }}
+                    onDrop={e => { e.preventDefault(); if (cDragFrom==='unassigned'&&cDragId) saveContentPriority([cDragId]); setCDragId(null); setCDragOver(null); setCDragFrom(null) }}>
+                    <p style={{ fontSize:'0.82rem', color:C.muted, margin:0 }}>Drag items here to start ranking</p>
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.35rem' }}>
+                    {cValid.map((id, idx) => {
+                      const item = poolItems.find(i => i.id === id)
+                      if (!item) return null
+                      return (
+                        <div key={id} draggable
+                          onDragStart={() => { setCDragId(id); setCDragFrom('priority') }}
+                          onDragEnd={() => { setCDragId(null); setCDragOver(null); setCDragFrom(null) }}
+                          onDragOver={e => { e.preventDefault(); setCDragOver(id) }}
+                          onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && cDragOver===id) setCDragOver(null) }}
+                          onDrop={e => {
+                            e.preventDefault()
+                            if (cDragFrom==='unassigned'&&cDragId) { const o=[...cValid]; o.splice(idx,0,cDragId); saveContentPriority(o) }
+                            else if (cDragFrom==='priority'&&cDragId&&cDragId!==id) { const w=cValid.filter(i=>i!==cDragId); w.splice(w.indexOf(id),0,cDragId); saveContentPriority(w) }
+                            setCDragId(null); setCDragOver(null); setCDragFrom(null)
+                          }}
+                          style={{ display:'flex', alignItems:'center', gap:'0.6rem', padding:'0.6rem 0.875rem', background: cDragOver===id ? 'rgba(249,115,22,0.07)' : C.surface, border:'1px solid '+(cDragOver===id ? C.orange : C.border), borderRadius:'0.75rem', cursor:'grab', opacity: cDragId===id ? 0.4 : 1, transition:'background 0.1s, border-color 0.1s' }}>
+                          <span style={{ fontSize:'0.72rem', color:C.muted, fontWeight:700, minWidth:'1.25rem', userSelect:'none' as const }}>{idx+1}</span>
+                          <span style={{ fontSize:'0.8rem', color:C.muted, userSelect:'none' as const }}>&#9776;</span>
+                          <span style={{ flex:1, fontSize:'0.82rem', fontWeight:600, color:C.text }}>{item.title}</span>
+                          {item.format && <span style={{ fontSize:'0.62rem', color:C.muted, flexShrink:0 }}>{item.format}</span>}
+                          <span style={{ fontSize:'0.6rem', color:C.muted, flexShrink:0 }}>{item.pipeline_stage ?? '💡 Idea'}</span>
+                          <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveContentPriority([id, ...cValid.filter(i=>i!==id)]) }} style={{ background:'rgba(249,115,22,0.1)', border:'1px solid rgba(249,115,22,0.3)', color:C.orange, cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to top">&#8593; Top</button>
+                          <button type="button" draggable={false} onClick={e => { e.preventDefault(); e.stopPropagation(); saveContentPriority([...cValid.filter(i=>i!==id), id]) }} style={{ background:'rgba(249,115,22,0.1)', border:'1px solid rgba(249,115,22,0.3)', color:C.orange, cursor:'pointer', padding:'0.3rem 0.6rem', fontSize:'0.7rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.5rem', fontWeight:700 }} title="Send to bottom">&#8595; Bot</button>
+                          <button type="button" draggable={false} onClick={e => { e.stopPropagation(); saveContentPriority(cValid.filter(i=>i!==id)) }} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem 0.25rem', fontSize:'0.75rem', lineHeight:1, fontFamily:'inherit', flexShrink:0, borderRadius:'0.25rem' }}>x</button>
+                        </div>
+                      )
+                    })}
+                    {/* Drop on bottom */}
+                    <div style={{ height:'2rem', borderRadius:'0.75rem', border:'2px dashed '+(cDragOver==='__c_bottom__' ? C.orange : 'transparent'), background: cDragOver==='__c_bottom__' ? 'rgba(249,115,22,0.05)' : 'transparent', transition:'all 0.15s', marginTop:'0.25rem' }}
+                      onDragOver={e => { e.preventDefault(); setCDragOver('__c_bottom__') }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        if (cDragFrom==='unassigned'&&cDragId) saveContentPriority([...cValid,cDragId])
+                        else if (cDragFrom==='priority'&&cDragId) saveContentPriority([...cValid.filter(i=>i!==cDragId),cDragId])
+                        setCDragId(null); setCDragOver(null); setCDragFrom(null)
+                      }} />
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })() : (
 
           /* ── ALL / LIST ── */
           <div>

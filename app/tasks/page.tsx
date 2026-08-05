@@ -2,6 +2,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { sounds } from '@/lib/sounds'
+import { useCelebration } from '@/hooks/useCelebration'
 import { ChevronLeft, Search, X, CheckSquare, Download, Plus, Edit3, Trash2, Zap, TrendingUp, ChevronDown, BookOpen } from 'lucide-react'
 
 const C = {
@@ -408,6 +410,7 @@ function TaskDrawer({
 
 export default function TasksPage() {
   const router = useRouter()
+  const { celebrate } = useCelebration()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
@@ -568,6 +571,7 @@ export default function TasksPage() {
   async function cycleStatus(task: Task, e: React.MouseEvent) {
     e.stopPropagation()
     const next = STATUS_CYCLE[task.status] ?? 'Not started'
+    if (next === 'Done') { sounds.playTaskComplete(); celebrate('task') }
     await supabase.from('master_tasks').update({ status: next }).eq('id', task.id)
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: next } : t))
   }

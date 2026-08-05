@@ -1,11 +1,14 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, ChevronDown, Plus, Edit3, Trash2, Flame, GripVertical, ShoppingCart } from 'lucide-react'
+import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, ChevronDown, ChevronUp, Plus, Edit3, Trash2, Flame, GripVertical, ShoppingCart } from 'lucide-react'
 import { getActiveFocusVideos, type ActiveFocusVideo } from '@/lib/supabase'
 import { supabase, getPageVisits, recordPageVisit, getEveningReview } from '@/lib/supabase'
-import { getDailyPlanCandidates, SECTION_LABEL, type PlanCandidate, type DailyPlanSection } from '@/lib/dailyPlan'
+import { SECTION_LABEL, type DailyPlanSection } from '@/lib/dailyPlan'
 import { sopForStage } from '@/lib/sops'
+import { ETSY_TODOS } from '@/lib/etsy-data'
+import { sounds } from '@/lib/sounds'
+import { useCelebration } from '@/hooks/useCelebration'
 import { useLanguage } from '@/context/LanguageContext'
 
 const C = {
@@ -81,6 +84,19 @@ function toDateStr(d: Date) {
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
 }
 
+// ---- Top 5 per workflow ----
+// Ranks a set of active items by that workflow's own priority_lists order
+// (same list each page's Priority View drag-reorders), items not yet ranked
+// fall in after the ranked ones, then takes the top N. Direct read of the
+// same source of truth each workflow page uses -- no time-budget filtering.
+type RankableItem = { id: string; title: string }
+
+function rankTop(order: string[], items: RankableItem[], n = 5): RankableItem[] {
+  const byId = new Map(items.map(i => [i.id, i]))
+  const ranked = [...order.filter(id => byId.has(id)), ...items.map(i => i.id).filter(id => !order.includes(id))]
+  return ranked.map(id => byId.get(id)!).slice(0, n)
+}
+
 // ---- Streaks row (encouragement) ----
 // Same consecutive-day walk as app/tracking/page.tsx's calcStreak, but
 // fetched over a 60-day window (not tracking's 7-day window) so streaks
@@ -140,6 +156,7 @@ function fmtTimeLabel(hhmm: string | null): string | null {
 }
 
 function TodayTomorrowLists() {
+  const { celebrate } = useCelebration()
   const todayStr = toDateStr(new Date())
   const tomorrowStr = toDateStr(new Date(Date.now() + 86400000))
   const [tasks, setTasks] = useState<HomeTask[]>([])
@@ -187,6 +204,7 @@ function TodayTomorrowLists() {
 
   async function toggleDone(task: HomeTask) {
     const next = task.status === 'Done' ? 'Not started' : 'Done'
+    if (next === 'Done') { sounds.playTaskComplete(); celebrate('task') }
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: next } : t))
     await supabase.from('master_tasks').update({ status: next }).eq('id', task.id)
   }
@@ -338,9 +356,17 @@ function mondayOf(d: Date): Date {
 }
 
 function WeeklyTargets() {
-  const weekStart = toDateStr(mondayOf(new Date()))
+  const now = new Date()
+  const weekStart = toDateStr(mondayOf(now))
+  const prevWeekStart = toDateStr(new Date(mondayOf(now).getTime() - 7 * 86400000))
+  // Mon=1 .. Sun=7 — used to judge whether progress is on pace for the "health bar" framing.
+  const daysElapsed = ((now.getDay() + 6) % 7) + 1
+  const daysLeft = 7 - daysElapsed
+
   const [targets, setTargets] = useState<WeeklyTarget[]>([])
   const [counts, setCounts] = useState<Record<string, number>>({})
+  const [prevCounts, setPrevCounts] = useState<Record<string, number>>({})
+  const [picks, setPicks] = useState<Record<string, string>>({}) // target_id -> picked content title
   const [ready, setReady] = useState(false)
 
   const load = useCallback(async () => {
@@ -350,20 +376,44 @@ function WeeklyTargets() {
     setTargets(rows)
 
     const next: Record<string, number> = {}
+    const prevNext: Record<string, number> = {}
+    const nextPicks: Record<string, string> = {}
     await Promise.all(rows.map(async t => {
       if (t.tracking === 'auto_shorts' || t.tracking === 'auto_longform') {
-        const formats = t.tracking === 'auto_shorts' ? ['Short', 'Both'] : ['Long form', 'Both']
-        const { count } = await supabase.from('content_items').select('id', { count: 'exact', head: true })
-          .ilike('pipeline_stage', '%Live%').in('format', formats).gte('updated_at', weekStart)
+        // NOTE: content_items.format stores "Long-form" (hyphen), not "Long form" —
+        // must match exactly or the long-form count silently stays at 0.
+        const formats = t.tracking === 'auto_shorts' ? ['Short', 'Both'] : ['Long-form', 'Both']
+        const [{ count }, { count: prevCount }] = await Promise.all([
+          supabase.from('content_items').select('id', { count: 'exact', head: true })
+            .ilike('pipeline_stage', '%Live%').in('format', formats).gte('updated_at', weekStart),
+          supabase.from('content_items').select('id', { count: 'exact', head: true })
+            .ilike('pipeline_stage', '%Live%').in('format', formats).gte('updated_at', prevWeekStart).lt('updated_at', weekStart),
+        ])
         next[t.id] = count ?? 0
+        prevNext[t.id] = prevCount ?? 0
+
+        // This week's pick — selected on the Content page, shown here as the
+        // specific title being worked toward rather than just a bare count.
+        const { data: pick } = await supabase.from('weekly_target_picks')
+          .select('content_item_id').eq('target_id', t.id).eq('week_start', weekStart).maybeSingle()
+        if (pick?.content_item_id) {
+          const { data: ci } = await supabase.from('content_items').select('title').eq('id', pick.content_item_id).maybeSingle()
+          if (ci?.title) nextPicks[t.id] = ci.title
+        }
       } else {
-        const { data } = await supabase.from('weekly_target_progress').select('manual_count').eq('target_id', t.id).eq('week_start', weekStart).maybeSingle()
+        const [{ data }, { data: prevData }] = await Promise.all([
+          supabase.from('weekly_target_progress').select('manual_count').eq('target_id', t.id).eq('week_start', weekStart).maybeSingle(),
+          supabase.from('weekly_target_progress').select('manual_count').eq('target_id', t.id).eq('week_start', prevWeekStart).maybeSingle(),
+        ])
         next[t.id] = data?.manual_count ?? 0
+        prevNext[t.id] = prevData?.manual_count ?? 0
       }
     }))
     setCounts(next)
+    setPrevCounts(prevNext)
+    setPicks(nextPicks)
     setReady(true)
-  }, [weekStart])
+  }, [weekStart, prevWeekStart])
 
   useEffect(() => { load() }, [load])
 
@@ -385,15 +435,38 @@ function WeeklyTargets() {
         const current = counts[t.id] ?? 0
         const pct = Math.min(100, Math.round((current / Math.max(1, t.target_count)) * 100))
         const met = current >= t.target_count
+
+        // "Health bar" framing — colour reflects whether you're on pace for
+        // the week, not just raw progress, so a stalled target visibly turns
+        // urgent as days run out rather than sitting there as a neutral bar.
+        const expectedPct = Math.round((daysElapsed / 7) * 100)
+        const paceStatus = met ? 'met' : pct >= expectedPct ? 'ahead' : (expectedPct - pct > 20 ? 'behind' : 'ontrack')
+        const paceColor = paceStatus === 'met' || paceStatus === 'ahead' ? C.green : paceStatus === 'behind' ? C.red : t.color
+        const paceLabel = paceStatus === 'met' ? 'Hit for the week' : daysLeft <= 0 ? 'Last day' : daysLeft + ' day' + (daysLeft===1?'':'s') + ' left'
+
+        const prevCount = prevCounts[t.id] ?? 0
+        const delta = current - prevCount
+        const deltaLabel = delta === 0 ? 'same as last week' : delta > 0 ? '+' + delta + ' vs last week' : delta + ' vs last week'
+        const deltaColor = delta > 0 ? C.green : delta < 0 ? C.muted : C.muted
+
         return (
-          <div key={t.id} style={{ padding:'0.75rem 0.85rem', background:C.surface, border:'1px solid '+(met?t.color+'50':C.border), borderRadius:'0.75rem' }}>
+          <div key={t.id} style={{ padding:'0.75rem 0.85rem', background:C.surface, border:'1px solid '+(met?t.color+'50':paceStatus==='behind'?C.red+'40':C.border), borderRadius:'0.75rem' }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.4rem' }}>
               <span style={{ fontSize:'0.78rem', color:C.text, fontWeight:600 }}>{t.emoji} {t.label}</span>
               <span style={{ fontSize:'0.75rem', fontWeight:700, color: met?t.color:C.sec }}>{current}/{t.target_count}</span>
             </div>
-            <div style={{ height:'4px', background:C.border, borderRadius:'2px', overflow:'hidden', marginBottom: t.tracking==='manual' ? '0.5rem' : 0 }}>
-              <div style={{ height:'100%', width:pct+'%', background:t.color, borderRadius:'2px', transition:'width 0.3s ease' }} />
+            <div style={{ height:'4px', background:C.border, borderRadius:'2px', overflow:'hidden', marginBottom:'0.4rem' }}>
+              <div style={{ height:'100%', width:pct+'%', background:paceColor, borderRadius:'2px', transition:'width 0.3s ease, background 0.3s ease' }} />
             </div>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: (t.tracking==='manual' || picks[t.id]) ? '0.5rem' : 0, gap:'0.4rem' }}>
+              <span style={{ fontSize:'0.62rem', fontWeight:700, color:paceColor }}>{paceLabel}</span>
+              <span style={{ fontSize:'0.62rem', color:deltaColor }}>{deltaLabel}</span>
+            </div>
+            {picks[t.id] && (
+              <p style={{ fontSize:'0.68rem', color:C.sec, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={picks[t.id]}>
+                &#127919; {picks[t.id]}
+              </p>
+            )}
             {t.tracking === 'manual' && (
               <div style={{ display:'flex', gap:'0.4rem' }}>
                 <button type="button" onClick={() => bump(t, -1)} style={{ flex:1, padding:'0.25rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>-</button>
@@ -543,7 +616,9 @@ export default function Home() {
   const [ideaDraft, setIdeaDraft] = useState<IdeaDraft>(EMPTY_IDEA_DRAFT)
   const [ideaSaving, setIdeaSaving] = useState(false)
   const [streaks, setStreaks] = useState<HabitStreak[]>([])
-  const [workflowTop, setWorkflowTop] = useState<Partial<Record<DailyPlanSection, PlanCandidate>>>({})
+  const [consistencyPct, setConsistencyPct] = useState<number | null>(null)
+  const [top5, setTop5] = useState<Partial<Record<'tasks'|'vault'|'etsy'|'x'|'youtube', RankableItem[]>>>({})
+  const [showWeekOverview, setShowWeekOverview] = useState(false)
 
   const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs']
 
@@ -642,21 +717,85 @@ export default function Home() {
         .sort((a, b) => b.streak - a.streak)
         .slice(0, 6)
       setStreaks(rows)
+
+      // Unified consistency score — % of active-habit-days actually completed
+      // over the trailing 7 days, across ALL active habits (not just the ones
+      // with a live streak). One number that trends up instead of five
+      // separate streak badges to mentally add together.
+      const allHabits = (habits ?? []) as { id: string }[]
+      if (allHabits.length > 0) {
+        const last7 = Array.from({ length: 7 }, (_, i) => toDateStr(new Date(Date.now() - i * 86400000)))
+        let done = 0
+        for (const h of allHabits) {
+          const dates = new Set(byHabit.get(h.id) ?? [])
+          for (const d of last7) if (dates.has(d)) done++
+        }
+        setConsistencyPct(Math.round((done / (allHabits.length * 7)) * 100))
+      }
     }).catch(() => {})
   }, [])
 
-  // Top priority per workflow — reuses the same ranked-candidate engine
-  // behind the Calendar's "Recommend for Tomorrow" (each workflow's own
-  // priority-ordered list, already built into Etsy/Tasks/Vault/X), just
-  // takes the #1 item per section instead of building a whole day plan.
+  // Top 5 per workflow — direct read of each workflow's own priority_lists
+  // order (the same list its own Priority View drag-reorders), independent
+  // of the Calendar's time-budgeted daily plan. YouTube reads its own
+  // 'youtube_pipeline_priority' list (set from Content's Priority tab), same
+  // as every other workflow — no more falling back to pinned focus videos.
   useEffect(() => {
-    getDailyPlanCandidates(today).then(candidates => {
-      const top: Partial<Record<DailyPlanSection, PlanCandidate>> = {}
-      for (const c of candidates) if (!top[c.section]) top[c.section] = c
-      setWorkflowTop(top)
-    }).catch(() => {})
+    (async () => {
+      const [tasksRes, vaultRes, xRes, ytRes, etsyPl, etsyCs, tasksPl, vaultPl, xPl, ytPl] = await Promise.all([
+        supabase.from('master_tasks').select('id,title,status,archived').eq('archived', false).neq('status', 'Done'),
+        supabase.from('vault_items').select('id,title,status').neq('archived', true),
+        supabase.from('x_ideas').select('id,text,status').eq('archived', false),
+        supabase.from('content_items').select('id,title,pipeline_stage').neq('archived', true),
+        supabase.from('priority_lists').select('ordered_ids').eq('key', 'etsy_todos_priority').maybeSingle(),
+        supabase.from('checklist_state').select('state').eq('key', 'etsy_checklists').maybeSingle(),
+        supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').maybeSingle(),
+        supabase.from('priority_lists').select('ordered_ids').eq('key', 'vault_priority').maybeSingle(),
+        supabase.from('priority_lists').select('ordered_ids').eq('key', 'x_priority').maybeSingle(),
+        supabase.from('priority_lists').select('ordered_ids').eq('key', 'youtube_pipeline_priority').maybeSingle(),
+      ])
+
+      const tasksItems: RankableItem[] = ((tasksRes.data ?? []) as { id:string; title:string }[]).map(t => ({ id:t.id, title:t.title }))
+      const vaultItems: RankableItem[] = ((vaultRes.data ?? []) as { id:string; title:string; status:string|null }[])
+        .filter(v => v.status !== 'Done' && v.status !== 'Read')
+        .map(v => ({ id:v.id, title:v.title }))
+      const xItems: RankableItem[] = ((xRes.data ?? []) as { id:string; text:string; status:string|null }[])
+        .filter(i => i.status !== 'done')
+        .map(i => ({ id:i.id, title:i.text }))
+      const checked = (etsyCs.data?.state as Record<string, boolean> | undefined) ?? {}
+      const etsyItems: RankableItem[] = ETSY_TODOS
+        .map(td => ({ id: td.notion_url || td.name, title: td.name, checked: !!checked[td.notion_url || td.name] }))
+        .filter(td => !td.checked)
+        .map(({ id, title }) => ({ id, title }))
+      const ytItems: RankableItem[] = ((ytRes.data ?? []) as { id:string; title:string; pipeline_stage:string|null }[])
+        .filter(v => v.pipeline_stage !== '📣 Live' && v.pipeline_stage !== '📊 Post-Published')
+        .map(v => ({ id:v.id, title:v.title }))
+
+      setTop5({
+        tasks:   rankTop((tasksPl.data?.ordered_ids as string[] | undefined) ?? [], tasksItems),
+        vault:   rankTop((vaultPl.data?.ordered_ids as string[] | undefined) ?? [], vaultItems),
+        x:       rankTop((xPl.data?.ordered_ids as string[] | undefined) ?? [], xItems),
+        etsy:    rankTop((etsyPl.data?.ordered_ids as string[] | undefined) ?? [], etsyItems),
+        youtube: rankTop((ytPl.data?.ordered_ids as string[] | undefined) ?? [], ytItems),
+      })
+    })().catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Remember the "This week" overview open/closed state across visits —
+  // collapsed by default so the home page scans in a couple seconds
+  // (greeting, one CTA, today's list); the workflow/target detail is there
+  // when wanted, not shoved in front of you every time.
+  useEffect(() => {
+    try { if (localStorage.getItem('flowstate_week_overview_open') === '1') setShowWeekOverview(true) } catch {}
+  }, [])
+  function toggleWeekOverview() {
+    setShowWeekOverview(prev => {
+      const next = !prev
+      try { localStorage.setItem('flowstate_week_overview_open', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
 
   // Auto-launch the Morning/Evening Routine on the first app open of the
   // day/evening — cross-device, so opening on a different phone or laptop
@@ -914,47 +1053,34 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Overview strip — streaks, top workflow priorities, today/tomorrow, weekly targets */}
-      {!loading && (streaks.length > 0 || Object.keys(workflowTop).length > 0) && (
+      {/* Streaks row — always visible, today-relevant at a glance */}
+      {!loading && (streaks.length > 0 || consistencyPct !== null) && (
         <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.012)' }}>
-          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
-
-            {streaks.length > 0 && (
-              <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', flexWrap:'wrap', marginBottom: Object.keys(workflowTop).length > 0 ? '1rem' : 0 }}>
-                {streaks.map(s => (
-                  <div key={s.id} title={s.title} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.35rem 0.7rem', background:s.color+'14', border:'1px solid '+s.color+'40', borderRadius:'9999px' }}>
-                    <Flame size={12} color={s.color} />
-                    {s.emoji && <span style={{ fontSize:'0.8rem', lineHeight:1 }}>{s.emoji}</span>}
-                    <span style={{ fontSize:'0.72rem', fontWeight:700, color:s.color }}>{s.streak}</span>
-                    <span style={{ fontSize:'0.72rem', color:C.sec }}>{s.title}</span>
+          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1rem 2rem' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', flexWrap:'wrap' }}>
+              {consistencyPct !== null && (() => {
+                const cColor = consistencyPct >= 80 ? C.green : consistencyPct >= 50 ? C.amber : C.red
+                return (
+                  <div title="% of active habits completed over the last 7 days" style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.35rem 0.7rem', background:cColor+'14', border:'1px solid '+cColor+'50', borderRadius:'9999px' }}>
+                    <span style={{ fontSize:'0.85rem', fontWeight:900, color:cColor }}>{consistencyPct}%</span>
+                    <span style={{ fontSize:'0.72rem', color:C.sec }}>consistency (7d)</span>
                   </div>
-                ))}
-              </div>
-            )}
-
-            {Object.keys(workflowTop).length > 0 && (
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:'0.6rem' }}>
-                {(['youtube','etsy','tasks','vault','x'] as DailyPlanSection[]).map(section => {
-                  const item = section === 'youtube' && focusVideos[0]
-                    ? { title: sopForStage(focusVideos[0].pipeline_stage) ? sopForStage(focusVideos[0].pipeline_stage)!.title + ' — ' + focusVideos[0].title : focusVideos[0].title }
-                    : workflowTop[section]
-                  if (!item) return null
-                  return (
-                    <button key={section} onClick={() => navTo(section === 'tasks' ? 'tasks' : section === 'youtube' ? 'content' : section === 'x' ? 'x' : section)}
-                      style={{ textAlign:'left', padding:'0.7rem 0.85rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.75rem', cursor:'pointer', fontFamily:'inherit' }}>
-                      <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.3rem' }}>{SECTION_LABEL[section]}</p>
-                      <p style={{ fontSize:'0.8rem', color:C.text, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</p>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-
+                )
+              })()}
+              {streaks.map(s => (
+                <div key={s.id} title={s.title} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.35rem 0.7rem', background:s.color+'14', border:'1px solid '+s.color+'40', borderRadius:'9999px' }}>
+                  <Flame size={12} color={s.color} />
+                  {s.emoji && <span style={{ fontSize:'0.8rem', lineHeight:1 }}>{s.emoji}</span>}
+                  <span style={{ fontSize:'0.72rem', fontWeight:700, color:s.color }}>{s.streak}</span>
+                  <span style={{ fontSize:'0.72rem', color:C.sec }}>{s.title}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Today / Tomorrow adjustable lists */}
+      {/* Today / Tomorrow adjustable lists — always visible, this is what's actionable today */}
       {!loading && (
         <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
           <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
@@ -963,12 +1089,53 @@ export default function Home() {
         </div>
       )}
 
-      {/* Weekly targets */}
+      {/* This week's overview — top 5 per workflow + weekly targets, collapsed by
+          default so the page scans fast; state remembered across visits. */}
       {!loading && (
         <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.012)' }}>
-          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
-            <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.6rem' }}>This week&apos;s targets</p>
-            <WeeklyTargets />
+          <div style={{ maxWidth:'900px', margin:'0 auto', padding: showWeekOverview ? '1.25rem 2rem' : '0.75rem 2rem' }}>
+            <button onClick={toggleWeekOverview} style={{ display:'flex', alignItems:'center', gap:'0.5rem', width:'100%', background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:'inherit' }}>
+              <span style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted }}>This week&apos;s overview</span>
+              <span style={{ fontSize:'0.68rem', color:C.muted }}>&mdash; priorities &amp; targets</span>
+              <span style={{ marginLeft:'auto', display:'flex', color:C.muted }}>{showWeekOverview ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}</span>
+            </button>
+
+            {showWeekOverview && (
+              <div style={{ marginTop:'1rem' }}>
+                <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.6rem' }}>Top 5 per workflow</p>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))', gap:'0.6rem', marginBottom:'1.5rem' }}>
+                  {(['youtube','etsy','tasks','vault','x'] as DailyPlanSection[]).map(section => {
+                    const items: RankableItem[] = top5[section] ?? []
+                    const route = section === 'tasks' ? 'tasks' : section === 'youtube' ? 'content' : section === 'x' ? 'x' : section
+                    return (
+                      <div key={section} style={{ padding:'0.7rem 0.85rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.75rem' }}>
+                        <button onClick={() => navTo(route)} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit', display:'block', width:'100%', textAlign:'left' }}>
+                          <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.4rem' }}>
+                            {SECTION_LABEL[section]}
+                          </p>
+                        </button>
+                        {items.length === 0 ? (
+                          <p style={{ fontSize:'0.72rem', color:C.muted, margin:0 }}>Nothing queued</p>
+                        ) : (
+                          <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+                            {items.map((item, i) => (
+                              <button key={item.id} onClick={() => navTo(route)}
+                                style={{ display:'flex', alignItems:'baseline', gap:'0.4rem', background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
+                                <span style={{ fontSize:'0.65rem', color:C.muted, fontWeight:700, flexShrink:0 }}>{i+1}.</span>
+                                <span style={{ fontSize:'0.78rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.6rem' }}>This week&apos;s targets</p>
+                <WeeklyTargets />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1033,7 +1200,7 @@ export default function Home() {
                   Time to do<br/>deep work.
                 </h2>
                 {topTask ? (
-                  <div onClick={() => topTaskIsPipeline && router.push('/content-focus')}
+                  <div onClick={() => topTaskIsPipeline && handleFocusClick()}
                     style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.5rem', cursor: topTaskIsPipeline ? 'pointer' : 'default' }}>
                     <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.green, margin:'0 0 0.3rem' }}>Your #1 task today</p>
                     <p style={{ fontSize:'1rem', fontWeight:700, color:C.text, margin:0, lineHeight:1.35 }}>{topTask.title}</p>
@@ -1066,7 +1233,7 @@ export default function Home() {
                 <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
                 <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
                   {focusVideos.map(v => (
-                    <div key={v.id} onClick={() => router.push('/content-focus')}
+                    <div key={v.id} onClick={handleFocusClick}
                       style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+(v.is_active_focus?'rgba(255,184,0,0.3)':C.border), borderRadius:'0.875rem', cursor:'pointer' }}>
                       <div style={{ width:'2rem', height:'2rem', borderRadius:'0.625rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                         <Tv size={14} color={C.sec}/>
@@ -1132,7 +1299,7 @@ export default function Home() {
                 <p style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.muted, marginBottom:'0.75rem' }}>Active YouTube Focus</p>
                 <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
                   {focusVideos.map(v => (
-                    <div key={v.id} onClick={() => router.push('/content-focus')}
+                    <div key={v.id} onClick={handleFocusClick}
                       style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.875rem 1rem', background:C.card, border:'1px solid '+(v.is_active_focus?'rgba(255,184,0,0.3)':C.border), borderRadius:'0.875rem', cursor:'pointer' }}>
                       <div style={{ width:'2rem', height:'2rem', borderRadius:'0.625rem', background:C.surface, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                         <Tv size={14} color={C.sec}/>

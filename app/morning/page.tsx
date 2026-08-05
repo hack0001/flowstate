@@ -483,6 +483,9 @@ export default function MorningPage() {
                         ))}
                       </div>
                       <p style={{ fontSize:'0.68rem', color:C.muted, margin:'0.6rem 0 0', fontStyle:'italic' }}>Full checklist &amp; program structure on the Physical page.</p>
+                      <p style={{ fontSize:'0.7rem', color:C.amber, margin:'0.5rem 0 0', lineHeight:1.5, fontStyle:'italic' }}>
+                        Muscle building &#8212; Grease the Groove: ~2/3 max reps per set, 2&#8211;3 sessions a week, add weight/reps gradually and track it.
+                      </p>
                     </div>
                   ) : current.note && (
                     <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 0.375rem', fontStyle:'italic', textAlign:'left' }}>{current.note}</p>

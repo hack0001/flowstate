@@ -274,6 +274,17 @@ export default function PhysicalPage() {
           })()}
         </div>
 
+        {/* Muscle building — Grease the Groove */}
+        <div style={{ marginBottom:'2.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem' }}>
+          <p style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:C.sec, margin:'0 0 0.25rem' }}>Muscle Building &#8212; Grease the Groove</p>
+          <p style={{ fontSize:'0.78rem', color:C.muted, margin:'0 0 1.125rem' }}>The Russian strength method &#8212; practice more often, not to failure</p>
+          <div style={{ padding:'0.875rem 1rem', background:'rgba(0,255,136,0.04)', border:'1px solid rgba(0,255,136,0.18)', borderRadius:'0.875rem' }}>
+            <p style={{ fontSize:'0.82rem', color:C.sec, margin:0, lineHeight:1.7 }}>
+              Pick an exercise and do sets at roughly <strong style={{ color:C.text }}>two-thirds of your max reps</strong> &#8212; never to failure. Spread these sessions across <strong style={{ color:C.text }}>2&#8211;3 days</strong> a week. Progressively add a small amount of <strong style={{ color:C.text }}>weight or reps</strong> each time, and <strong style={{ color:C.text }}>track what you did</strong> so you can see the trend. Frequent, sub-maximal practice grooves the movement pattern and builds strength faster than occasional all-out sessions &#8212; and it doesn&#39;t trash your recovery.
+            </p>
+          </div>
+        </div>
+
         {/* Training day status banner */}
         {training ? (
           <div style={{ marginBottom:'2rem', padding:'1rem 1.25rem', background:allDone ? 'rgba(0,255,136,0.05)' : 'rgba(255,184,0,0.04)', border:'1px solid '+(allDone ? 'rgba(0,255,136,0.2)' : 'rgba(255,184,0,0.15)'), borderRadius:'1rem' }}>

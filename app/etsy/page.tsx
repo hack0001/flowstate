@@ -5,6 +5,8 @@ import { ShoppingBag, CheckCircle, Circle, RotateCcw, ChevronDown, ExternalLink,
 import { useLanguage } from '@/context/LanguageContext'
 import { ETSY_NOTES, SOFTWARE_PIPELINE, ETSY_TODOS, ETSY_LINKS, BATCH_WORKFLOW } from '@/lib/etsy-data'
 import { supabase } from '@/lib/supabase'
+import { sounds } from '@/lib/sounds'
+import { useCelebration } from '@/hooks/useCelebration'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -734,6 +736,7 @@ const ETSY_PRIORITY_KEY = 'etsy_todos_priority'
 export default function EtsyPage() {
   const router = useRouter()
   const { t } = useLanguage()
+  const { celebrate } = useCelebration()
   const [activeTab, setActiveTab] = useState<Tab>('checklists')
   const [checked, setChecked] = useState<Record<string,boolean>>({})
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['product']))
@@ -798,6 +801,7 @@ export default function EtsyPage() {
       const next = { ...prev, [id]: !prev[id] }
       try { localStorage.setItem(LS_KEY, JSON.stringify(next)) } catch {}
       supabase.from('checklist_state').upsert({ key: 'etsy_checklists', state: next, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+      if (next[id]) { sounds.playTaskComplete(); celebrate('task') }
       return next
     })
   }
