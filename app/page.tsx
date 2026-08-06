@@ -198,18 +198,46 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const [{ data: taskData }, { data: pdata }, { data: reminderData }, { data: habitData }] = await Promise.all([
+    // Each source is fetched independently -- if reminders or habit_blocks
+    // errors out (missing table, RLS, etc.) it must NOT take the task list
+    // down with it via a rejected Promise.all. Tasks are the load-bearing
+    // piece here, so they always get set even if the extras fail.
+    const results = await Promise.allSettled([
       supabase.from('master_tasks').select('id,title,status,due_date,is_frog,start_time,duration_min')
         .in('due_date', [todayStr, tomorrowStr]).neq('archived', true),
       supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').maybeSingle(),
       supabase.from('reminders').select('*'),
       supabase.from('habit_blocks').select('*'),
     ])
-    setTasks((taskData ?? []) as HomeTask[])
-    setOrder(((pdata?.ordered_ids as string[]) ?? []))
-    setReminders(((reminderData ?? []) as Parameters<typeof fetchRemindersRow>[0][]).map(fetchRemindersRow))
-    setHabitBlocks(((habitData ?? []) as Array<{ id:string; title:string; emoji:string; color:string; days:number[]; time_label:string }>)
-      .map(r => ({ id:r.id, title:r.title, emoji:r.emoji, color:r.color, days:r.days, timeLabel:r.time_label })))
+    const [taskRes, priorityRes, reminderRes, habitRes] = results
+
+    if (taskRes.status === 'fulfilled') {
+      if (taskRes.value.error) console.error('[home tasks load failed]', taskRes.value.error.message)
+      setTasks((taskRes.value.data ?? []) as HomeTask[])
+    } else {
+      console.error('[home tasks load rejected]', taskRes.reason)
+      setTasks([])
+    }
+
+    if (priorityRes.status === 'fulfilled') {
+      setOrder(((priorityRes.value.data?.ordered_ids as string[]) ?? []))
+    }
+
+    if (reminderRes.status === 'fulfilled' && !reminderRes.value.error) {
+      setReminders(((reminderRes.value.data ?? []) as Parameters<typeof fetchRemindersRow>[0][]).map(fetchRemindersRow))
+    } else {
+      if (reminderRes.status === 'fulfilled') console.error('[home reminders load failed]', reminderRes.value.error?.message)
+      else console.error('[home reminders load rejected]', reminderRes.reason)
+    }
+
+    if (habitRes.status === 'fulfilled' && !habitRes.value.error) {
+      setHabitBlocks(((habitRes.value.data ?? []) as Array<{ id:string; title:string; emoji:string; color:string; days:number[]; time_label:string }>)
+        .map(r => ({ id:r.id, title:r.title, emoji:r.emoji, color:r.color, days:r.days, timeLabel:r.time_label })))
+    } else {
+      if (habitRes.status === 'fulfilled') console.error('[home habit_blocks load failed]', habitRes.value.error?.message)
+      else console.error('[home habit_blocks load rejected]', habitRes.reason)
+    }
+
     setReady(true)
   }, [todayStr, tomorrowStr])
 
