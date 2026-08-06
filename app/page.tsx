@@ -152,6 +152,10 @@ function calcStreakFromDates(dates: string[]): number {
 // / add / reschedule all write straight to Supabase -- cross-device.
 type HomeTask = { id: string; title: string; status: string; due_date: string | null; is_frog: boolean; start_time: string | null; duration_min: number | null }
 
+// Recurring weekly commitments from the Calendar tab's habit_blocks table
+// (e.g. "Gym - Mon/Wed/Fri"). Distinct from the Tracking-page Habit Tracker.
+type HomeHabitBlock = { id: string; title: string; emoji: string; color: string; days: number[]; timeLabel: string }
+
 function homeAddDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate() + n); return r }
 function homeAddMonths(d: Date, n: number): Date { const r = new Date(d); r.setMonth(r.getMonth() + n); return r }
 
@@ -187,21 +191,25 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
   const [tasks, setTasks] = useState<HomeTask[]>([])
   const [order, setOrder] = useState<string[]>([])
   const [reminders, setReminders] = useState<Reminder[]>([])
+  const [habitBlocks, setHabitBlocks] = useState<HomeHabitBlock[]>([])
   const [ready, setReady] = useState(false)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const [{ data: taskData }, { data: pdata }, { data: reminderData }] = await Promise.all([
+    const [{ data: taskData }, { data: pdata }, { data: reminderData }, { data: habitData }] = await Promise.all([
       supabase.from('master_tasks').select('id,title,status,due_date,is_frog,start_time,duration_min')
         .in('due_date', [todayStr, tomorrowStr]).neq('archived', true),
       supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').maybeSingle(),
       supabase.from('reminders').select('*'),
+      supabase.from('habit_blocks').select('*'),
     ])
     setTasks((taskData ?? []) as HomeTask[])
     setOrder(((pdata?.ordered_ids as string[]) ?? []))
     setReminders(((reminderData ?? []) as Parameters<typeof fetchRemindersRow>[0][]).map(fetchRemindersRow))
+    setHabitBlocks(((habitData ?? []) as Array<{ id:string; title:string; emoji:string; color:string; days:number[]; time_label:string }>)
+      .map(r => ({ id:r.id, title:r.title, emoji:r.emoji, color:r.color, days:r.days, timeLabel:r.time_label })))
     setReady(true)
   }, [todayStr, tomorrowStr])
 
@@ -230,6 +238,10 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
   const tomorrowTasks = sortByCalendar(tasks.filter(t => t.due_date === tomorrowStr))
   const todayReminders = reminders.filter(r => reminderOccursOn(r, todayStr))
   const tomorrowReminders = reminders.filter(r => reminderOccursOn(r, tomorrowStr))
+  const todayDow = new Date(todayStr + 'T12:00:00').getDay()
+  const tomorrowDow = new Date(tomorrowStr + 'T12:00:00').getDay()
+  const todayHabits = habitBlocks.filter(h => h.days.includes(todayDow))
+  const tomorrowHabits = habitBlocks.filter(h => h.days.includes(tomorrowDow))
 
   async function toggleDone(task: HomeTask) {
     const next = task.status === 'Done' ? 'Not started' : 'Done'
@@ -262,14 +274,29 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
     await supabase.from('master_tasks').update({ due_date: dateStr, start_time: null }).eq('id', task.id)
   }
 
-  function Column({ label, list, reminderList }: { label: string; dayKey: 'today' | 'tomorrow'; dueDate: string; list: HomeTask[]; reminderList: Reminder[] }) {
+  function Column({ label, list, reminderList, habitList }: { label: string; dayKey: 'today' | 'tomorrow'; dueDate: string; list: HomeTask[]; reminderList: Reminder[]; habitList: HomeHabitBlock[] }) {
     return (
       <div style={{ flex:1, minWidth:'240px' }}>
         <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>{label}</p>
         <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
-          {list.length === 0 && reminderList.length === 0 && (
+          {list.length === 0 && reminderList.length === 0 && habitList.length === 0 && (
             <p style={{ fontSize:'0.75rem', color:C.muted, margin:'0 0 0.25rem' }}>Nothing scheduled.</p>
           )}
+          {habitList.map(h => (
+            <div
+              key={h.id}
+              onClick={() => router.push('/calendar')}
+              title="Open Calendar to edit"
+              style={{
+                display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
+                background: (h.color || C.border) + '14', border:'1px solid '+(h.color || C.border)+'45', borderRadius:'0.6rem', cursor:'pointer',
+              }}>
+              {h.emoji && <span style={{ fontSize:'0.75rem', flexShrink:0 }}>{h.emoji}</span>}
+              {h.timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:h.color || C.muted, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{h.timeLabel}</span>}
+              <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color:h.color || C.sec, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{h.title}</span>
+              <ChevronRight size={12} color={C.muted} style={{ flexShrink:0 }} />
+            </div>
+          ))}
           {reminderList.map(r => (
             <div
               key={r.id}
@@ -344,8 +371,8 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
 
   return (
     <div style={{ display:'flex', gap:'1.5rem', flexWrap:'wrap' }}>
-      <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} reminderList={todayReminders} />
-      <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} reminderList={tomorrowReminders} />
+      <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} reminderList={todayReminders} habitList={todayHabits} />
+      <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} reminderList={tomorrowReminders} habitList={tomorrowHabits} />
     </div>
   )
 }
@@ -1274,9 +1301,19 @@ export default function Home() {
 
       {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} onAdded={() => setTaskRefresh(k => k + 1)} />}
 
-      {/* This week's overview — top 5 per workflow + weekly targets. First
-          thing after streaks/consistency, always expanded — this is the
-          real "what's queued" view of the app, not something to bury. */}
+      {/* Today / Tomorrow — full calendar-day view: tasks, reminders, and
+          recurring habit blocks, same content and functionality as the
+          Calendar tab for these two days. First thing after streaks/consistency
+          — this is what's actually happening today, before the week-wide view. */}
+      {!loading && (
+        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
+          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
+            <TodayTomorrowLists refreshKey={taskRefresh} />
+          </div>
+        </div>
+      )}
+
+      {/* This week's overview — top 5 per workflow + weekly targets. */}
       {!loading && (
         <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.015)' }}>
           <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.5rem 2rem' }}>
@@ -1343,15 +1380,6 @@ export default function Home() {
 
       {/* Today's physical — component renders nothing (no wrapper) if nothing's queued for today */}
       {!loading && <TodaysPhysical />}
-
-      {/* Today / Tomorrow adjustable lists — always visible, this is what's actionable today */}
-      {!loading && (
-        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
-          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
-            <TodayTomorrowLists refreshKey={taskRefresh} />
-          </div>
-        </div>
-      )}
 
       {/* Weekday afternoon reminder banner */}
       {showReminder && (
