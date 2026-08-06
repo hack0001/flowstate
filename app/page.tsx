@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, ChevronDown, Plus, Edit3, Trash2, Flame, GripVertical, ShoppingCart, Bell } from 'lucide-react'
+import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, Plus, Flame, GripVertical, ShoppingCart, Bell } from 'lucide-react'
 import { getActiveFocusVideos } from '@/lib/supabase'
 import { supabase, getPageVisits, recordPageVisit, getEveningReview, getDailyChecklistState, setDailyChecklistItem } from '@/lib/supabase'
 import { SECTION_LABEL, type DailyPlanSection } from '@/lib/dailyPlan'
@@ -39,8 +39,9 @@ const QUOTES = [
 ]
 
 // Website / app ideas parked for later -- not active projects, just a backlog
-// to revisit when there's capacity. Stored in Supabase (site_ideas table) so
-// they can be added/edited/removed from the home page.
+// to revisit when there's capacity. Stored in Supabase (site_ideas table).
+// Full add/edit/delete UI now lives on its own page (app/ideas/page.tsx) --
+// the home page only needs enough to show a preview tile that links there.
 type SiteIdea = {
   id: string
   title: string
@@ -49,24 +50,6 @@ type SiteIdea = {
   next_step: string
   sort_order: number
   created_at: string
-}
-
-type IdeaDraft = {
-  id?: string
-  title: string
-  tag: string
-  summary: string
-  next_step: string
-}
-
-const EMPTY_IDEA_DRAFT: IdeaDraft = { title:'', tag:'Website', summary:'', next_step:'' }
-
-const IDEA_TAGS = ['Website', 'App', 'Content', 'Other']
-const IDEA_TAG_COLORS: Record<string, string> = {
-  Website: '#00d4ff',
-  App: '#8b5cf6',
-  Content: '#f97316',
-  Other: '#00ff88',
 }
 
 // Pre-flight check items -- must all be ticked before focus starts
@@ -841,23 +824,16 @@ export default function Home() {
   const [pageAlerts, setPageAlerts] = useState<Record<string, 'green' | 'orange' | 'red'>>({})
   const [pageWarn, setPageWarn] = useState<Set<string>>(new Set())
   const [pageVisitsErr, setPageVisitsErr] = useState<string | null>(null)
-  // Default expanded -- this used to live collapsed at the very bottom of
-  // the page and was easy to forget about entirely; now it's grouped with
-  // This week's overview near the top, so it should be visible by default.
-  const [showIdeas, setShowIdeas] = useState(true)
+  // Preview only -- full add/edit/delete lives on the dedicated /ideas page.
   const [ideas, setIdeas] = useState<SiteIdea[]>([])
   const [ideasLoading, setIdeasLoading] = useState(true)
-  const [ideasErr, setIdeasErr] = useState<string | null>(null)
-  const [ideaEditingId, setIdeaEditingId] = useState<string | null>(null)
-  const [ideaDraft, setIdeaDraft] = useState<IdeaDraft>(EMPTY_IDEA_DRAFT)
-  const [ideaSaving, setIdeaSaving] = useState(false)
   const [streaks, setStreaks] = useState<HabitStreak[]>([])
   const [consistencyPct, setConsistencyPct] = useState<number | null>(null)
   const [top5, setTop5] = useState<Partial<Record<'tasks'|'vault'|'etsy'|'x'|'youtube', RankableItem[]>>>({})
   const [showAddTask, setShowAddTask] = useState(false)
   const [taskRefresh, setTaskRefresh] = useState(0)
 
-  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs']
+  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas']
 
   const today = toDateStr(new Date())
   const quote = QUOTES[new Date().getDate() % QUOTES.length]
@@ -1166,63 +1142,16 @@ export default function Home() {
 
   const loadIdeas = useCallback(async () => {
     setIdeasLoading(true)
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('site_ideas')
       .select('*')
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true })
-    if (error) setIdeasErr(error.message)
-    else setIdeasErr(null)
     setIdeas((data ?? []) as SiteIdea[])
     setIdeasLoading(false)
   }, [])
 
   useEffect(() => { loadIdeas() }, [loadIdeas])
-
-  function openNewIdea() {
-    setIdeaDraft(EMPTY_IDEA_DRAFT)
-    setIdeaEditingId('new')
-    setShowIdeas(true)
-  }
-
-  function openEditIdea(idea: SiteIdea) {
-    setIdeaDraft({ id: idea.id, title: idea.title, tag: idea.tag, summary: idea.summary, next_step: idea.next_step })
-    setIdeaEditingId(idea.id)
-  }
-
-  function cancelIdeaEdit() {
-    setIdeaEditingId(null)
-    setIdeaDraft(EMPTY_IDEA_DRAFT)
-  }
-
-  async function saveIdea() {
-    if (!ideaDraft.title.trim()) return
-    setIdeaSaving(true)
-    if (ideaDraft.id) {
-      const payload = { title: ideaDraft.title.trim(), tag: ideaDraft.tag, summary: ideaDraft.summary.trim(), next_step: ideaDraft.next_step.trim() }
-      const { error } = await supabase.from('site_ideas').update(payload).eq('id', ideaDraft.id)
-      if (!error) setIdeas(prev => prev.map(i => i.id === ideaDraft.id ? { ...i, ...payload } : i))
-      else setIdeasErr(error.message)
-    } else {
-      const nextOrder = ideas.length > 0 ? Math.max(...ideas.map(i => i.sort_order)) + 1 : 0
-      const { data, error } = await supabase
-        .from('site_ideas')
-        .insert({ title: ideaDraft.title.trim(), tag: ideaDraft.tag, summary: ideaDraft.summary.trim(), next_step: ideaDraft.next_step.trim(), sort_order: nextOrder })
-        .select()
-        .single()
-      if (!error && data) setIdeas(prev => [...prev, data as SiteIdea])
-      else if (error) setIdeasErr(error.message)
-    }
-    setIdeaSaving(false)
-    cancelIdeaEdit()
-  }
-
-  async function deleteIdea(id: string) {
-    if (!confirm('Remove this idea?')) return
-    const { error } = await supabase.from('site_ideas').delete().eq('id', id)
-    if (!error) setIdeas(prev => prev.filter(i => i.id !== id))
-    else setIdeasErr(error.message)
-  }
 
   function handleFocusClick() {
     // Show the pre-flight check before starting focus
@@ -1333,6 +1262,7 @@ export default function Home() {
               { route:'physical', icon:<Activity size={14}/>, label:'Physical', bg:'rgba(0,255,136,0.06)', border:'rgba(0,255,136,0.2)', color:'#00ff88' },
               { route:'instagram', icon:<Camera size={14}/>, label:'Instagram', bg:'rgba(225,48,108,0.07)', border:'rgba(225,48,108,0.22)', color:'#e1306c' },
               { route:'tabs', icon:<Layers size={14}/>, label:'Tab Sheet', bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
+              { route:'ideas', icon:<Lightbulb size={14}/>, label:'Ideas', bg:'rgba(139,92,246,0.06)', border:'rgba(139,92,246,0.18)', color:'#8b5cf6' },
             ] as { route:string; icon:JSX.Element; label:string; bg:string; border:string; color:string; bold?:boolean }[]).map(({ route, icon, label, bg, border, color, bold }) => {
               const alert = pageAlerts[route]
               const alertBg     = alert === 'red' ? 'rgba(255,68,102,0.15)' : alert === 'orange' ? 'rgba(255,184,0,0.13)' : alert === 'green' ? 'rgba(0,255,136,0.11)' : null
@@ -1357,6 +1287,25 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* Weekday afternoon reminder banner -- one place above the streaks row */}
+      {showReminder && (
+        <div style={{ position:'relative', zIndex:2, background:'rgba(249,115,22,0.08)', borderBottom:'1px solid rgba(249,115,22,0.2)' }}>
+          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'0.75rem 2rem', display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap' }}>
+            <span style={{ fontSize:'1rem' }}>&#9989;</span>
+            <div style={{ flex:1 }}>
+              <span style={{ fontSize:'0.78rem', fontWeight:700, color:'#f97316' }}>{t('reminderTitle')}: </span>
+              <span style={{ fontSize:'0.78rem', color:'#8888aa' }}>{t('reminderMemes')} &nbsp;&bull;&nbsp; {t('reminderMewing')}</span>
+            </div>
+            <button onClick={() => {
+              try { localStorage.setItem('flowstate_reminder_dismissed', toDateStr(new Date())) } catch {}
+              setShowReminder(false)
+            }} style={{ background:'none', border:'none', color:'#4a4a6a', cursor:'pointer', display:'flex', alignItems:'center', padding:'0.25rem', borderRadius:'0.25rem' }}>
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Streaks row — always visible, today-relevant at a glance */}
       {!loading && (streaks.length > 0 || consistencyPct !== null) && (
@@ -1524,25 +1473,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Weekday afternoon reminder banner -- moved up alongside the CTA */}
-      {showReminder && (
-        <div style={{ position:'relative', zIndex:2, background:'rgba(249,115,22,0.08)', borderBottom:'1px solid rgba(249,115,22,0.2)' }}>
-          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'0.75rem 2rem', display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap' }}>
-            <span style={{ fontSize:'1rem' }}>&#9989;</span>
-            <div style={{ flex:1 }}>
-              <span style={{ fontSize:'0.78rem', fontWeight:700, color:'#f97316' }}>{t('reminderTitle')}: </span>
-              <span style={{ fontSize:'0.78rem', color:'#8888aa' }}>{t('reminderMemes')} &nbsp;&bull;&nbsp; {t('reminderMewing')}</span>
-            </div>
-            <button onClick={() => {
-              try { localStorage.setItem('flowstate_reminder_dismissed', toDateStr(new Date())) } catch {}
-              setShowReminder(false)
-            }} style={{ background:'none', border:'none', color:'#4a4a6a', cursor:'pointer', display:'flex', alignItems:'center', padding:'0.25rem', borderRadius:'0.25rem' }}>
-              <X size={15} />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Today / Tomorrow — full calendar-day view: tasks, reminders, and
           recurring habit blocks, same content and functionality as the
           Calendar tab for these two days. First thing after streaks/consistency
@@ -1617,7 +1547,7 @@ export default function Home() {
                   workflow cards above, so the backlog can't be missed the way
                   it was when it lived collapsed at the very bottom of the page. */}
               <div style={{ padding:'0.8rem 0.85rem', background:C.surface, border:'1px solid '+C.purple+'35', borderTop:'2px solid '+C.purple, borderRadius:'0.75rem' }}>
-                <button onClick={() => { setShowIdeas(true); document.getElementById('ideas-section')?.scrollIntoView({ behavior:'smooth', block:'start' }) }} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'0.35rem', width:'100%', textAlign:'left', marginBottom:'0.55rem' }}>
+                <button onClick={() => navTo('ideas')} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'0.35rem', width:'100%', textAlign:'left', marginBottom:'0.55rem' }}>
                   <Lightbulb size={12} color={C.purple} />
                   <p style={{ fontSize:'0.65rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase', color:C.purple, margin:0 }}>
                     Website &amp; App Ideas
@@ -1628,7 +1558,7 @@ export default function Home() {
                 ) : (
                   <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
                     {ideas.slice(0, 5).map((idea, i) => (
-                      <button key={idea.id} onClick={() => { setShowIdeas(true); document.getElementById('ideas-section')?.scrollIntoView({ behavior:'smooth', block:'start' }) }}
+                      <button key={idea.id} onClick={() => navTo('ideas')}
                         style={{ display:'flex', alignItems:'center', gap:'0.45rem', background:'none', border:'none', borderLeft:'2px solid '+C.purple+'50', padding:'0.2rem 0 0.2rem 0.5rem', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
                         <span style={{ fontSize:'0.65rem', color:C.purple, fontWeight:800, flexShrink:0 }}>{i+1}</span>
                         <span style={{ flex:1, fontSize:'0.78rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{idea.title}</span>
@@ -1645,124 +1575,6 @@ export default function Home() {
           </div>
         </div>
       )}
-
-      {/* Website / app ideas backlog -- grouped right under This week's
-          overview (with the tile above linking here) instead of buried at
-          the very bottom of the page, expanded by default. */}
-      <div id="ideas-section" style={{ position:'relative', zIndex:1, borderTop:'1px solid '+C.border, background:'rgba(139,92,246,0.02)' }}>
-        <div style={{ maxWidth:'900px', margin:'0 auto', padding:'0 2rem' }}>
-          <button onClick={() => setShowIdeas(s => !s)} style={{ display:'flex', alignItems:'center', gap:'0.6rem', width:'100%', background:'none', border:'none', padding:'0.9rem 0', cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const }}>
-            <Lightbulb size={14} color={C.purple}/>
-            <span style={{ fontSize:'0.75rem', fontWeight:700, color:C.purple }}>Website &amp; App Ideas</span>
-            <span style={{ fontSize:'0.7rem', color:C.muted, flex:1 }}>{ideasLoading ? 'loading...' : ideas.length + ' parked for later'}</span>
-            <ChevronDown size={14} color={C.muted} style={{ transform: showIdeas ? 'rotate(180deg)' : 'none', transition:'transform 0.2s' }}/>
-          </button>
-          {showIdeas && (
-            <div style={{ paddingBottom:'1.5rem' }}>
-              {ideasErr && (
-                <div style={{ marginBottom:'0.75rem', padding:'0.5rem 0.75rem', background:'rgba(255,68,102,0.08)', border:'1px solid rgba(255,68,102,0.25)', borderRadius:'0.6rem', color:C.red, fontSize:'0.72rem' }}>
-                  {ideasErr}
-                </div>
-              )}
-
-              <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:'0.75rem' }}>
-                <button onClick={openNewIdea} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.4rem 0.8rem', background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.625rem', color:C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700 }}>
-                  <Plus size={13}/> New Idea
-                </button>
-              </div>
-
-              <div style={{ display:'flex', flexDirection:'column', gap:'0.6rem' }}>
-                {/* New idea form */}
-                {ideaEditingId === 'new' && (
-                  <div style={{ background:C.card, border:'1px solid '+C.purple+'50', borderRadius:'0.875rem', padding:'1rem 1.15rem' }}>
-                    <div style={{ display:'flex', gap:'0.6rem', marginBottom:'0.6rem', flexWrap:'wrap' }}>
-                      <input autoFocus value={ideaDraft.title} onChange={e => setIdeaDraft(d => ({ ...d, title: e.target.value }))} placeholder="Idea title"
-                        style={{ flex:1, minWidth:'180px', padding:'0.5rem 0.7rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none' }}/>
-                      <select value={ideaDraft.tag} onChange={e => setIdeaDraft(d => ({ ...d, tag: e.target.value }))}
-                        style={{ padding:'0.5rem 0.7rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none', cursor:'pointer' }}>
-                        {IDEA_TAGS.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </div>
-                    <textarea value={ideaDraft.summary} onChange={e => setIdeaDraft(d => ({ ...d, summary: e.target.value }))} placeholder="Summary — what the idea is"
-                      style={{ width:'100%', padding:'0.55rem 0.7rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', boxSizing:'border-box', minHeight:'56px', resize:'vertical' as const, marginBottom:'0.6rem' }}/>
-                    <textarea value={ideaDraft.next_step} onChange={e => setIdeaDraft(d => ({ ...d, next_step: e.target.value }))} placeholder="Next step — what moves this forward"
-                      style={{ width:'100%', padding:'0.55rem 0.7rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', boxSizing:'border-box', minHeight:'56px', resize:'vertical' as const, marginBottom:'0.75rem' }}/>
-                    <div style={{ display:'flex', gap:'0.5rem' }}>
-                      <button onClick={saveIdea} disabled={ideaSaving || !ideaDraft.title.trim()} style={{ padding:'0.5rem 1rem', background:C.purple, border:'none', borderRadius:'0.5rem', color:'#fff', fontWeight:700, fontSize:'0.78rem', cursor: ideaSaving || !ideaDraft.title.trim() ? 'not-allowed' : 'pointer', fontFamily:'inherit', opacity: ideaSaving || !ideaDraft.title.trim() ? 0.5 : 1 }}>
-                        {ideaSaving ? 'Saving...' : 'Add Idea'}
-                      </button>
-                      <button onClick={cancelIdeaEdit} style={{ padding:'0.5rem 1rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem' }}>
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {ideasLoading ? (
-                  <p style={{ fontSize:'0.78rem', color:C.muted, margin:0 }}>Loading ideas...</p>
-                ) : ideas.length === 0 && ideaEditingId !== 'new' ? (
-                  <p style={{ fontSize:'0.78rem', color:C.muted, margin:0 }}>No ideas parked yet — add one above.</p>
-                ) : (
-                  ideas.map(idea => {
-                    const color = IDEA_TAG_COLORS[idea.tag] ?? IDEA_TAG_COLORS.Other
-                    const isEditing = ideaEditingId === idea.id
-                    return (
-                      <div key={idea.id} style={{ background:C.card, border:'1px solid '+(isEditing ? color+'50' : C.border), borderRadius:'0.875rem', padding:'1rem 1.15rem' }}>
-                        {isEditing ? (
-                          <>
-                            <div style={{ display:'flex', gap:'0.6rem', marginBottom:'0.6rem', flexWrap:'wrap' }}>
-                              <input autoFocus value={ideaDraft.title} onChange={e => setIdeaDraft(d => ({ ...d, title: e.target.value }))} placeholder="Idea title"
-                                style={{ flex:1, minWidth:'180px', padding:'0.5rem 0.7rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none' }}/>
-                              <select value={ideaDraft.tag} onChange={e => setIdeaDraft(d => ({ ...d, tag: e.target.value }))}
-                                style={{ padding:'0.5rem 0.7rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none', cursor:'pointer' }}>
-                                {IDEA_TAGS.map(t => <option key={t} value={t}>{t}</option>)}
-                              </select>
-                            </div>
-                            <textarea value={ideaDraft.summary} onChange={e => setIdeaDraft(d => ({ ...d, summary: e.target.value }))} placeholder="Summary — what the idea is"
-                              style={{ width:'100%', padding:'0.55rem 0.7rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', boxSizing:'border-box', minHeight:'56px', resize:'vertical' as const, marginBottom:'0.6rem' }}/>
-                            <textarea value={ideaDraft.next_step} onChange={e => setIdeaDraft(d => ({ ...d, next_step: e.target.value }))} placeholder="Next step — what moves this forward"
-                              style={{ width:'100%', padding:'0.55rem 0.7rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', boxSizing:'border-box', minHeight:'56px', resize:'vertical' as const, marginBottom:'0.75rem' }}/>
-                            <div style={{ display:'flex', gap:'0.5rem' }}>
-                              <button onClick={saveIdea} disabled={ideaSaving || !ideaDraft.title.trim()} style={{ padding:'0.5rem 1rem', background:color, border:'none', borderRadius:'0.5rem', color:'#000', fontWeight:700, fontSize:'0.78rem', cursor: ideaSaving || !ideaDraft.title.trim() ? 'not-allowed' : 'pointer', fontFamily:'inherit', opacity: ideaSaving || !ideaDraft.title.trim() ? 0.5 : 1 }}>
-                                {ideaSaving ? 'Saving...' : 'Save Changes'}
-                              </button>
-                              <button onClick={cancelIdeaEdit} style={{ padding:'0.5rem 1rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem' }}>
-                                Cancel
-                              </button>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.5rem', flexWrap:'wrap' }}>
-                              <span style={{ fontSize:'0.85rem', fontWeight:800, color:C.text }}>{idea.title}</span>
-                              <span style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' as const, color, background:color+'18', border:'1px solid '+color+'40', borderRadius:'9999px', padding:'0.12rem 0.5rem' }}>{idea.tag}</span>
-                              <div style={{ marginLeft:'auto', display:'flex', gap:'0.35rem' }}>
-                                <button onClick={() => openEditIdea(idea)} title="Edit" style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', padding:'0.2rem' }}>
-                                  <Edit3 size={13}/>
-                                </button>
-                                <button onClick={() => deleteIdea(idea.id)} title="Remove" style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', padding:'0.2rem' }}>
-                                  <Trash2 size={13}/>
-                                </button>
-                              </div>
-                            </div>
-                            {idea.summary && <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 0.6rem', lineHeight:1.6 }}>{idea.summary}</p>}
-                            {idea.next_step && (
-                              <div style={{ padding:'0.65rem 0.8rem', background:color+'0d', border:'1px solid '+color+'26', borderRadius:'0.625rem' }}>
-                                <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' as const, color, margin:'0 0 0.3rem' }}>Next step</p>
-                                <p style={{ fontSize:'0.75rem', color:C.sec, margin:0, lineHeight:1.6 }}>{idea.next_step}</p>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* Today's physical — component renders nothing (no wrapper) if nothing's queued for today */}
       {!loading && <TodaysPhysical />}
