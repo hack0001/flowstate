@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SoundMoney — final brand palette</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:#0a0a0f;color:#f0ece2;font-family:'Inter',system-ui,sans-serif;padding:1.5rem;}
+  .wrap{max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:2rem;}
+  .name{font-size:1rem;font-weight:700;margin:0;}
+  .desc{font-size:0.78rem;color:#8888aa;margin:0.3rem 0 1rem;max-width:680px;line-height:1.55;}
+  .swatches{display:flex;gap:0.6rem;}
+  .swatch{flex:1;height:60px;border-radius:0.5rem;display:flex;flex-direction:column;justify-content:flex-end;padding:0.4rem 0.6rem;font-size:0.63rem;font-weight:600;}
+  .role{font-size:0.6rem;text-transform:uppercase;letter-spacing:0.04em;opacity:0.75;}
+  .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.7rem;margin-top:1.2rem;}
+  .thumb{aspect-ratio:16/9;border-radius:0.55rem;display:flex;flex-direction:column;justify-content:center;padding:1.1rem 1.3rem;position:relative;overflow:hidden;background:#16181c;}
+  .stat{font-size:1.9rem;font-weight:900;line-height:1;margin:0 0 0.35rem;letter-spacing:-0.02em;}
+  .headline{font-size:0.78rem;font-weight:700;margin:0 0 0.2rem;line-height:1.25;max-width:90%;}
+  .sub{font-size:0.6rem;font-weight:600;margin:0;opacity:0.85;}
+  .bar{position:absolute;left:0;top:0;bottom:0;width:5px;}
+  .label{font-size:0.65rem;color:#8888aa;font-weight:600;margin:0 0 0.4rem;text-transform:uppercase;letter-spacing:0.04em;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div>
+    <p class="name">Final palette — charcoal base, three role-based accents</p>
+    <p class="desc">One base (the charcoal from option D), used everywhere. Three accents, each with its own job rather than being interchangeable — same idea as the app's own colour convention (cyan/green/amber/purple/red each mean something specific). Gold carries the wealth/history/gold content, teal carries data and explainer content, red carries urgency and inflation-alarm content. Never mix more than two accents on one thumbnail.</p>
+    <div class="swatches">
+      <div class="swatch" style="background:#16181c;color:#f0ece2;"><span class="role">Base</span>#16181c</div>
+      <div class="swatch" style="background:#b8935a;color:#2a2010;"><span class="role">Gold — wealth / history</span>#b8935a</div>
+      <div class="swatch" style="background:#2fb8ac;color:#052421;"><span class="role">Teal — data / explainer</span>#2fb8ac</div>
+      <div class="swatch" style="background:#c15049;color:#2a0d0b;"><span class="role">Red — urgency / alarm</span>#c15049</div>
+      <div class="swatch" style="background:#f0ece2;color:#16181c;"><span class="role">Text</span>#f0ece2</div>
+    </div>
+  </div>
+
+  <div>
+    <p class="label">Same base, three different accents in use</p>
+    <div class="row">
+      <div class="thumb">
+        <div class="bar" style="background:#b8935a;"></div>
+        <p class="stat" style="color:#b8935a;">1971</p>
+        <p class="headline">The year your money stopped being real</p>
+        <p class="sub" style="color:#b8935a;">gold / history</p>
+      </div>
+      <div class="thumb">
+        <div class="bar" style="background:#2fb8ac;"></div>
+        <p class="stat" style="color:#2fb8ac;">12%</p>
+        <p class="headline">How much inflation actually ate your savings</p>
+        <p class="sub" style="color:#2fb8ac;">data / explainer</p>
+      </div>
+      <div class="thumb">
+        <div class="bar" style="background:#c15049;"></div>
+        <p class="stat" style="color:#c15049;">3x</p>
+        <p class="headline">Everything costs three times more than 2020</p>
+        <p class="sub" style="color:#c15049;">urgency / alarm</p>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <p class="label">Two accents combined (headline in one, stat in another) — the maximum, never three</p>
+    <div class="row" style="grid-template-columns:1fr;">
+      <div class="thumb" style="aspect-ratio:16/6;">
+        <div class="bar" style="background:#b8935a;"></div>
+        <p class="stat" style="color:#c15049;">£1M</p>
+        <p class="headline" style="color:#f0ece2;">Central banks are buying gold like never before <span style="color:#b8935a;">— and it's a warning sign</span></p>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

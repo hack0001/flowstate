@@ -17,7 +17,7 @@
 -- the app failed silently or with a confusing error.
 --
 -- Regenerate this file any time a new migration is added:
---   cd supabase && for f in migrations/*.sql; do (echo; echo "-- ---- $f ----"; cat "$f") >> RUN_ALL.sql; done
+--   cd supabase && for f in migrations/*.sql; do (echo; echo "-- ---- $f ----"; cat "$f") >> RUN_ALL.sql
 -- (or just ask Claude to regenerate it)
 --
 -- NOTE: supabase/schema.sql is NOT included here -- it is the
@@ -85,6 +85,26 @@ create trigger daily_intentions_updated_at
 -- 005_tasks.sql
 -- Central tasks table: authoritative store for all tasks (synced from Notion, created in-app)
 -- Replaces the split daily_tasks + Notion API approach.
+--
+-- Guard: an older, incompatible "tasks" table can already exist on the live
+-- database from the original schema.sql (the legacy generic-workflow system,
+-- with stage_id/instructions columns and no "archived" column). If it's still
+-- there, "create table if not exists" below is a no-op against it and the
+-- indexes further down fail with "column archived does not exist". That
+-- legacy table is unconditionally dropped later anyway (019_drop_legacy_workflows.sql,
+-- superseded by master_tasks from 010_master_tasks.sql), so it's always safe
+-- to drop it here too rather than let this migration fail on old data.
+do $$
+begin
+  if to_regclass('public.tasks') is not null
+     and not exists (
+       select 1 from information_schema.columns
+       where table_name = 'tasks' and column_name = 'archived'
+     )
+  then
+    drop table tasks cascade;
+  end if;
+end $$;
 
 create table if not exists tasks (
   id               uuid        primary key default gen_random_uuid(),
@@ -1380,3 +1400,22 @@ begin
     end if;
   end loop;
 end $$;
+
+-- =============================================================
+-- ---- migrations/032_add_reverse_plank.sql ----
+-- =============================================================
+-- =============================================================
+-- FlowState — add "Reverse plank hold" to the morning routine
+--
+-- morning_routine_items is a runtime-editable table (see
+-- 022_morning_routine.sql) -- this migration just seeds one more row so
+-- it shows up without hand-adding it in the app. Idempotent: appended
+-- with a fresh id and guarded by ON CONFLICT DO NOTHING, same as the
+-- original seed, so re-running this (or RUN_ALL.sql) is always safe.
+--
+-- RUN IN SUPABASE SQL EDITOR -- safe to re-run
+-- =============================================================
+
+insert into morning_routine_items (id, title, minutes, note, category, sort_order) values
+  ('mr-revplank', 'Reverse plank hold', 2, '2 minute hold -- hips up, glutes squeezed, shoulders back', 'Movement', 12)
+on conflict (id) do nothing;

@@ -37,7 +37,9 @@ FORMAT SPLIT (non-negotiable): long-form runs on a PROCESS, PRINCIPLE, or CASE S
 
 TITLE STRUCTURE (Hummus formula — SEO + Keyword + Viral Element): every title stacks a searchable SEO keyword phrase (what someone would actually type into YouTube search) with a viral hook element (curiosity, stakes, a number, urgency) — never one alone. Proven examples: "Steal this Lazy YouTube Strategy to Get to 6 Figures a Month" (keyword: lazy YouTube strategy / viral: steal this... 6 figures) and "Top 10 High Paying Online Jobs With the Most Demand Right Now" (keyword: high paying online jobs / viral: top 10... right now). Every title candidate must contain both parts, not just a curiosity gap with no searchable topic in it.
 
-MONETIZATION: Tier 1 niche. Now: AdSense + endemic affiliates (bullion dealers, brokers) on prescriptive videos. Later: lead magnet, then own product. Prefer ideas that can naturally carry an affiliate or feed the prescriptive ending.`
+MONETIZATION: Tier 1 niche. Now: AdSense + endemic affiliates (bullion dealers, brokers) on prescriptive videos. Later: lead magnet, then own product. Prefer ideas that can naturally carry an affiliate or feed the prescriptive ending.
+
+VISUAL BRAND KIT (thumbnail/packaging concepts must stay inside this): charcoal base #16181c everywhere. Three accents, each with a job, never more than 2 on one thumbnail: gold #b8935a for wealth/gold/monetary-history videos, teal #2fb8ac for inflation-data/explainer videos, red #c15049 for urgency/alarm framing (use sparingly). Font is Inter — weight 900 for the big stat/number, 700 for the headline. Same kit on Shorts and long-form; only composition differs (Shorts: bigger/bolder, 3-4 words, centred safe zone; long-form: full-sentence headline, room for a supporting chart).`
 
 // ============================================================
 // SoundMoney SCRIPT VOICE — injected into the Scripting and Holy Trifecta

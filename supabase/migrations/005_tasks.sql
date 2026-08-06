@@ -1,6 +1,26 @@
 -- 005_tasks.sql
 -- Central tasks table: authoritative store for all tasks (synced from Notion, created in-app)
 -- Replaces the split daily_tasks + Notion API approach.
+--
+-- Guard: an older, incompatible "tasks" table can already exist on the live
+-- database from the original schema.sql (the legacy generic-workflow system,
+-- with stage_id/instructions columns and no "archived" column). If it's still
+-- there, "create table if not exists" below is a no-op against it and the
+-- indexes further down fail with "column archived does not exist". That
+-- legacy table is unconditionally dropped later anyway (019_drop_legacy_workflows.sql,
+-- superseded by master_tasks from 010_master_tasks.sql), so it's always safe
+-- to drop it here too rather than let this migration fail on old data.
+do $$
+begin
+  if to_regclass('public.tasks') is not null
+     and not exists (
+       select 1 from information_schema.columns
+       where table_name = 'tasks' and column_name = 'archived'
+     )
+  then
+    drop table tasks cascade;
+  end if;
+end $$;
 
 create table if not exists tasks (
   id               uuid        primary key default gen_random_uuid(),
