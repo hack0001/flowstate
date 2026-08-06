@@ -9,4 +9,5 @@ create table if not exists workspace_links (
   created_at timestamptz not null default now()
 );
 alter table workspace_links enable row level security;
+drop policy if exists allow_all_workspace_links on workspace_links;
 create policy allow_all_workspace_links on workspace_links for all using (true) with check (true);

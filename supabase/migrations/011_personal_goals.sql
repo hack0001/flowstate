@@ -10,6 +10,7 @@ create table if not exists personal_items (
   created_at timestamptz not null default now()
 );
 alter table personal_items enable row level security;
+drop policy if exists allow_all_personal_items on personal_items;
 create policy allow_all_personal_items on personal_items for all using (true) with check (true);
 
 -- goals: hierarchical goals from Notion Goals database
@@ -25,4 +26,5 @@ create table if not exists goals (
   created_at timestamptz not null default now()
 );
 alter table goals enable row level security;
+drop policy if exists allow_all_goals on goals;
 create policy allow_all_goals on goals for all using (true) with check (true);

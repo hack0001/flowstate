@@ -196,7 +196,6 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
-  const [debugInfo, setDebugInfo] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     // Each source is fetched independently -- if reminders or habit_blocks
@@ -214,46 +213,34 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
       supabase.from('habit_blocks').select('*'),
     ])
     const [taskRes, priorityRes, reminderRes, habitRes] = results
-    const errs: string[] = []
-    const counts: string[] = []
 
     if (taskRes.status === 'fulfilled') {
-      if (taskRes.value.error) { console.error('[home tasks load failed]', taskRes.value.error.message); errs.push('tasks: ' + taskRes.value.error.message) }
-      const d = (taskRes.value.data ?? []) as HomeTask[]
-      setTasks(d)
-      counts.push(d.length + ' tasks')
+      if (taskRes.value.error) console.error('[home tasks load failed]', taskRes.value.error.message)
+      setTasks((taskRes.value.data ?? []) as HomeTask[])
     } else {
       console.error('[home tasks load rejected]', taskRes.reason)
-      errs.push('tasks: ' + String(taskRes.reason))
       setTasks([])
     }
 
     if (priorityRes.status === 'fulfilled') {
-      if (priorityRes.value.error) errs.push('priority: ' + priorityRes.value.error.message)
       setOrder(((priorityRes.value.data?.ordered_ids as string[]) ?? []))
-    } else {
-      errs.push('priority: ' + String(priorityRes.reason))
     }
 
     if (reminderRes.status === 'fulfilled' && !reminderRes.value.error) {
-      const d = (reminderRes.value.data ?? []) as Parameters<typeof fetchRemindersRow>[0][]
-      setReminders(d.map(fetchRemindersRow))
-      counts.push(d.length + ' reminders')
+      setReminders(((reminderRes.value.data ?? []) as Parameters<typeof fetchRemindersRow>[0][]).map(fetchRemindersRow))
     } else {
-      if (reminderRes.status === 'fulfilled') { console.error('[home reminders load failed]', reminderRes.value.error?.message); errs.push('reminders: ' + reminderRes.value.error?.message) }
-      else { console.error('[home reminders load rejected]', reminderRes.reason); errs.push('reminders: ' + String(reminderRes.reason)) }
+      if (reminderRes.status === 'fulfilled') console.error('[home reminders load failed]', reminderRes.value.error?.message)
+      else console.error('[home reminders load rejected]', reminderRes.reason)
     }
 
     if (habitRes.status === 'fulfilled' && !habitRes.value.error) {
-      const d = (habitRes.value.data ?? []) as Array<{ id:string; title:string; emoji:string; color:string; days:number[]; time_label:string }>
-      setHabitBlocks(d.map(r => ({ id:r.id, title:r.title, emoji:r.emoji, color:r.color, days:r.days, timeLabel:r.time_label })))
-      counts.push(d.length + ' habit blocks')
+      setHabitBlocks(((habitRes.value.data ?? []) as Array<{ id:string; title:string; emoji:string; color:string; days:number[]; time_label:string }>)
+        .map(r => ({ id:r.id, title:r.title, emoji:r.emoji, color:r.color, days:r.days, timeLabel:r.time_label })))
     } else {
-      if (habitRes.status === 'fulfilled') { console.error('[home habit_blocks load failed]', habitRes.value.error?.message); errs.push('habits: ' + habitRes.value.error?.message) }
-      else { console.error('[home habit_blocks load rejected]', habitRes.reason); errs.push('habits: ' + String(habitRes.reason)) }
+      if (habitRes.status === 'fulfilled') console.error('[home habit_blocks load failed]', habitRes.value.error?.message)
+      else console.error('[home habit_blocks load rejected]', habitRes.reason)
     }
 
-    setDebugInfo((errs.length > 0 ? 'Errors -- ' + errs.join(' | ') + '. ' : '') + 'Fetched: ' + counts.join(', ') + '.')
     setReady(true)
   }, [todayStr, tomorrowStr])
 
@@ -439,19 +426,9 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
   if (!ready) return null
 
   return (
-    <div>
-      {/* Temporary diagnostic line -- shows exactly what was fetched (and any
-          error) so the real cause is visible without opening dev tools.
-          Remove once calendar-data pull-through is confirmed working. */}
-      {debugInfo && (
-        <p style={{ fontSize:'0.65rem', color: debugInfo.startsWith('Errors') ? C.red : C.muted, margin:'0 0 0.75rem', fontFamily:'monospace' }}>
-          {debugInfo}
-        </p>
-      )}
-      <div style={{ display:'flex', gap:'1.5rem', flexWrap:'wrap' }}>
-        <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} reminderList={todayReminders} habitList={todayHabits} fillIds={fillIds} />
-        <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} reminderList={tomorrowReminders} habitList={tomorrowHabits} fillIds={fillIds} />
-      </div>
+    <div style={{ display:'flex', gap:'1.5rem', flexWrap:'wrap' }}>
+      <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} reminderList={todayReminders} habitList={todayHabits} fillIds={fillIds} />
+      <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} reminderList={tomorrowReminders} habitList={tomorrowHabits} fillIds={fillIds} />
     </div>
   )
 }
@@ -810,8 +787,23 @@ function AddTaskModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =
         <input autoFocus value={title} onChange={e => setTitle(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onClose() }}
           placeholder="Task title..." style={{ width:'100%', padding:'0.65rem 0.8rem', background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'0.6rem', color:C.text, fontFamily:'inherit', fontSize:'0.85rem', outline:'none', marginBottom:'0.75rem', boxSizing:'border-box' }} />
+        <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.4rem' }}>Due date</p>
+        <div style={{ display:'flex', gap:'0.4rem', marginBottom:'0.5rem', flexWrap:'wrap' }}>
+          {[
+            { label:'Today', date: toDateStr(new Date()) },
+            { label:'Tomorrow', date: toDateStr(new Date(Date.now() + 86400000)) },
+            { label:'No date', date:'' },
+          ].map(o => (
+            <button key={o.label} type="button" onClick={() => setDueDate(o.date)} style={{
+              padding:'0.3rem 0.65rem', borderRadius:'9999px', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:700, cursor:'pointer',
+              background: dueDate === o.date ? C.cyan : 'none',
+              color: dueDate === o.date ? '#000' : C.sec,
+              border:'1px solid '+(dueDate === o.date ? C.cyan : '#2a2a3a'),
+            }}>{o.label}</button>
+          ))}
+        </div>
         <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-          style={{ width:'100%', padding:'0.6rem 0.8rem', background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'0.6rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', marginBottom:'1.25rem', boxSizing:'border-box' }} />
+          style={{ width:'100%', padding:'0.6rem 0.8rem', background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'0.6rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', marginBottom:'1.25rem', boxSizing:'border-box', colorScheme:'dark' }} />
         <div style={{ display:'flex', gap:'0.6rem' }}>
           <button onClick={onClose} style={{ flex:1, padding:'0.65rem', background:'none', border:'1px solid #2a2a3a', borderRadius:'0.6rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:600 }}>Cancel</button>
           <button onClick={submit} disabled={saving || !title.trim()} style={{ flex:1, padding:'0.65rem', background: title.trim() ? C.cyan : '#2a2a3a', border:'none', borderRadius:'0.6rem', color: title.trim() ? '#000' : C.muted, cursor: title.trim() ? 'pointer' : 'default', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:800 }}>{saving ? 'Adding...' : 'Add task'}</button>
@@ -849,7 +841,10 @@ export default function Home() {
   const [pageAlerts, setPageAlerts] = useState<Record<string, 'green' | 'orange' | 'red'>>({})
   const [pageWarn, setPageWarn] = useState<Set<string>>(new Set())
   const [pageVisitsErr, setPageVisitsErr] = useState<string | null>(null)
-  const [showIdeas, setShowIdeas] = useState(false)
+  // Default expanded -- this used to live collapsed at the very bottom of
+  // the page and was easy to forget about entirely; now it's grouped with
+  // This week's overview near the top, so it should be visible by default.
+  const [showIdeas, setShowIdeas] = useState(true)
   const [ideas, setIdeas] = useState<SiteIdea[]>([])
   const [ideasLoading, setIdeasLoading] = useState(true)
   const [ideasErr, setIdeasErr] = useState<string | null>(null)
@@ -1288,12 +1283,24 @@ export default function Home() {
               <LiveClock />
               {!loading && routineDone && (
                 <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.green, background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem', animation:'fadeInUp 0.35s ease both' }}>
-                  &#10003; Routine complete
+                  &#10003; Morning routine complete
                 </span>
               )}
               {!loading && !routineDone && h >= 6 && (
                 <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.amber, background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem' }}>
                   Morning routine pending
+                </span>
+              )}
+              {/* Evening routine checker -- only shows once evening is actually
+                  time-relevant (h>=20), same pending/complete treatment as morning */}
+              {!loading && h >= 20 && eveningDone && (
+                <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.green, background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem', animation:'fadeInUp 0.35s ease both' }}>
+                  &#10003; Evening routine complete
+                </span>
+              )}
+              {!loading && h >= 20 && !eveningDone && (
+                <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.purple, background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem' }}>
+                  Evening routine pending
                 </span>
               )}
             </div>
@@ -1380,6 +1387,162 @@ export default function Home() {
 
       {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} onAdded={() => setTaskRefresh(k => k + 1)} />}
 
+      {/* Next up / routine CTA -- moved up right after streaks so it's one of
+          the first things seen, not buried under Today/Tomorrow and This
+          week's overview. No longer a full-viewport hero (it used to be the
+          last element on the page and filled remaining height) -- now a
+          normal bounded section like everything else below it. */}
+      {!loading && (
+        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
+          <div style={{
+            maxWidth:'900px', margin:'0 auto', padding:'1.75rem 2rem',
+            display:'flex', flexDirection:'column', alignItems:'center',
+            opacity: contentReady ? 1 : 0,
+            transform: contentReady ? 'translateY(0)' : 'translateY(10px)',
+            transition:'opacity 0.4s ease, transform 0.4s ease',
+          }}>
+
+            {error ? (
+              <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem', maxWidth:'28rem', textAlign:'center' }}>
+                <p style={{ fontWeight:700, color:C.amber, marginBottom:'0.5rem' }}>Supabase Not Connected</p>
+                <p style={{ fontSize:'0.875rem', color:C.sec, marginBottom:'1rem' }}>Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel.</p>
+                <button onClick={() => router.push('/content')} style={{ padding:'0.6rem 1.2rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>Browse Anyway</button>
+              </div>
+            ) : ctaState === 'morning' ? (
+              /* ---- Morning card ---- */
+              <div style={{ textAlign:'center', animation:'fadeInUp 0.4s ease both' }}>
+                <div style={{ position:'relative', display:'inline-block', marginBottom:'1.5rem' }}>
+                  <div style={{ position:'absolute', inset:'-28px', borderRadius:'50%', background:'radial-gradient(circle,'+morningCtaGlow+' 0%,transparent 70%)', animation:'breathe 3s ease-in-out infinite', pointerEvents:'none' }} />
+                  <button onClick={() => router.push('/morning')} style={{
+                    position:'relative',
+                    display:'flex', flexDirection:'column', alignItems:'center', gap:'0.4rem',
+                    padding:'1.5rem 2.75rem', borderRadius:'1.5rem',
+                    background:morningCtaGrad,
+                    border:'none', cursor:'pointer', fontFamily:'inherit',
+                    boxShadow:'0 8px 32px rgba(0,0,0,0.4)',
+                  }}>
+                    <span style={{ fontSize:'1rem', fontWeight:900, color:'#000', letterSpacing:'-0.01em' }}>{morningCtaLabel}</span>
+                    <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(0,0,0,0.65)' }}>
+                      {veryLate ? 'Do the routine, then lock in' : lateStart ? 'Morning routine — quick version' : 'Start your morning routine'}
+                    </span>
+                    <span style={{ fontSize:'1.1rem', marginTop:'0.15rem' }}>&#8594;</span>
+                  </button>
+                </div>
+                <div style={{ maxWidth:'24rem', margin:'0 auto' }}>
+                  <p style={{ fontSize:'0.85rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
+                  {quote.a && <p style={{ fontSize:'0.72rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
+                </div>
+              </div>
+            ) : ctaState === 'evening' ? (
+              /* ---- Evening card ---- */
+              <div style={{ textAlign:'center', animation:'fadeInUp 0.4s ease both' }}>
+                <div style={{ position:'relative', display:'inline-block', marginBottom:'1.5rem' }}>
+                  <div style={{ position:'absolute', inset:'-28px', borderRadius:'50%', background:'radial-gradient(circle,rgba(139,92,246,0.3) 0%,transparent 70%)', animation:'breathe 3s ease-in-out infinite', pointerEvents:'none' }} />
+                  <button onClick={() => router.push('/evening')} style={{
+                    position:'relative',
+                    display:'flex', flexDirection:'column', alignItems:'center', gap:'0.4rem',
+                    padding:'1.5rem 2.75rem', borderRadius:'1.5rem',
+                    background:'linear-gradient(135deg,'+C.purple+',#6d28d9)',
+                    border:'none', cursor:'pointer', fontFamily:'inherit',
+                    boxShadow:'0 8px 32px rgba(0,0,0,0.4)',
+                  }}>
+                    <span style={{ fontSize:'1rem', fontWeight:900, color:'#fff', letterSpacing:'-0.01em' }}>Time to wind down</span>
+                    <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(255,255,255,0.75)' }}>Evening routine &mdash; reflect &amp; reset</span>
+                    <span style={{ fontSize:'1.1rem', marginTop:'0.15rem' }}>&#8594;</span>
+                  </button>
+                </div>
+                <div style={{ maxWidth:'24rem', margin:'0 auto' }}>
+                  <p style={{ fontSize:'0.85rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
+                  {quote.a && <p style={{ fontSize:'0.72rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
+                </div>
+              </div>
+            ) : (
+              /* ---- Task-focus card ---- */
+              <div style={{
+                width:'100%', maxWidth:'32rem',
+                background:'linear-gradient(135deg,rgba(0,255,136,0.07) 0%,rgba(0,212,255,0.04) 100%)',
+                border:'1px solid rgba(0,255,136,0.22)',
+                borderRadius:'1.5rem', padding:'2rem 2rem 1.75rem',
+                position:'relative', overflow:'hidden',
+                animation:'fadeInUp 0.4s ease both',
+              }}>
+                <div style={{ position:'absolute', top:'-50px', right:'-50px', width:'200px', height:'200px', borderRadius:'50%', background:'radial-gradient(circle,rgba(0,255,136,0.13) 0%,transparent 70%)', pointerEvents:'none' }} />
+                <div style={{ position:'relative' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.5rem' }}>
+                    <span style={{ fontSize:'1rem' }}>&#128293;</span>
+                    <span style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.14em', textTransform:'uppercase', color:C.green }}>Next up</span>
+                  </div>
+                  <h2 style={{ fontSize:'1.4rem', fontWeight:900, color:C.text, margin:'0 0 1rem', letterSpacing:'-0.02em', lineHeight:1.25 }}>
+                    {topTask ? topTask.title : 'Nothing queued for today.'}
+                  </h2>
+
+                  {topTask ? (
+                    <>
+                      {topTask.meta && (
+                        <p style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.04em', textTransform:'uppercase', color:C.green, margin:'0 0 0.75rem' }}>{topTask.meta}</p>
+                      )}
+                      {topTask.instructions && topTask.instructions.length > 0 && (
+                        <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.25rem' }}>
+                          <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.green, margin:'0 0 0.5rem' }}>How to do it</p>
+                          <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+                            {topTask.instructions.map((step, i) => (
+                              <p key={i} style={{ fontSize:'0.82rem', color:C.sec, margin:0, lineHeight:1.5 }}>{i + 1}. {step}</p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <button onClick={() => topTaskIsPipeline ? handleFocusClick() : navToItem('tasks', topTask.id)} style={{
+                        display:'flex', alignItems:'center', justifyContent:'center', gap:'0.6rem',
+                        width:'100%', padding:'0.95rem 1.5rem',
+                        background:'linear-gradient(135deg,'+C.green+',#00cc6a)',
+                        border:'none', borderRadius:'1rem', cursor:'pointer', fontFamily:'inherit',
+                        fontWeight:800, fontSize:'0.95rem', color:'#000',
+                        boxShadow:'0 4px 24px rgba(0,255,136,0.28)',
+                        marginBottom:'1.25rem',
+                      }}>
+                        &#9654;&nbsp; {topTaskIsPipeline ? 'Start focus session' : 'Open task'}
+                      </button>
+                    </>
+                  ) : (
+                    <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.25rem' }}>
+                      <p style={{ fontSize:'0.85rem', color:C.sec, margin:0 }}>No task set &mdash; pin a video in the Content Pipeline or add tasks in Calendar.</p>
+                    </div>
+                  )}
+
+                  <p style={{ fontSize:'0.82rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
+                  {quote.a && <p style={{ fontSize:'0.7rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
+                </div>
+              </div>
+            )}
+
+            {focusError && (
+              <div style={{ width:'100%', maxWidth:'32rem', marginTop:'0.75rem', padding:'0.75rem 1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem' }}>
+                <p style={{ fontSize:'0.75rem', color:C.amber, margin:0, lineHeight:1.5 }}>{focusError}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Weekday afternoon reminder banner -- moved up alongside the CTA */}
+      {showReminder && (
+        <div style={{ position:'relative', zIndex:2, background:'rgba(249,115,22,0.08)', borderBottom:'1px solid rgba(249,115,22,0.2)' }}>
+          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'0.75rem 2rem', display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap' }}>
+            <span style={{ fontSize:'1rem' }}>&#9989;</span>
+            <div style={{ flex:1 }}>
+              <span style={{ fontSize:'0.78rem', fontWeight:700, color:'#f97316' }}>{t('reminderTitle')}: </span>
+              <span style={{ fontSize:'0.78rem', color:'#8888aa' }}>{t('reminderMemes')} &nbsp;&bull;&nbsp; {t('reminderMewing')}</span>
+            </div>
+            <button onClick={() => {
+              try { localStorage.setItem('flowstate_reminder_dismissed', toDateStr(new Date())) } catch {}
+              setShowReminder(false)
+            }} style={{ background:'none', border:'none', color:'#4a4a6a', cursor:'pointer', display:'flex', alignItems:'center', padding:'0.25rem', borderRadius:'0.25rem' }}>
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Today / Tomorrow — full calendar-day view: tasks, reminders, and
           recurring habit blocks, same content and functionality as the
           Calendar tab for these two days. First thing after streaks/consistency
@@ -1449,6 +1612,32 @@ export default function Home() {
                   </div>
                 )
               })}
+
+              {/* Website / app ideas -- 6th tile, same visual treatment as the
+                  workflow cards above, so the backlog can't be missed the way
+                  it was when it lived collapsed at the very bottom of the page. */}
+              <div style={{ padding:'0.8rem 0.85rem', background:C.surface, border:'1px solid '+C.purple+'35', borderTop:'2px solid '+C.purple, borderRadius:'0.75rem' }}>
+                <button onClick={() => { setShowIdeas(true); document.getElementById('ideas-section')?.scrollIntoView({ behavior:'smooth', block:'start' }) }} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'0.35rem', width:'100%', textAlign:'left', marginBottom:'0.55rem' }}>
+                  <Lightbulb size={12} color={C.purple} />
+                  <p style={{ fontSize:'0.65rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase', color:C.purple, margin:0 }}>
+                    Website &amp; App Ideas
+                  </p>
+                </button>
+                {ideas.length === 0 ? (
+                  <p style={{ fontSize:'0.72rem', color:C.muted, margin:0 }}>{ideasLoading ? 'Loading...' : 'Nothing parked'}</p>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+                    {ideas.slice(0, 5).map((idea, i) => (
+                      <button key={idea.id} onClick={() => { setShowIdeas(true); document.getElementById('ideas-section')?.scrollIntoView({ behavior:'smooth', block:'start' }) }}
+                        style={{ display:'flex', alignItems:'center', gap:'0.45rem', background:'none', border:'none', borderLeft:'2px solid '+C.purple+'50', padding:'0.2rem 0 0.2rem 0.5rem', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
+                        <span style={{ fontSize:'0.65rem', color:C.purple, fontWeight:800, flexShrink:0 }}>{i+1}</span>
+                        <span style={{ flex:1, fontSize:'0.78rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{idea.title}</span>
+                        <ChevronRight size={11} color={C.muted} style={{ flexShrink:0 }}/>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.6rem' }}>This week&apos;s targets</p>
@@ -1457,164 +1646,10 @@ export default function Home() {
         </div>
       )}
 
-      {/* Today's physical — component renders nothing (no wrapper) if nothing's queued for today */}
-      {!loading && <TodaysPhysical />}
-
-      {/* Weekday afternoon reminder banner */}
-      {showReminder && (
-        <div style={{ position:'relative', zIndex:2, background:'rgba(249,115,22,0.08)', borderBottom:'1px solid rgba(249,115,22,0.2)' }}>
-          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'0.75rem 2rem', display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap' }}>
-            <span style={{ fontSize:'1rem' }}>&#9989;</span>
-            <div style={{ flex:1 }}>
-              <span style={{ fontSize:'0.78rem', fontWeight:700, color:'#f97316' }}>{t('reminderTitle')}: </span>
-              <span style={{ fontSize:'0.78rem', color:'#8888aa' }}>{t('reminderMemes')} &nbsp;&bull;&nbsp; {t('reminderMewing')}</span>
-            </div>
-            <button onClick={() => {
-              try { localStorage.setItem('flowstate_reminder_dismissed', toDateStr(new Date())) } catch {}
-              setShowReminder(false)
-            }} style={{ background:'none', border:'none', color:'#4a4a6a', cursor:'pointer', display:'flex', alignItems:'center', padding:'0.25rem', borderRadius:'0.25rem' }}>
-              <X size={15} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Main body */}
-      <div style={{
-        position:'relative', zIndex:1,
-        flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'3rem 2rem 2rem',
-        opacity: contentReady ? 1 : 0,
-        transform: contentReady ? 'translateY(0)' : 'translateY(10px)',
-        transition:'opacity 0.4s ease, transform 0.4s ease',
-      }}>
-
-        {error ? (
-          <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem', maxWidth:'28rem', textAlign:'center', marginBottom:'2rem' }}>
-            <p style={{ fontWeight:700, color:C.amber, marginBottom:'0.5rem' }}>Supabase Not Connected</p>
-            <p style={{ fontSize:'0.875rem', color:C.sec, marginBottom:'1rem' }}>Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel.</p>
-            <button onClick={() => router.push('/content')} style={{ padding:'0.6rem 1.2rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>Browse Anyway</button>
-          </div>
-        ) : loading ? (
-          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', color:C.muted, fontSize:'0.85rem' }}>
-            <div style={{ width:'1rem', height:'1rem', borderRadius:'50%', border:'2px solid '+C.muted, borderTopColor:C.cyan, animation:'spin 0.8s linear infinite' }}/>
-            Loading...
-          </div>
-        ) : ctaState === 'morning' ? (
-          /* ---- Morning card ---- */
-          <div style={{ textAlign:'center', animation:'fadeInUp 0.4s ease both' }}>
-            <div style={{ position:'relative', display:'inline-block', marginBottom:'1.5rem' }}>
-              <div style={{ position:'absolute', inset:'-28px', borderRadius:'50%', background:'radial-gradient(circle,'+morningCtaGlow+' 0%,transparent 70%)', animation:'breathe 3s ease-in-out infinite', pointerEvents:'none' }} />
-              <button onClick={() => router.push('/morning')} style={{
-                position:'relative',
-                display:'flex', flexDirection:'column', alignItems:'center', gap:'0.4rem',
-                padding:'1.5rem 2.75rem', borderRadius:'1.5rem',
-                background:morningCtaGrad,
-                border:'none', cursor:'pointer', fontFamily:'inherit',
-                boxShadow:'0 8px 32px rgba(0,0,0,0.4)',
-              }}>
-                <span style={{ fontSize:'1rem', fontWeight:900, color:'#000', letterSpacing:'-0.01em' }}>{morningCtaLabel}</span>
-                <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(0,0,0,0.65)' }}>
-                  {veryLate ? 'Do the routine, then lock in' : lateStart ? 'Morning routine — quick version' : 'Start your morning routine'}
-                </span>
-                <span style={{ fontSize:'1.1rem', marginTop:'0.15rem' }}>&#8594;</span>
-              </button>
-            </div>
-            <div style={{ maxWidth:'24rem', margin:'0 auto' }}>
-              <p style={{ fontSize:'0.85rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
-              {quote.a && <p style={{ fontSize:'0.72rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
-            </div>
-          </div>
-        ) : ctaState === 'evening' ? (
-          /* ---- Evening card ---- */
-          <div style={{ textAlign:'center', animation:'fadeInUp 0.4s ease both' }}>
-            <div style={{ position:'relative', display:'inline-block', marginBottom:'1.5rem' }}>
-              <div style={{ position:'absolute', inset:'-28px', borderRadius:'50%', background:'radial-gradient(circle,rgba(139,92,246,0.3) 0%,transparent 70%)', animation:'breathe 3s ease-in-out infinite', pointerEvents:'none' }} />
-              <button onClick={() => router.push('/evening')} style={{
-                position:'relative',
-                display:'flex', flexDirection:'column', alignItems:'center', gap:'0.4rem',
-                padding:'1.5rem 2.75rem', borderRadius:'1.5rem',
-                background:'linear-gradient(135deg,'+C.purple+',#6d28d9)',
-                border:'none', cursor:'pointer', fontFamily:'inherit',
-                boxShadow:'0 8px 32px rgba(0,0,0,0.4)',
-              }}>
-                <span style={{ fontSize:'1rem', fontWeight:900, color:'#fff', letterSpacing:'-0.01em' }}>Time to wind down</span>
-                <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(255,255,255,0.75)' }}>Evening routine &mdash; reflect &amp; reset</span>
-                <span style={{ fontSize:'1.1rem', marginTop:'0.15rem' }}>&#8594;</span>
-              </button>
-            </div>
-            <div style={{ maxWidth:'24rem', margin:'0 auto' }}>
-              <p style={{ fontSize:'0.85rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
-              {quote.a && <p style={{ fontSize:'0.72rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
-            </div>
-          </div>
-        ) : (
-          /* ---- Task-focus card ---- */
-          <div style={{
-            width:'100%', maxWidth:'32rem',
-            background:'linear-gradient(135deg,rgba(0,255,136,0.07) 0%,rgba(0,212,255,0.04) 100%)',
-            border:'1px solid rgba(0,255,136,0.22)',
-            borderRadius:'1.5rem', padding:'2rem 2rem 1.75rem',
-            position:'relative', overflow:'hidden',
-            animation:'fadeInUp 0.4s ease both',
-          }}>
-            <div style={{ position:'absolute', top:'-50px', right:'-50px', width:'200px', height:'200px', borderRadius:'50%', background:'radial-gradient(circle,rgba(0,255,136,0.13) 0%,transparent 70%)', pointerEvents:'none' }} />
-            <div style={{ position:'relative' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.5rem' }}>
-                <span style={{ fontSize:'1rem' }}>&#128293;</span>
-                <span style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.14em', textTransform:'uppercase', color:C.green }}>Next up</span>
-              </div>
-              <h2 style={{ fontSize:'1.4rem', fontWeight:900, color:C.text, margin:'0 0 1rem', letterSpacing:'-0.02em', lineHeight:1.25 }}>
-                {topTask ? topTask.title : 'Nothing queued for today.'}
-              </h2>
-
-              {topTask ? (
-                <>
-                  {topTask.meta && (
-                    <p style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.04em', textTransform:'uppercase', color:C.green, margin:'0 0 0.75rem' }}>{topTask.meta}</p>
-                  )}
-                  {topTask.instructions && topTask.instructions.length > 0 && (
-                    <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.25rem' }}>
-                      <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.green, margin:'0 0 0.5rem' }}>How to do it</p>
-                      <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-                        {topTask.instructions.map((step, i) => (
-                          <p key={i} style={{ fontSize:'0.82rem', color:C.sec, margin:0, lineHeight:1.5 }}>{i + 1}. {step}</p>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <button onClick={() => topTaskIsPipeline ? handleFocusClick() : navToItem('tasks', topTask.id)} style={{
-                    display:'flex', alignItems:'center', justifyContent:'center', gap:'0.6rem',
-                    width:'100%', padding:'0.95rem 1.5rem',
-                    background:'linear-gradient(135deg,'+C.green+',#00cc6a)',
-                    border:'none', borderRadius:'1rem', cursor:'pointer', fontFamily:'inherit',
-                    fontWeight:800, fontSize:'0.95rem', color:'#000',
-                    boxShadow:'0 4px 24px rgba(0,255,136,0.28)',
-                    marginBottom:'1.25rem',
-                  }}>
-                    &#9654;&nbsp; {topTaskIsPipeline ? 'Start focus session' : 'Open task'}
-                  </button>
-                </>
-              ) : (
-                <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.25rem' }}>
-                  <p style={{ fontSize:'0.85rem', color:C.sec, margin:0 }}>No task set &mdash; pin a video in the Content Pipeline or add tasks in Calendar.</p>
-                </div>
-              )}
-
-              <p style={{ fontSize:'0.82rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
-              {quote.a && <p style={{ fontSize:'0.7rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
-            </div>
-          </div>
-        )}
-
-        {focusError && (
-          <div style={{ width:'100%', maxWidth:'32rem', marginTop:'0.75rem', padding:'0.75rem 1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem' }}>
-            <p style={{ fontSize:'0.75rem', color:C.amber, margin:0, lineHeight:1.5 }}>{focusError}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Website / app ideas backlog */}
-      <div style={{ position:'relative', zIndex:1, borderTop:'1px solid '+C.border, background:'rgba(139,92,246,0.02)' }}>
+      {/* Website / app ideas backlog -- grouped right under This week's
+          overview (with the tile above linking here) instead of buried at
+          the very bottom of the page, expanded by default. */}
+      <div id="ideas-section" style={{ position:'relative', zIndex:1, borderTop:'1px solid '+C.border, background:'rgba(139,92,246,0.02)' }}>
         <div style={{ maxWidth:'900px', margin:'0 auto', padding:'0 2rem' }}>
           <button onClick={() => setShowIdeas(s => !s)} style={{ display:'flex', alignItems:'center', gap:'0.6rem', width:'100%', background:'none', border:'none', padding:'0.9rem 0', cursor:'pointer', fontFamily:'inherit', textAlign:'left' as const }}>
             <Lightbulb size={14} color={C.purple}/>
@@ -1728,6 +1763,9 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* Today's physical — component renders nothing (no wrapper) if nothing's queued for today */}
+      {!loading && <TodaysPhysical />}
 
       {/* Focus pre-flight check overlay */}
       {showFocusCheck && (
