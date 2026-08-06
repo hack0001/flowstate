@@ -196,6 +196,7 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
+  const [debugInfo, setDebugInfo] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     // Each source is fetched independently -- if reminders or habit_blocks
@@ -213,34 +214,46 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
       supabase.from('habit_blocks').select('*'),
     ])
     const [taskRes, priorityRes, reminderRes, habitRes] = results
+    const errs: string[] = []
+    const counts: string[] = []
 
     if (taskRes.status === 'fulfilled') {
-      if (taskRes.value.error) console.error('[home tasks load failed]', taskRes.value.error.message)
-      setTasks((taskRes.value.data ?? []) as HomeTask[])
+      if (taskRes.value.error) { console.error('[home tasks load failed]', taskRes.value.error.message); errs.push('tasks: ' + taskRes.value.error.message) }
+      const d = (taskRes.value.data ?? []) as HomeTask[]
+      setTasks(d)
+      counts.push(d.length + ' tasks')
     } else {
       console.error('[home tasks load rejected]', taskRes.reason)
+      errs.push('tasks: ' + String(taskRes.reason))
       setTasks([])
     }
 
     if (priorityRes.status === 'fulfilled') {
+      if (priorityRes.value.error) errs.push('priority: ' + priorityRes.value.error.message)
       setOrder(((priorityRes.value.data?.ordered_ids as string[]) ?? []))
+    } else {
+      errs.push('priority: ' + String(priorityRes.reason))
     }
 
     if (reminderRes.status === 'fulfilled' && !reminderRes.value.error) {
-      setReminders(((reminderRes.value.data ?? []) as Parameters<typeof fetchRemindersRow>[0][]).map(fetchRemindersRow))
+      const d = (reminderRes.value.data ?? []) as Parameters<typeof fetchRemindersRow>[0][]
+      setReminders(d.map(fetchRemindersRow))
+      counts.push(d.length + ' reminders')
     } else {
-      if (reminderRes.status === 'fulfilled') console.error('[home reminders load failed]', reminderRes.value.error?.message)
-      else console.error('[home reminders load rejected]', reminderRes.reason)
+      if (reminderRes.status === 'fulfilled') { console.error('[home reminders load failed]', reminderRes.value.error?.message); errs.push('reminders: ' + reminderRes.value.error?.message) }
+      else { console.error('[home reminders load rejected]', reminderRes.reason); errs.push('reminders: ' + String(reminderRes.reason)) }
     }
 
     if (habitRes.status === 'fulfilled' && !habitRes.value.error) {
-      setHabitBlocks(((habitRes.value.data ?? []) as Array<{ id:string; title:string; emoji:string; color:string; days:number[]; time_label:string }>)
-        .map(r => ({ id:r.id, title:r.title, emoji:r.emoji, color:r.color, days:r.days, timeLabel:r.time_label })))
+      const d = (habitRes.value.data ?? []) as Array<{ id:string; title:string; emoji:string; color:string; days:number[]; time_label:string }>
+      setHabitBlocks(d.map(r => ({ id:r.id, title:r.title, emoji:r.emoji, color:r.color, days:r.days, timeLabel:r.time_label })))
+      counts.push(d.length + ' habit blocks')
     } else {
-      if (habitRes.status === 'fulfilled') console.error('[home habit_blocks load failed]', habitRes.value.error?.message)
-      else console.error('[home habit_blocks load rejected]', habitRes.reason)
+      if (habitRes.status === 'fulfilled') { console.error('[home habit_blocks load failed]', habitRes.value.error?.message); errs.push('habits: ' + habitRes.value.error?.message) }
+      else { console.error('[home habit_blocks load rejected]', habitRes.reason); errs.push('habits: ' + String(habitRes.reason)) }
     }
 
+    setDebugInfo((errs.length > 0 ? 'Errors -- ' + errs.join(' | ') + '. ' : '') + 'Fetched: ' + counts.join(', ') + '.')
     setReady(true)
   }, [todayStr, tomorrowStr])
 
@@ -426,9 +439,19 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
   if (!ready) return null
 
   return (
-    <div style={{ display:'flex', gap:'1.5rem', flexWrap:'wrap' }}>
-      <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} reminderList={todayReminders} habitList={todayHabits} fillIds={fillIds} />
-      <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} reminderList={tomorrowReminders} habitList={tomorrowHabits} fillIds={fillIds} />
+    <div>
+      {/* Temporary diagnostic line -- shows exactly what was fetched (and any
+          error) so the real cause is visible without opening dev tools.
+          Remove once calendar-data pull-through is confirmed working. */}
+      {debugInfo && (
+        <p style={{ fontSize:'0.65rem', color: debugInfo.startsWith('Errors') ? C.red : C.muted, margin:'0 0 0.75rem', fontFamily:'monospace' }}>
+          {debugInfo}
+        </p>
+      )}
+      <div style={{ display:'flex', gap:'1.5rem', flexWrap:'wrap' }}>
+        <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} reminderList={todayReminders} habitList={todayHabits} fillIds={fillIds} />
+        <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} reminderList={tomorrowReminders} habitList={tomorrowHabits} fillIds={fillIds} />
+      </div>
     </div>
   )
 }
