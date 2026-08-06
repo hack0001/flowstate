@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, ChevronDown, Plus, Edit3, Trash2, Flame, GripVertical, ShoppingCart } from 'lucide-react'
+import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, ChevronDown, Plus, Edit3, Trash2, Flame, GripVertical, ShoppingCart, Bell } from 'lucide-react'
 import { getActiveFocusVideos } from '@/lib/supabase'
 import { supabase, getPageVisits, recordPageVisit, getEveningReview, getDailyChecklistState, setDailyChecklistItem } from '@/lib/supabase'
 import { SECTION_LABEL, type DailyPlanSection } from '@/lib/dailyPlan'
@@ -10,6 +10,7 @@ import { ETSY_TODOS } from '@/lib/etsy-data'
 import { sounds } from '@/lib/sounds'
 import { useCelebration } from '@/hooks/useCelebration'
 import { useLanguage } from '@/context/LanguageContext'
+import { type Reminder, reminderOccursOn, fetchRemindersRow } from '@/lib/reminders'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -179,24 +180,28 @@ function fmtTimeLabel(hhmm: string | null): string | null {
 }
 
 function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
+  const router = useRouter()
   const { celebrate } = useCelebration()
   const todayStr = toDateStr(new Date())
   const tomorrowStr = toDateStr(new Date(Date.now() + 86400000))
   const [tasks, setTasks] = useState<HomeTask[]>([])
   const [order, setOrder] = useState<string[]>([])
+  const [reminders, setReminders] = useState<Reminder[]>([])
   const [ready, setReady] = useState(false)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const [{ data: taskData }, { data: pdata }] = await Promise.all([
+    const [{ data: taskData }, { data: pdata }, { data: reminderData }] = await Promise.all([
       supabase.from('master_tasks').select('id,title,status,due_date,is_frog,start_time,duration_min')
         .in('due_date', [todayStr, tomorrowStr]).neq('archived', true),
       supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').maybeSingle(),
+      supabase.from('reminders').select('*'),
     ])
     setTasks((taskData ?? []) as HomeTask[])
     setOrder(((pdata?.ordered_ids as string[]) ?? []))
+    setReminders(((reminderData ?? []) as Parameters<typeof fetchRemindersRow>[0][]).map(fetchRemindersRow))
     setReady(true)
   }, [todayStr, tomorrowStr])
 
@@ -223,6 +228,8 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
 
   const todayTasks = sortByCalendar(tasks.filter(t => t.due_date === todayStr))
   const tomorrowTasks = sortByCalendar(tasks.filter(t => t.due_date === tomorrowStr))
+  const todayReminders = reminders.filter(r => reminderOccursOn(r, todayStr))
+  const tomorrowReminders = reminders.filter(r => reminderOccursOn(r, tomorrowStr))
 
   async function toggleDone(task: HomeTask) {
     const next = task.status === 'Done' ? 'Not started' : 'Done'
@@ -255,14 +262,30 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
     await supabase.from('master_tasks').update({ due_date: dateStr, start_time: null }).eq('id', task.id)
   }
 
-  function Column({ label, list }: { label: string; dayKey: 'today' | 'tomorrow'; dueDate: string; list: HomeTask[] }) {
+  function Column({ label, list, reminderList }: { label: string; dayKey: 'today' | 'tomorrow'; dueDate: string; list: HomeTask[]; reminderList: Reminder[] }) {
     return (
       <div style={{ flex:1, minWidth:'240px' }}>
         <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>{label}</p>
         <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
-          {list.length === 0 && (
+          {list.length === 0 && reminderList.length === 0 && (
             <p style={{ fontSize:'0.75rem', color:C.muted, margin:'0 0 0.25rem' }}>Nothing scheduled.</p>
           )}
+          {reminderList.map(r => (
+            <div
+              key={r.id}
+              onClick={() => router.push('/calendar')}
+              title="Open Calendar to edit"
+              style={{
+                display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
+                background: C.surface, border:'1px dashed '+C.border, borderRadius:'0.6rem', cursor:'pointer',
+              }}>
+              <Bell size={12} color={r.color || C.muted} style={{ flexShrink:0 }} />
+              {r.emoji && <span style={{ fontSize:'0.7rem', flexShrink:0 }}>{r.emoji}</span>}
+              {r.timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{r.timeLabel}</span>}
+              <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color:C.sec, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</span>
+              <ChevronRight size={12} color={C.muted} style={{ flexShrink:0 }} />
+            </div>
+          ))}
           {list.map(task => {
             const done = task.status === 'Done'
             const timeLabel = fmtTimeLabel(task.start_time)
@@ -321,8 +344,8 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
 
   return (
     <div style={{ display:'flex', gap:'1.5rem', flexWrap:'wrap' }}>
-      <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} />
-      <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} />
+      <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} reminderList={todayReminders} />
+      <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} reminderList={tomorrowReminders} />
     </div>
   )
 }
@@ -738,68 +761,82 @@ export default function Home() {
   const today = toDateStr(new Date())
   const quote = QUOTES[new Date().getDate() % QUOTES.length]
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback(async () => {
     let localDone = false
     try {
       localDone = localStorage.getItem('flowstate_routine_done') === toDateStr(new Date())
       if (localDone) setRoutineDone(true)
     } catch {}
 
-    Promise.all([
-      getActiveFocusVideos(),
-      supabase.from('routine_completions').select('routine_date').eq('routine_date', toDateStr(new Date())).maybeSingle(),
-      // Query the tasks table for today's top task (frog first)
-      supabase.from('master_tasks')
-        .select('id,title,urgency,importance,task_type,is_frog,why_note,time_commitment')
-        .eq('due_date', toDateStr(new Date()))
-        .eq('archived', false)
-        .neq('status','Done')
-        .order('is_frog', { ascending:false })
-        .limit(10),
-      getEveningReview(toDateStr(new Date())),
-    ])
-      .then(([focusResult, routineRes, tasksRes, eveningRes]) => {
-        setFocusError(focusResult.error)
-        const done = !!routineRes.data || localDone
-        setRoutineDone(done)
-        setEveningDone(!!eveningRes.review?.completedAt)
-        try { if (done) localStorage.setItem('flowstate_routine_done', toDateStr(new Date())) } catch {}
+    try {
+      const [focusResult, routineRes, tasksRes, eveningRes, habitRes] = await Promise.all([
+        getActiveFocusVideos(),
+        supabase.from('routine_completions').select('routine_date').eq('routine_date', toDateStr(new Date())).maybeSingle(),
+        // Query the tasks table for today's top task (frog first)
+        supabase.from('master_tasks')
+          .select('id,title,urgency,importance,task_type,is_frog,why_note,time_commitment')
+          .eq('due_date', toDateStr(new Date()))
+          .eq('archived', false)
+          .neq('status','Done')
+          .order('is_frog', { ascending:false })
+          .limit(10),
+        getEveningReview(toDateStr(new Date())),
+        // Cross-check against the Habit Tracker's "Morning routine" habit --
+        // the same source the streaks row reads. The morning routine writes
+        // to routine_completions AND this habit together when it finishes;
+        // if one write ever silently fails, the other still lets us detect
+        // "done" correctly instead of the CTA/header chip going stale.
+        supabase.from('habits').select('id').eq('title', 'Morning routine').maybeSingle(),
+      ])
 
-        // The #1 task should generally point at the Pipeline — if there's an
-        // active focus video, that's the thing to work on today. Only fall
-        // back to a generic master_tasks pick (frog/urgent) when nothing is
-        // pinned or in production. Either way, carry along "how to do it"
-        // instructions -- the SOP steps for a pipeline video, or the task's
-        // own why_note -- so the home page CTA can show more than a title.
-        const topVideo = focusResult.videos[0]
-        if (topVideo) {
-          const sop = sopForStage(topVideo.pipeline_stage)
-          setTopTask({
-            id: topVideo.id,
-            title: sop ? sop.title + ' — ' + topVideo.title : 'Advance "' + topVideo.title + '"',
-            instructions: sop ? sop.steps.slice(0, 3) : undefined,
-            meta: topVideo.pipeline_stage ?? undefined,
-          })
-          setTopTaskIsPipeline(true)
+      let habitDoneToday = false
+      if (habitRes.data?.id) {
+        const { data: hc } = await supabase.from('habit_completions')
+          .select('completed_date').eq('habit_id', habitRes.data.id).eq('completed_date', toDateStr(new Date())).maybeSingle()
+        habitDoneToday = !!hc
+      }
+
+      setFocusError(focusResult.error)
+      const done = !!routineRes.data || localDone || habitDoneToday
+      setRoutineDone(done)
+      setEveningDone(!!eveningRes.review?.completedAt)
+      try { if (done) localStorage.setItem('flowstate_routine_done', toDateStr(new Date())) } catch {}
+
+      // The #1 task should generally point at the Pipeline — if there's an
+      // active focus video, that's the thing to work on today. Only fall
+      // back to a generic master_tasks pick (frog/urgent) when nothing is
+      // pinned or in production. Either way, carry along "how to do it"
+      // instructions -- the SOP steps for a pipeline video, or the task's
+      // own why_note -- so the home page CTA can show more than a title.
+      const topVideo = focusResult.videos[0]
+      if (topVideo) {
+        const sop = sopForStage(topVideo.pipeline_stage)
+        setTopTask({
+          id: topVideo.id,
+          title: sop ? sop.title + ' — ' + topVideo.title : 'Advance "' + topVideo.title + '"',
+          instructions: sop ? sop.steps.slice(0, 3) : undefined,
+          meta: topVideo.pipeline_stage ?? undefined,
+        })
+        setTopTaskIsPipeline(true)
+      } else {
+        const tasks: Array<{ id:string; title:string; urgency:string|null; importance:string|null; task_type:string|null; is_frog:boolean; why_note:string|null; time_commitment:string|null }> = tasksRes.data ?? []
+        const frog   = tasks.find(t => t.is_frog)
+        const urgent = tasks.find(t => t.urgency === 'Urgent' && t.importance === 'Moved the Needle')
+        const top    = frog ?? urgent ?? tasks[0]
+        if (top) {
+          const meta = [top.task_type, top.urgency, top.time_commitment].filter(Boolean).join(' · ')
+          setTopTask({ id:top.id, title:top.title, instructions: top.why_note ? [top.why_note] : undefined, meta: meta || undefined })
         } else {
-          const tasks: Array<{ id:string; title:string; urgency:string|null; importance:string|null; task_type:string|null; is_frog:boolean; why_note:string|null; time_commitment:string|null }> = tasksRes.data ?? []
-          const frog   = tasks.find(t => t.is_frog)
-          const urgent = tasks.find(t => t.urgency === 'Urgent' && t.importance === 'Moved the Needle')
-          const top    = frog ?? urgent ?? tasks[0]
-          if (top) {
-            const meta = [top.task_type, top.urgency, top.time_commitment].filter(Boolean).join(' · ')
-            setTopTask({ id:top.id, title:top.title, instructions: top.why_note ? [top.why_note] : undefined, meta: meta || undefined })
-          } else {
-            setTopTask(null)
-          }
-          setTopTaskIsPipeline(false)
+          setTopTask(null)
         }
-      })
-      .catch(() => setError(true))
-      .finally(() => {
-        setLoading(false)
-        setTimeout(() => setContentReady(true), 80)
-      })
+        setTopTaskIsPipeline(false)
+      }
+    } catch {
+      setError(true)
+    } finally {
+      setLoading(false)
+      setTimeout(() => setContentReady(true), 80)
+    }
   }, [])
 
   useEffect(() => {

@@ -302,9 +302,12 @@ export default function MorningPage() {
     setCompleted(next)
     markMorningItemComplete(id, today)
     if (next.length >= items.length) {
-      await supabase.from('routine_completions').upsert({ routine_date:today }, { onConflict:'routine_date' })
+      const { error } = await supabase.from('routine_completions').upsert({ routine_date:today }, { onConflict:'routine_date' })
+      if (error) console.error('[routine_completions upsert failed]', error.message)
       // Also extends the "Morning routine" streak in the general Habit
       // Tracker (Tracking page) automatically — no separate manual tick.
+      // This is the home page's fallback signal too, so routineDone still
+      // reads correctly there even if the write above ever fails.
       completeMorningRoutineHabit(today)
       setCelebrating(true)
     }

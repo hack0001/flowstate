@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X, RefreshCw, Bell, Settings2, Sparkles, ZoomIn, ZoomOut } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { generateDailyPlan, getDailyPlanSettings, saveDailyPlanSettings, getDailyPlanCandidates, commitDailyPlan, SECTION_LABEL, type DailyPlanSettings, type PlanCandidate } from '@/lib/dailyPlan'
+import { type Reminder, type ReminderRecurrence, reminderOccursOn, describeRecurrence } from '@/lib/reminders'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -27,19 +28,6 @@ type HoverTip = { x: number; y: number; color: string; title: string; lines: str
 type OrgMove = { id: string; from: string; to: string; title: string }
 type OverdueMove = { id: string; title: string; task_type: string | null; fromDate: string; toDate: string; selected: boolean }
 type HabitBlock = { id: string; title: string; emoji: string; color: string; days: number[]; timeLabel: string }
-
-type ReminderRecurrence =
-  | { type: 'daily' }
-  | { type: 'weekday' }
-  | { type: 'weekly'; every: number }
-  | { type: 'monthly'; every: number }
-  | { type: 'yearly'; every: number }
-  | { type: 'custom'; every: number; unit: 'days' | 'weeks' | 'months' | 'years' }
-
-type Reminder = {
-  id: string; title: string; emoji: string; color: string
-  startDate: string; recurrence: ReminderRecurrence; timeLabel: string
-}
 
 const TYPE_LIMITS: Record<string, number> = { Flow: 2, Personal: 2, Admin: 2, 'Quick Task': 2 }
 
@@ -228,54 +216,6 @@ function buildOrganisePlan(allTasks: Record<string, Task[]>, weekStart: Date): O
     }
   }
   return moves
-}
-
-function reminderOccursOn(r: Reminder, dateStr: string): boolean {
-  const date = new Date(dateStr + 'T12:00:00')
-  const start = new Date(r.startDate + 'T12:00:00')
-  if (date < start) return false
-  const diffDays = Math.round((date.getTime() - start.getTime()) / 86400000)
-  const rec = r.recurrence
-  switch (rec.type) {
-    case 'daily': return true
-    case 'weekday': { const d = date.getDay(); return d >= 1 && d <= 5 }
-    case 'weekly': return diffDays % (7 * rec.every) === 0
-    case 'monthly': {
-      if (date.getDate() !== start.getDate()) return false
-      const md = (date.getFullYear() - start.getFullYear()) * 12 + (date.getMonth() - start.getMonth())
-      return md % rec.every === 0
-    }
-    case 'yearly': {
-      if (date.getDate() !== start.getDate() || date.getMonth() !== start.getMonth()) return false
-      return (date.getFullYear() - start.getFullYear()) % rec.every === 0
-    }
-    case 'custom': {
-      const { every, unit } = rec
-      if (unit === 'days') return diffDays % every === 0
-      if (unit === 'weeks') return diffDays % (every * 7) === 0
-      if (unit === 'months') {
-        if (date.getDate() !== start.getDate()) return false
-        const md = (date.getFullYear() - start.getFullYear()) * 12 + (date.getMonth() - start.getMonth())
-        return md % every === 0
-      }
-      if (unit === 'years') {
-        if (date.getDate() !== start.getDate() || date.getMonth() !== start.getMonth()) return false
-        return (date.getFullYear() - start.getFullYear()) % every === 0
-      }
-      return false
-    }
-  }
-}
-
-function describeRecurrence(rec: ReminderRecurrence): string {
-  switch (rec.type) {
-    case 'daily': return 'Every day'
-    case 'weekday': return 'Every weekday'
-    case 'weekly': return rec.every === 1 ? 'Every week' : 'Every ' + rec.every + ' weeks'
-    case 'monthly': return rec.every === 1 ? 'Every month' : 'Every ' + rec.every + ' months'
-    case 'yearly': return rec.every === 1 ? 'Every year' : 'Every ' + rec.every + ' years'
-    case 'custom': return 'Every ' + rec.every + ' ' + rec.unit
-  }
 }
 
 function TaskCard({
