@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FlowState — home dashboard mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0a0f; --surface:#12121a; --card:#1a1a26; --border:#2a2a3a;
+    --cyan:#00d4ff; --green:#00ff88; --amber:#ffb800; --purple:#8b5cf6;
+    --red:#ff4466; --text:#f0f0ff; --sec:#8888aa; --muted:#4a4a6a;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;padding:1.5rem;}
+  .howto{max-width:1100px;margin:0 auto 1.2rem;font-size:0.8rem;color:var(--sec);background:var(--card);border:1px solid var(--border);border-radius:0.6rem;padding:0.7rem 0.9rem;}
+  .howto b{color:var(--text);}
+  .switcher{max-width:1100px;margin:0 auto 1.2rem;display:flex;gap:0.4rem;flex-wrap:wrap;}
+  .switcher button{
+    background:var(--surface);border:1px solid var(--border);color:var(--sec);
+    padding:0.45rem 0.8rem;border-radius:0.6rem;font-family:inherit;font-size:0.74rem;
+    font-weight:600;cursor:pointer;
+  }
+  .switcher button.active{background:var(--card);border-color:var(--cyan);color:var(--cyan);}
+  .layout{display:none;max-width:1100px;margin:0 auto;}
+  .layout.active{display:block;}
+  .pill{padding:0.3rem 0.7rem;border-radius:9999px;font-size:0.68rem;font-weight:600;display:inline-flex;align-items:center;gap:0.3rem;white-space:nowrap;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:0.75rem;padding:0.9rem 1rem;}
+  .rowcard{background:var(--surface);border:1px solid var(--border);border-radius:0.6rem;padding:0.55rem 0.7rem;display:flex;justify-content:space-between;align-items:center;gap:0.5rem;}
+  .label{font-size:0.68rem;text-transform:uppercase;letter-spacing:0.04em;color:var(--sec);font-weight:600;margin:0 0 0.5rem;}
+  .titletext{font-size:0.82rem;color:var(--text);margin:0;}
+  .subtext{font-size:0.72rem;color:var(--muted);}
+  button.cta{border:none;border-radius:0.6rem;font-family:inherit;cursor:pointer;font-weight:700;}
+  .navrow{display:flex;gap:0.4rem;overflow-x:auto;padding-bottom:0.5rem;margin-bottom:0.9rem;scrollbar-width:thin;}
+  .navrow::-webkit-scrollbar{height:5px;}
+  .navpill{flex-shrink:0;padding:0.42rem 0.8rem;border-radius:0.6rem;font-size:0.72rem;font-weight:600;border:1px solid;white-space:nowrap;cursor:pointer;font-family:inherit;}
+</style>
+</head>
+<body>
+
+<div class="howto">
+  <b>How this works —</b> the row of buttons below swaps between 10 different home-page layout concepts. Every concept uses the exact same real data (your tasks, Etsy items, vault items, content pipeline) and the exact same nav pill row from the live app up top — only the arrangement of everything underneath changes. Click through all 10, nothing here is wired up (it's a static preview).
+</div>
+
+<div class="switcher" id="switcher"></div>
+
+<div class="layout active" id="l1"></div>
+<div class="layout" id="l2"></div>
+<div class="layout" id="l3"></div>
+<div class="layout" id="l4"></div>
+<div class="layout" id="l5"></div>
+<div class="layout" id="l6"></div>
+<div class="layout" id="l7"></div>
+<div class="layout" id="l8"></div>
+<div class="layout" id="l9"></div>
+<div class="layout" id="l10"></div>
+
+<script>
+var NAMES = ['1 Command center','2 Focus stack','3 Bento grid','4 Split rail','5 Kanban lanes','6 Timeline agenda','7 Magazine hero','8 Compact list','9 Master-detail','10 Tile wall'];
+
+var NAV_PILLS = [
+  ['Morning','#ffb800'], ['Calendar','#00d4ff'], ['Tracking','#8b5cf6'], ['Evening','#8b5cf6'],
+  ['Welsh','#00c04b'], ['Vault','#8b5cf6'], ['Content','#ff6b35'], ['Projects','#00d4ff'],
+  ['Tasks','#00ff88'], ['Personal','#8b5cf6'], ['YouTube','#ff4466'], ['Etsy','#f97316'],
+  ['X / Social','#f97316'], ['NSDR','#8b5cf6'], ['Physical','#00ff88'], ['Instagram','#e1306c'],
+  ['Tab Sheet','#00d4ff'], ['Ideas','#8b5cf6']
+];
+
+function navRow(){
+  var html = '<div class="navrow">';
+  NAV_PILLS.forEach(function(p){
+    html += '<button class="navpill" style="background:'+p[1]+'14;border-color:'+p[1]+'40;color:'+p[1]+';">'+p[0]+'</button>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function statusRow(){
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.9rem;">'
+    + '<div><p style="margin:0;font-size:1.1rem;font-weight:700;">Morning, Tom</p><p style="margin:0;font-size:0.75rem;color:var(--sec);">Thursday 6 August</p></div>'
+    + '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">'
+    + '<span class="pill" style="background:rgba(0,255,136,0.1);color:var(--green);border:1px solid rgba(0,255,136,0.3);">&#10003; Morning routine complete</span>'
+    + '<span class="pill" style="background:rgba(139,92,246,0.1);color:var(--purple);border:1px solid rgba(139,92,246,0.3);">Evening routine pending</span>'
+    + '<span class="pill" style="background:var(--card);color:var(--sec);border:1px solid var(--border);">Consistency 78%</span>'
+    + '<button class="cta" style="background:var(--cyan);color:#04222c;padding:0.5rem 0.9rem;font-size:0.78rem;">+ Task</button>'
+    + '</div></div>';
+}
+
+var TODAY = [
+  ['Update Etsy prices and shipping','14:30',''],
+  ['Go through personal debits — cancel Adobe','Frog','amber'],
+  ['Update profile for Faith','11:45',''],
+  ['Sort toothpaste — H2O2 (Dr Berg)','Priority','cyan']
+];
+var TOMORROW = [
+  ['Book rock climbing — Indy Anglesey','16:30',''],
+  ['Add social proof to Etsy listings','Priority','cyan']
+];
+var WORKFLOWS = [
+  ['Youtube','#ff4466','What is a Gold Standard Short — research'],
+  ['Etsy','#ffb800','Setup matching shirts listing'],
+  ['Tasks','#00d4ff','Update Etsy prices and shipping'],
+  ['Vault','#8b5cf6','Build new Giphy — current one is terrible'],
+  ['X / Social','#00ff88','Post Bernie Sanders diss tweet short']
+];
+
+function taskList(title, items){
+  var html = '<div class="card"><p class="label">'+title+'</p><div style="display:flex;flex-direction:column;gap:0.4rem;">';
+  items.forEach(function(it){
+    var tagColor = it[2] ? 'var(--'+it[2]+')' : 'var(--sec)';
+    var tagBg = it[2] ? 'rgba(0,0,0,0.2)' : 'var(--card)';
+    html += '<div class="rowcard"><span class="titletext">'+it[0]+'</span><span class="pill" style="background:'+tagBg+';color:'+tagColor+';">'+it[1]+'</span></div>';
+  });
+  html += '</div></div>';
+  return html;
+}
+
+function workflowCards(dir, tall){
+  var html = '<div style="display:flex;'+(dir==='col'?'flex-direction:column;':'')+'gap:0.6rem;">';
+  WORKFLOWS.forEach(function(w){
+    html += '<div class="card" style="'+(dir!=='col'?'flex:1;min-width:0;':'')+'border-top:2px solid '+w[1]+';'+(tall?'':'padding:0.6rem 0.75rem;')+'">'
+      + '<p class="subtext" style="color:'+w[1]+';margin:0;">'+w[0]+'</p>'
+      + '<p class="titletext" style="'+(dir!=='col'?'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;':'')+'">'+w[2]+'</p></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function footerStrip(){
+  return '<div style="display:flex;gap:0.6rem;">'
+    + '<div class="card" style="flex:1;"><p class="subtext" style="margin:0;">Targets</p><p class="titletext">1/2 uploads &#8226; &pound;140/300</p></div>'
+    + '<div class="card" style="flex:1;"><p class="subtext" style="margin:0;">Physical</p><p class="titletext">Mobility Day 3</p></div>'
+    + '<a href="#" class="card" style="flex:1;text-decoration:none;color:var(--purple);display:flex;align-items:center;justify-content:center;font-size:0.8rem;font-weight:600;">Ideas &rarr;</a>'
+    + '</div>';
+}
+
+// ---------- Layout 1: Command center ----------
+document.getElementById('l1').innerHTML = navRow() + statusRow()
+  + '<div style="display:grid;grid-template-columns:1.15fr 1fr 0.85fr;gap:0.85rem;">'
+  + '<div style="display:flex;flex-direction:column;gap:0.85rem;">' + taskList('Today', TODAY) + taskList('Tomorrow', TOMORROW) + '</div>'
+  + '<div class="card"><p class="label">This week — top priority per workflow</p><div style="display:flex;flex-direction:column;gap:0.55rem;">'
+  + WORKFLOWS.map(function(w){ return '<div style="border-left:3px solid '+w[1]+';padding-left:0.6rem;"><p class="subtext" style="margin:0;color:'+w[1]+';">'+w[0]+'</p><p class="titletext">'+w[2]+'</p></div>'; }).join('')
+  + '</div></div>'
+  + '<div style="display:flex;flex-direction:column;gap:0.7rem;">'
+  + '<div class="card"><p class="label">Weekly targets</p><p class="titletext" style="margin-bottom:0.2rem;">Long-form uploads <b>1/2</b></p><div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:0.5rem;"><div style="height:100%;width:50%;background:var(--cyan);"></div></div><p class="titletext" style="margin-bottom:0.2rem;">Etsy sales <b>&pound;140/&pound;300</b></p><div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;"><div style="height:100%;width:47%;background:var(--amber);"></div></div></div>'
+  + '<div class="card"><p class="label">Physical</p><p class="titletext">Mobility program &#8226; Day 3</p><p class="subtext">Kettlebell snatches due today</p></div>'
+  + '<a href="#" class="card" style="display:flex;align-items:center;justify-content:space-between;text-decoration:none;color:var(--purple);"><span style="font-size:0.8rem;font-weight:600;">Website &amp; app ideas</span><span>&rarr;</span></a>'
+  + '</div></div>';
+
+// ---------- Layout 2: Focus stack ----------
+document.getElementById('l2').innerHTML = navRow()
+  + '<div class="card" style="background:rgba(0,212,255,0.06);border-color:rgba(0,212,255,0.3);margin-bottom:0.85rem;"><p class="label" style="color:var(--cyan);">Next up</p><p style="font-size:1.15rem;font-weight:700;margin:0 0 0.7rem;">Setup matching shirts listing — Etsy</p><div style="display:flex;gap:0.5rem;"><button class="cta" style="background:var(--cyan);color:#04222c;padding:0.55rem 1rem;font-size:0.8rem;">Start focus session</button><button class="cta" style="background:var(--card);color:var(--sec);border:1px solid var(--border);padding:0.55rem 1rem;font-size:0.8rem;">Snooze</button></div></div>'
+  + '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.85rem;"><span class="pill" style="background:rgba(0,255,136,0.1);color:var(--green);border:1px solid rgba(0,255,136,0.3);">&#10003; Morning done</span><span class="pill" style="background:rgba(139,92,246,0.1);color:var(--purple);border:1px solid rgba(139,92,246,0.3);">Evening pending</span><span class="pill" style="background:var(--card);color:var(--sec);border:1px solid var(--border);">Consistency 78%</span><span class="pill" style="background:var(--card);color:var(--sec);border:1px solid var(--border);">Welsh streak &#128293; 12</span></div>'
+  + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.85rem;margin-bottom:0.85rem;">' + taskList('Today', TODAY) + taskList('Tomorrow', TOMORROW) + '</div>'
+  + '<div style="margin-bottom:0.85rem;">' + workflowCards('row', false) + '</div>'
+  + footerStrip();
+
+// ---------- Layout 3: Bento grid ----------
+document.getElementById('l3').innerHTML = navRow()
+  + '<div style="display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:58px;gap:0.6rem;">'
+  + '<div style="grid-column:span 2;grid-row:span 2;background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.3);border-radius:0.9rem;padding:0.9rem;display:flex;flex-direction:column;justify-content:space-between;"><div><p class="label" style="color:var(--cyan);">Next up</p><p style="font-size:1.05rem;font-weight:700;margin:0;">Setup matching shirts listing</p></div><button class="cta" style="background:var(--cyan);color:#04222c;padding:0.5rem 0.9rem;font-size:0.78rem;align-self:flex-start;">Start</button></div>'
+  + '<div class="card" style="background:rgba(0,255,136,0.08);border-color:rgba(0,255,136,0.3);display:flex;flex-direction:column;justify-content:center;padding:0.6rem 0.8rem;"><p class="subtext" style="color:var(--green);margin:0;">Morning</p><p class="titletext" style="color:var(--green);">&#10003; Done</p></div>'
+  + '<div class="card" style="background:rgba(139,92,246,0.08);border-color:rgba(139,92,246,0.3);display:flex;flex-direction:column;justify-content:center;padding:0.6rem 0.8rem;"><p class="subtext" style="color:var(--purple);margin:0;">Evening</p><p class="titletext" style="color:var(--purple);">Pending</p></div>'
+  + '<div class="card" style="grid-column:span 2;display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0.8rem;"><p class="subtext" style="margin:0;">Consistency</p><p style="font-size:1.15rem;font-weight:700;margin:0;">78%</p></div>'
+  + '<div class="card" style="grid-row:span 3;padding:0.7rem 0.85rem;"><p class="label">Today</p><p class="titletext">Etsy prices &amp; shipping</p><p class="titletext">Cancel Adobe debit <span class="subtext" style="color:var(--amber);">Frog</span></p><p class="titletext">Update Faith profile</p><p class="titletext">Toothpaste — H2O2</p></div>'
+  + '<div class="card" style="grid-row:span 3;padding:0.7rem 0.85rem;"><p class="label">Tomorrow</p><p class="titletext">Rock climbing — Anglesey</p><p class="titletext">Social proof on Etsy</p></div>'
+  + '<div class="card" style="grid-column:span 2;padding:0.6rem 0.8rem;border-top:2px solid var(--red);"><p class="subtext" style="color:var(--red);margin:0;">Youtube</p><p class="titletext">Gold Standard Short</p></div>'
+  + '<div class="card" style="grid-column:span 2;padding:0.6rem 0.8rem;border-top:2px solid var(--amber);"><p class="subtext" style="color:var(--amber);margin:0;">Etsy</p><p class="titletext">Matching shirts</p></div>'
+  + '<div class="card" style="padding:0.6rem 0.8rem;border-top:2px solid var(--purple);"><p class="subtext" style="color:var(--purple);margin:0;">Vault</p><p class="titletext">New Giphy</p></div>'
+  + '<div class="card" style="grid-column:span 3;padding:0.6rem 0.8rem;border-top:2px solid var(--green);"><p class="subtext" style="color:var(--green);margin:0;">X</p><p class="titletext">Diss tweet short is live — reply to comments</p></div>'
+  + '<div class="card" style="padding:0.6rem 0.8rem;"><p class="subtext" style="margin:0;">Targets</p><p class="titletext">1/2</p></div>'
+  + '<div class="card" style="padding:0.6rem 0.8rem;"><p class="subtext" style="margin:0;">Physical</p><p class="titletext">Day 3</p></div>'
+  + '<a href="#" class="card" style="grid-column:span 2;text-decoration:none;color:var(--purple);display:flex;align-items:center;justify-content:center;font-size:0.8rem;font-weight:600;background:rgba(139,92,246,0.06);border-color:rgba(139,92,246,0.25);">Website &amp; app ideas &rarr;</a>'
+  + '</div>';
+
+// ---------- Layout 4: Split rail ----------
+document.getElementById('l4').innerHTML = navRow()
+  + '<div style="display:grid;grid-template-columns:150px 1fr;gap:0.85rem;">'
+  + '<div style="display:flex;flex-direction:column;gap:0.6rem;">'
+  + '<div class="card" style="background:rgba(0,255,136,0.08);border-color:rgba(0,255,136,0.3);text-align:center;padding:0.6rem;"><p class="subtext" style="color:var(--green);margin:0;">&#10003;</p><p style="font-size:0.72rem;color:var(--green);margin:0.2rem 0 0;font-weight:600;">Morning done</p></div>'
+  + '<div class="card" style="background:rgba(139,92,246,0.08);border-color:rgba(139,92,246,0.3);text-align:center;padding:0.6rem;"><p style="font-size:0.72rem;color:var(--purple);margin:0;font-weight:600;">Evening</p><p class="subtext" style="color:var(--purple);">pending</p></div>'
+  + '<div class="card" style="text-align:center;padding:0.6rem;"><p style="font-size:1.3rem;font-weight:700;margin:0;">78%</p><p class="subtext">consistency</p></div>'
+  + '<div class="card" style="text-align:center;padding:0.6rem;"><p style="font-size:1rem;font-weight:700;margin:0;">1/2</p><p class="subtext">uploads</p></div>'
+  + '<div class="card" style="text-align:center;padding:0.6rem;"><p style="font-size:1rem;font-weight:700;margin:0;">Day 3</p><p class="subtext">mobility</p></div>'
+  + '<a href="#" class="card" style="text-align:center;text-decoration:none;color:var(--purple);font-size:0.75rem;font-weight:600;background:rgba(139,92,246,0.06);border-color:rgba(139,92,246,0.25);padding:0.6rem;">Ideas</a>'
+  + '</div>'
+  + '<div><p class="label">This week</p><div style="margin-bottom:0.85rem;">' + workflowCards('row', false) + '</div>'
+  + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.85rem;">' + taskList('Today', TODAY) + taskList('Tomorrow', TOMORROW) + '</div>'
+  + '</div></div>';
+
+// ---------- Layout 5: Kanban lanes (one column per workflow, tasks slotted in) ----------
+document.getElementById('l5').innerHTML = navRow() + statusRow()
+  + '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.6rem;">'
+  + WORKFLOWS.map(function(w, i){
+      var extra = i===0 ? TODAY.slice(0,2) : i===1 ? TODAY.slice(2) : i===2 ? TOMORROW : [];
+      var rows = '<div class="rowcard" style="border-left:3px solid '+w[1]+';border-radius:0.4rem;margin-bottom:0.4rem;"><span class="titletext">'+w[2]+'</span></div>';
+      extra.forEach(function(it){ rows += '<div class="rowcard" style="margin-bottom:0.4rem;"><span class="titletext" style="font-size:0.76rem;">'+it[0]+'</span></div>'; });
+      return '<div class="card" style="padding:0.7rem 0.65rem;"><p class="subtext" style="color:'+w[1]+';margin:0 0 0.5rem;font-weight:600;">'+w[0]+'</p>'+rows+'</div>';
+    }).join('')
+  + '</div>'
+  + '<div style="margin-top:0.85rem;">' + footerStrip() + '</div>';
+
+// ---------- Layout 6: Timeline agenda ----------
+document.getElementById('l6').innerHTML = navRow() + statusRow()
+  + '<div style="display:grid;grid-template-columns:2fr 1fr;gap:0.85rem;">'
+  + '<div class="card"><p class="label">Today — timeline</p>'
+  + [['09:00','Morning routine','var(--green)'], ['11:45','Update profile for Faith','var(--sec)'], ['14:30','Update Etsy prices and shipping','var(--sec)'], ['—','Cancel Adobe debit','var(--amber)'], ['—','Sort toothpaste — H2O2','var(--cyan)'], ['20:00','Evening routine','var(--purple)']]
+    .map(function(r){ return '<div style="display:flex;gap:0.7rem;padding:0.4rem 0;border-bottom:1px solid var(--border);align-items:center;"><span class="subtext" style="width:42px;flex-shrink:0;">'+r[0]+'</span><span style="width:6px;height:6px;border-radius:50%;background:'+r[2]+';flex-shrink:0;"></span><span class="titletext">'+r[1]+'</span></div>'; }).join('')
+  + '</div>'
+  + '<div style="display:flex;flex-direction:column;gap:0.7rem;">' + taskList('Tomorrow', TOMORROW)
+  + '<div class="card"><p class="label">This week</p><div style="display:flex;flex-direction:column;gap:0.4rem;">' + WORKFLOWS.map(function(w){ return '<p class="titletext" style="border-left:3px solid '+w[1]+';padding-left:0.5rem;">'+w[0]+': '+w[2]+'</p>'; }).join('') + '</div></div>'
+  + '</div></div>';
+
+// ---------- Layout 7: Magazine hero ----------
+document.getElementById('l7').innerHTML = navRow()
+  + '<div class="card" style="background:linear-gradient(135deg,rgba(0,212,255,0.08),rgba(139,92,246,0.05));border-color:rgba(0,212,255,0.25);margin-bottom:0.85rem;padding:1.4rem;">'
+  + '<p class="label" style="color:var(--cyan);">Morning, Tom &#8226; Thursday 6 August</p>'
+  + '<p style="font-size:1.4rem;font-weight:700;margin:0 0 0.6rem;">Next up: Setup matching shirts listing</p>'
+  + '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.8rem;"><span class="pill" style="background:rgba(0,255,136,0.1);color:var(--green);border:1px solid rgba(0,255,136,0.3);">&#10003; Morning done</span><span class="pill" style="background:rgba(139,92,246,0.1);color:var(--purple);border:1px solid rgba(139,92,246,0.3);">Evening pending</span><span class="pill" style="background:var(--card);color:var(--sec);border:1px solid var(--border);">Consistency 78%</span></div>'
+  + '<button class="cta" style="background:var(--cyan);color:#04222c;padding:0.6rem 1.1rem;font-size:0.82rem;">Start focus session</button>'
+  + '</div>'
+  + '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.6rem;margin-bottom:0.85rem;">' + WORKFLOWS.map(function(w){ return '<div class="card" style="border-top:3px solid '+w[1]+';padding:0.8rem 0.7rem;"><p style="font-size:0.9rem;font-weight:700;margin:0 0 0.3rem;color:'+w[1]+';">'+w[0]+'</p><p class="titletext">'+w[2]+'</p></div>'; }).join('') + '</div>'
+  + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.85rem;">' + taskList('Today', TODAY) + taskList('Tomorrow', TOMORROW) + '</div>';
+
+// ---------- Layout 8: Compact list (single column, ultra dense) ----------
+document.getElementById('l8').innerHTML = navRow()
+  + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;"><p style="font-size:1rem;font-weight:700;margin:0;">Morning, Tom</p><span class="pill" style="background:var(--card);color:var(--sec);border:1px solid var(--border);">78% consistency</span></div>'
+  + '<div class="card" style="padding:0;">'
+  + [['&#10003; Morning routine complete','var(--green)'], ['Evening routine — pending','var(--purple)'], ['Next up: Setup matching shirts listing','var(--cyan)']]
+    .concat(TODAY.map(function(t){ return [t[0]+' &#8226; today', 'var(--text)']; }))
+    .concat(TOMORROW.map(function(t){ return [t[0]+' &#8226; tomorrow', 'var(--muted)']; }))
+    .concat(WORKFLOWS.map(function(w){ return [w[0]+': '+w[2], w[1]]; }))
+    .concat([['Targets: 1/2 uploads &#8226; &pound;140/300', 'var(--sec)'], ['Physical: Mobility Day 3', 'var(--sec)'], ['Website &amp; app ideas &rarr;', 'var(--purple)']])
+    .map(function(r,i,arr){ return '<div style="padding:0.55rem 0.9rem;'+(i<arr.length-1?'border-bottom:1px solid var(--border);':'')+'font-size:0.82rem;color:'+r[1]+';">'+r[0]+'</div>'; }).join('')
+  + '</div>';
+
+// ---------- Layout 9: Master-detail (left index, right detail of "today") ----------
+document.getElementById('l9').innerHTML = navRow() + statusRow()
+  + '<div style="display:grid;grid-template-columns:1fr 2fr;gap:0.85rem;">'
+  + '<div class="card"><p class="label">Sections</p><div style="display:flex;flex-direction:column;gap:0.35rem;">'
+  + [['Today','var(--cyan)'],['Tomorrow','var(--sec)']].concat(WORKFLOWS.map(function(w){return [w[0],w[1]];})).concat([['Targets','var(--sec)'],['Physical','var(--sec)'],['Ideas','var(--purple)']])
+    .map(function(s,i){ return '<div class="rowcard" style="'+(i===0?'border-color:var(--cyan);':'')+'"><span class="titletext" style="color:'+s[1]+';">'+s[0]+'</span></div>'; }).join('')
+  + '</div></div>'
+  + '<div class="card"><p class="label">Today — detail</p><div style="display:flex;flex-direction:column;gap:0.4rem;">'
+  + TODAY.map(function(it){ var tagColor = it[2] ? 'var(--'+it[2]+')' : 'var(--sec)'; return '<div class="rowcard"><span class="titletext">'+it[0]+'</span><span class="pill" style="background:var(--card);color:'+tagColor+';">'+it[1]+'</span></div>'; }).join('')
+  + '</div></div></div>';
+
+// ---------- Layout 10: Tile wall (uniform square tiles for everything) ----------
+document.getElementById('l10').innerHTML = navRow()
+  + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.6rem;">'
+  + [
+      ['Morning', '&#10003; Complete', 'var(--green)'],
+      ['Evening', 'Pending', 'var(--purple)'],
+      ['Consistency', '78%', 'var(--text)'],
+      ['Next up', 'Matching shirts', 'var(--cyan)']
+    ].concat(WORKFLOWS.map(function(w){ return [w[0], w[2], w[1]]; }))
+     .concat([['Targets','1/2 uploads','var(--sec)'],['Physical','Day 3','var(--sec)'],['Ideas','View all &rarr;','var(--purple)'],['Today','4 items','var(--sec)'],['Tomorrow','2 items','var(--sec)']])
+    .map(function(t){ return '<div class="card" style="aspect-ratio:1.3;display:flex;flex-direction:column;justify-content:space-between;padding:0.75rem;"><p class="subtext" style="margin:0;">'+t[0]+'</p><p style="font-size:0.85rem;font-weight:600;margin:0;color:'+t[2]+';">'+t[1]+'</p></div>'; }).join('')
+  + '</div>';
+
+// ---------- switcher ----------
+var sw = document.getElementById('switcher');
+NAMES.forEach(function(n, i){
+  var btn = document.createElement('button');
+  btn.textContent = n;
+  if(i===0) btn.classList.add('active');
+  btn.addEventListener('click', function(){
+    document.querySelectorAll('.switcher button').forEach(function(b){ b.classList.remove('active'); });
+    document.querySelectorAll('.layout').forEach(function(l){ l.classList.remove('active'); });
+    btn.classList.add('active');
+    document.getElementById('l'+(i+1)).classList.add('active');
+  });
+  sw.appendChild(btn);
+});
+</script>
+
+</body>
+</html>

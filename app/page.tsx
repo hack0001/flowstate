@@ -1307,6 +1307,10 @@ export default function Home() {
         </div>
       )}
 
+      {/* Today's physical — moved directly under the afternoon check-in bar.
+          Component renders nothing (no wrapper) if nothing's queued for today */}
+      {!loading && <TodaysPhysical />}
+
       {/* Streaks row — always visible, today-relevant at a glance */}
       {!loading && (streaks.length > 0 || consistencyPct !== null) && (
         <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.012)' }}>
@@ -1330,6 +1334,18 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Today / Tomorrow — full calendar-day view: tasks, reminders, and
+          recurring habit blocks, same content and functionality as the
+          Calendar tab for these two days. Directly under the streak bar so
+          it's the first thing seen after the morning/evening status. */}
+      {!loading && (
+        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
+          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
+            <TodayTomorrowLists refreshKey={taskRefresh} />
           </div>
         </div>
       )}
@@ -1473,18 +1489,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Today / Tomorrow — full calendar-day view: tasks, reminders, and
-          recurring habit blocks, same content and functionality as the
-          Calendar tab for these two days. First thing after streaks/consistency
-          — this is what's actually happening today, before the week-wide view. */}
-      {!loading && (
-        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
-          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
-            <TodayTomorrowLists refreshKey={taskRefresh} />
-          </div>
-        </div>
-      )}
-
       {/* This week's overview — top 5 per workflow + weekly targets. */}
       {!loading && (
         <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.015)' }}>
@@ -1575,9 +1579,6 @@ export default function Home() {
           </div>
         </div>
       )}
-
-      {/* Today's physical — component renders nothing (no wrapper) if nothing's queued for today */}
-      {!loading && <TodaysPhysical />}
 
       {/* Focus pre-flight check overlay */}
       {showFocusCheck && (
