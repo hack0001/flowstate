@@ -203,8 +203,11 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
     // down with it via a rejected Promise.all. Tasks are the load-bearing
     // piece here, so they always get set even if the extras fail.
     const results = await Promise.allSettled([
+      // Not filtered to due_date=today/tomorrow only -- also pulls in
+      // undated tasks so the column can fall back to top-priority items
+      // when nothing is actually due, instead of just showing reminders.
       supabase.from('master_tasks').select('id,title,status,due_date,is_frog,start_time,duration_min')
-        .in('due_date', [todayStr, tomorrowStr]).neq('archived', true),
+        .neq('archived', true).neq('status', 'Done').limit(500),
       supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').maybeSingle(),
       supabase.from('reminders').select('*'),
       supabase.from('habit_blocks').select('*'),
@@ -262,8 +265,31 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
     })
   }
 
-  const todayTasks = sortByCalendar(tasks.filter(t => t.due_date === todayStr))
-  const tomorrowTasks = sortByCalendar(tasks.filter(t => t.due_date === tomorrowStr))
+  // Tasks actually due that day, calendar-sorted as before.
+  const dueTodayTasks = sortByCalendar(tasks.filter(t => t.due_date === todayStr))
+  const dueTomorrowTasks = sortByCalendar(tasks.filter(t => t.due_date === tomorrowStr))
+
+  // Fallback fill: when a day has few/no dated tasks, pull in undated
+  // top-priority tasks (same order as the "Tasks" card in This week's
+  // overview) so the column shows real work, not just reminders. Each
+  // undated task is only used once across the two columns.
+  const undatedByPriority = [...tasks.filter(t => !t.due_date)].sort((a, b) => {
+    const ai = order.indexOf(a.id), bi = order.indexOf(b.id)
+    if (ai === -1 && bi === -1) return 0
+    if (ai === -1) return 1
+    if (bi === -1) return -1
+    return ai - bi
+  })
+  const FILL_TARGET = 5
+  const todayFill = dueTodayTasks.length < FILL_TARGET ? undatedByPriority.slice(0, FILL_TARGET - dueTodayTasks.length) : []
+  const usedFillIds = new Set(todayFill.map(t => t.id))
+  const tomorrowFill = dueTomorrowTasks.length < FILL_TARGET
+    ? undatedByPriority.filter(t => !usedFillIds.has(t.id)).slice(0, FILL_TARGET - dueTomorrowTasks.length)
+    : []
+  const fillIds = new Set([...todayFill, ...tomorrowFill].map(t => t.id))
+
+  const todayTasks = [...dueTodayTasks, ...todayFill]
+  const tomorrowTasks = [...dueTomorrowTasks, ...tomorrowFill]
   const todayReminders = reminders.filter(r => reminderOccursOn(r, todayStr))
   const tomorrowReminders = reminders.filter(r => reminderOccursOn(r, tomorrowStr))
   const todayDow = new Date(todayStr + 'T12:00:00').getDay()
@@ -302,7 +328,7 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
     await supabase.from('master_tasks').update({ due_date: dateStr, start_time: null }).eq('id', task.id)
   }
 
-  function Column({ label, list, reminderList, habitList }: { label: string; dayKey: 'today' | 'tomorrow'; dueDate: string; list: HomeTask[]; reminderList: Reminder[]; habitList: HomeHabitBlock[] }) {
+  function Column({ label, list, reminderList, habitList, fillIds }: { label: string; dayKey: 'today' | 'tomorrow'; dueDate: string; list: HomeTask[]; reminderList: Reminder[]; habitList: HomeHabitBlock[]; fillIds: Set<string> }) {
     return (
       <div style={{ flex:1, minWidth:'240px' }}>
         <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>{label}</p>
@@ -344,6 +370,7 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
           {list.map(task => {
             const done = task.status === 'Done'
             const timeLabel = fmtTimeLabel(task.start_time)
+            const isFill = fillIds.has(task.id)
             const rescheduling = rescheduleId === task.id
             const opts = rescheduling ? rescheduleOptions(task.due_date ? new Date(task.due_date + 'T12:00:00') : new Date()) : []
             return (
@@ -357,7 +384,7 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
                   onDrop={e => { e.preventDefault(); if (dragId) reorderWithin(list, dragId, task.id); setDragId(null); setDragOver(null) }}
                   style={{
                     display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
-                    background: C.surface, border:'1px solid '+(dragOver===task.id?C.cyan+'80':C.border),
+                    background: C.surface, border:'1px solid '+(dragOver===task.id?C.cyan+'80':isFill?C.amber+'35':C.border),
                     borderRadius:'0.6rem', opacity: dragId===task.id ? 0.4 : 1, cursor:'grab', transition:'opacity 0.1s,border-color 0.1s',
                   }}>
                   <GripVertical size={12} color={C.muted} style={{ flexShrink:0 }} />
@@ -370,8 +397,9 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
                   </button>
                   {task.is_frog && <span style={{ fontSize:'0.7rem', flexShrink:0 }}>&#128054;</span>}
                   {timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:C.cyan, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{timeLabel}</span>}
+                  {!timeLabel && isFill && <span style={{ fontSize:'0.58rem', fontWeight:700, color:C.amber, flexShrink:0, textTransform:'uppercase', letterSpacing:'0.04em' }}>Priority</span>}
                   <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color: done?C.muted:C.text, textDecoration: done?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.title}</span>
-                  <button type="button" draggable={false} onClick={() => setRescheduleId(rescheduling ? null : task.id)} title="Reschedule" style={{
+                  <button type="button" draggable={false} onClick={() => setRescheduleId(rescheduling ? null : task.id)} title={isFill ? 'Set due date' : 'Reschedule'} style={{
                     background:'none', border:'none', color: rescheduling ? C.cyan : C.muted, cursor:'pointer', padding:'0.2rem', flexShrink:0, display:'flex', alignItems:'center',
                   }}>
                     <CalendarDays size={13} />
@@ -399,8 +427,8 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
 
   return (
     <div style={{ display:'flex', gap:'1.5rem', flexWrap:'wrap' }}>
-      <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} reminderList={todayReminders} habitList={todayHabits} />
-      <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} reminderList={tomorrowReminders} habitList={tomorrowHabits} />
+      <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} reminderList={todayReminders} habitList={todayHabits} fillIds={fillIds} />
+      <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} reminderList={tomorrowReminders} habitList={tomorrowHabits} fillIds={fillIds} />
     </div>
   )
 }
