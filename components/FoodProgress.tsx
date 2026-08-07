@@ -39,7 +39,7 @@ function toDateStr() {
 
 const NEXT_AT = STAGES.slice(1).map(s => s.mins).concat([Infinity])
 
-export default function FoodProgress({ sessionMins }: { sessionMins: number }) {
+export default function FoodProgress({ sessionMins, large, onClick }: { sessionMins: number; large?: boolean; onClick?: () => void }) {
   const [storedMins, setStoredMins] = useState(0)
 
   useEffect(() => {
@@ -70,29 +70,32 @@ export default function FoodProgress({ sessionMins }: { sessionMins: number }) {
 
   const accentColor = stage >= 9 ? '#ffb800' : stage >= 7 ? '#8b5cf6' : stage >= 5 ? '#00ff88' : stage >= 3 ? '#00d4ff' : '#4a4a6a'
 
+  const imgSize = large ? '180px' : '90px'
+
   return (
-    <div style={{
+    <div onClick={onClick} title={onClick ? 'Click to restart this focus session' : undefined} style={{
       background:'#12121a', border:'1px solid '+(isMax?'rgba(255,184,0,0.3)':'#2a2a3a'),
-      borderRadius:'1rem', padding:'0.875rem 1rem',
+      borderRadius:'1rem', padding: large ? '1.25rem 1.5rem' : '0.875rem 1rem',
       boxShadow: isMax ? '0 0 20px rgba(255,184,0,0.1)' : 'none',
       transition:'all 0.5s ease',
+      cursor: onClick ? 'pointer' : 'default',
     }}>
-      <div style={{ display:'flex', alignItems:'center', gap:'0.875rem' }}>
+      <div style={{ display:'flex', flexDirection: large ? 'column' : 'row', alignItems:'center', gap: large ? '0.5rem' : '0.875rem', textAlign: large ? 'center' : 'left' }}>
         {/* House scene */}
-        <div style={{ width:'90px', height:'90px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <div style={{ width:imgSize, height:imgSize, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={stageInfo.img} alt={stageInfo.label} style={{ width:'100%', height:'100%', objectFit:'contain' }}/>
         </div>
 
         {/* Info */}
-        <div style={{ flex:1, minWidth:0 }}>
-          <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:accentColor, margin:'0 0 0.15rem' }}>
+        <div style={{ flex: large ? 'none' : 1, minWidth:0, width: large ? '100%' : 'auto', maxWidth: large ? '320px' : 'none' }}>
+          <p style={{ fontSize: large ? '0.7rem' : '0.62rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:accentColor, margin:'0 0 0.15rem' }}>
             Today&apos;s reward
           </p>
-          <p style={{ fontSize:'0.85rem', fontWeight:800, color:'#f0f0ff', margin:'0 0 0.1rem', lineHeight:1.2 }}>
+          <p style={{ fontSize: large ? '1.15rem' : '0.85rem', fontWeight:800, color:'#f0f0ff', margin:'0 0 0.1rem', lineHeight:1.2 }}>
             {stageInfo.label}
           </p>
-          <p style={{ fontSize:'0.68rem', color:'#8888aa', margin:'0 0 0.4rem' }}>
+          <p style={{ fontSize: large ? '0.78rem' : '0.68rem', color:'#8888aa', margin:'0 0 0.4rem' }}>
             {stageInfo.sub} &mdash; {total}min focused
           </p>
           {/* Progress to next stage */}
@@ -114,6 +117,11 @@ export default function FoodProgress({ sessionMins }: { sessionMins: number }) {
           {toNext === null && (
             <p style={{ fontSize:'0.68rem', color:'#ffb800', fontWeight:700, margin:0 }}>
               &#127881; Maximum achieved
+            </p>
+          )}
+          {onClick && (
+            <p style={{ fontSize:'0.6rem', color:'#4a4a6a', margin:'0.4rem 0 0', fontStyle:'italic' }}>
+              Click to restart this session
             </p>
           )}
         </div>

@@ -134,6 +134,15 @@ export default function ContentFocusPage() {
     return () => clearInterval(id)
   }, [])
 
+  function resetFocusSession() {
+    focusStartRef.current = Date.now()
+    distractedMsRef.current = 0
+    distractedSinceRef.current = null
+    setFocusMins(0)
+    setDistractedMins(0)
+    setIsDistracted(false)
+  }
+
   function toggleDistraction() {
     if (!isDistracted) {
       distractedSinceRef.current = Date.now()
@@ -288,6 +297,11 @@ export default function ContentFocusPage() {
             <Zap size={10}/>{showPomodoro ? pom.formattedTime : 'Timer'}
           </button>
         </div>
+      </div>
+
+      {/* Focus World — big centered house progression, above the per-item content. Click to restart this session. */}
+      <div style={{ display:'flex', justifyContent:'center', padding:'1.25rem 1.5rem 0', flexShrink:0 }}>
+        <FoodProgress sessionMins={focusMins} large onClick={resetFocusSession}/>
       </div>
 
       {showPomodoro && (
@@ -491,8 +505,6 @@ export default function ContentFocusPage() {
               </button>
             )}
 
-            {/* Food progression */}
-            <FoodProgress sessionMins={focusMins}/>
           </div>
         ) : null}
       </div>
