@@ -70,10 +70,22 @@ export default function FoodProgress({ sessionMins, large, onClick }: { sessionM
 
   const accentColor = stage >= 9 ? '#ffb800' : stage >= 7 ? '#8b5cf6' : stage >= 5 ? '#00ff88' : stage >= 3 ? '#00d4ff' : '#4a4a6a'
 
-  const imgSize = large ? '180px' : '90px'
+  const imgSize = large ? '360px' : '90px'
+
+  // Clicking resets BOTH the persisted today's-minutes total this component
+  // tracks itself (storedMins, loaded from localStorage) and, via the passed
+  // onClick, the parent page's live session timer. Resetting only the parent
+  // timer isn't enough — storedMins would still hold today's earlier minutes
+  // and the stage/total wouldn't visibly drop.
+  function handleClick() {
+    if (!onClick) return
+    try { localStorage.removeItem('focus_mins_' + toDateStr()) } catch {}
+    setStoredMins(0)
+    onClick()
+  }
 
   return (
-    <div onClick={onClick} title={onClick ? 'Click to restart this focus session' : undefined} style={{
+    <div onClick={handleClick} title={onClick ? 'Click to restart this focus session' : undefined} style={{
       background:'#12121a', border:'1px solid '+(isMax?'rgba(255,184,0,0.3)':'#2a2a3a'),
       borderRadius:'1rem', padding: large ? '1.25rem 1.5rem' : '0.875rem 1rem',
       boxShadow: isMax ? '0 0 20px rgba(255,184,0,0.1)' : 'none',
