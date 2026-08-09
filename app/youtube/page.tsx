@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, CheckCircle, Circle, RotateCcw, Tv, ChevronDown, Search } from 'lucide-react'
 import { useLanguage } from '@/context/LanguageContext'
@@ -136,7 +136,7 @@ function SOPCard({ sop }: { sop: SOP }) {
   )
 }
 
-export default function YouTubePage() {
+function YouTubePageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { t } = useLanguage()
@@ -836,4 +836,8 @@ export default function YouTubePage() {
       </div>
     </main>
   )
+}
+
+export default function YouTubePage() {
+  return <Suspense><YouTubePageInner/></Suspense>
 }

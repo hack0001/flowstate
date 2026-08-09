@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X, RefreshCw, Bell, Settings2, Sparkles, ZoomIn, ZoomOut } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -459,7 +459,7 @@ function QuickAdd({ date, onSave, onClose }: { date: string; onSave: (title: str
   )
 }
 
-export default function CalendarPage() {
+function CalendarPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const today = new Date()
@@ -1902,4 +1902,8 @@ export default function CalendarPage() {
       `}</style>
     </main>
   )
+}
+
+export default function CalendarPage() {
+  return <Suspense><CalendarPageInner/></Suspense>
 }
