@@ -1,9 +1,9 @@
 'use client'
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Circle, Play, Pause, RefreshCw, SkipForward, Wind, Waves, VolumeX, Zap, Music2, ChevronRight } from 'lucide-react'
-import { supabase, getActiveFocusVideos, getStageNote, saveStageNote, type ActiveFocusVideo } from '@/lib/supabase'
-import { STAGE_ADVANCE, sopForStage } from '@/lib/sops'
+import { supabase, getActiveFocusVideos, getContentItemById, getStageNote, saveStageNote, type ActiveFocusVideo } from '@/lib/supabase'
+import { STAGE_ADVANCE, sopForStage, nextSessionChunk } from '@/lib/sops'
 import { sounds } from '@/lib/sounds'
 import { usePomodoro } from '@/hooks/usePomodoro'
 import { useCelebration } from '@/hooks/useCelebration'
@@ -52,8 +52,9 @@ type AmbientMode = 'off' | 'whitenoise' | 'waves'
 
 type StageOverlay = { title: string; from: string; to: string; action: 'switch' | 'complete'; nextIdx: number }
 
-export default function ContentFocusPage() {
+function ContentFocusPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [videos, setVideos] = useState<ActiveFocusVideo[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -63,6 +64,23 @@ export default function ContentFocusPage() {
   const [stageGoalMet, setStageGoalMet] = useState<Set<number>>(new Set())
   const [stageOverlay, setStageOverlay] = useState<StageOverlay | null>(null)
   const [sessionComplete, setSessionComplete] = useState(false)
+
+  // ── Chunked session mode (?item=<id>) ──────────────────────────────────
+  // Entered by clicking a specific item on the Content Pipeline or a Home
+  // priority card. Locks to that one item, works only the next 3-4
+  // uncompleted steps (lib/sops.ts nextSessionChunk) instead of the whole
+  // stage checklist, auto-starts a countdown sized to those steps'
+  // estimated minutes, and logs the sitting to content_focus_sessions so
+  // Home can show "N focus sessions today". The default (no ?item=) flow
+  // above is left completely alone — still the 2-pinned-video, full-stage
+  // checklist, manual-pomodoro experience.
+  const chunkItemParam = searchParams.get('item')
+  const [chunkMode, setChunkMode] = useState(false)
+  const [chunkStepIndices, setChunkStepIndices] = useState<number[]>([])
+  const [chunkTotalMins, setChunkTotalMins] = useState(0)
+  const [chunkSecondsLeft, setChunkSecondsLeft] = useState(0)
+  const [chunkSessionId, setChunkSessionId] = useState<string | null>(null)
+  const [chunkEnded, setChunkEnded] = useState<'done' | 'timeup' | null>(null)
 
   const [ambient, setAmbient] = useState<AmbientMode>('off')
   const [showPomodoro, setShowPomodoro] = useState(false)
@@ -108,7 +126,107 @@ export default function ContentFocusPage() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { if (!chunkItemParam) load() }, [load, chunkItemParam])
+
+  // ── Chunked session load ────────────────────────────────────────────
+  const loadChunkItem = useCallback(async (id: string, keepSessionId?: boolean) => {
+    setLoading(true)
+    setChunkEnded(null)
+    const { video, error } = await getContentItemById(id)
+    if (!video) {
+      setLoadError(error)
+      setVideos([])
+      setLoading(false)
+      return
+    }
+    setLoadError(null)
+    setVideos([video])
+    setVideoIdx(0)
+    setChunkMode(true)
+
+    const sopObj = sopForStage(video.pipeline_stage)
+    let doneIdx = new Set<number>()
+    if (sopObj) {
+      const { data: completions } = await supabase
+        .from('content_step_completions')
+        .select('step_index')
+        .eq('content_item_id', id).eq('sop_id', sopObj.id)
+      doneIdx = new Set((completions ?? []).map((r: { step_index: number }) => r.step_index))
+    }
+    setStepDone({ [id]: doneIdx })
+
+    if (sopObj) {
+      const chunk = nextSessionChunk(sopObj, doneIdx)
+      if (chunk) {
+        setChunkStepIndices(chunk.stepIndices)
+        setChunkTotalMins(chunk.totalMins)
+        setChunkSecondsLeft(chunk.totalMins * 60)
+        if (!keepSessionId) {
+          const { data: sess } = await supabase.from('content_focus_sessions')
+            .insert({ content_item_id: id, sop_id: sopObj.id, step_indices: chunk.stepIndices, estimated_mins: chunk.totalMins, status: 'in_progress' })
+            .select('id').single()
+          setChunkSessionId((sess as { id: string } | null)?.id ?? null)
+        }
+      } else {
+        setChunkStepIndices([])
+        setChunkTotalMins(0)
+        setChunkSecondsLeft(0)
+      }
+    }
+    resetFocusSession()
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { if (chunkItemParam) loadChunkItem(chunkItemParam) }, [chunkItemParam, loadChunkItem])
+
+  // Countdown ticks once a second while a chunk session is active.
+  useEffect(() => {
+    if (!chunkMode || chunkEnded || chunkSecondsLeft <= 0) return
+    const id = setInterval(() => setChunkSecondsLeft(s => Math.max(0, s - 1)), 1000)
+    return () => clearInterval(id)
+  }, [chunkMode, chunkEnded, chunkSecondsLeft > 0])
+
+  // Timer hit zero before all chunk tasks were checked -- end the session.
+  useEffect(() => {
+    if (chunkMode && !chunkEnded && chunkTotalMins > 0 && chunkSecondsLeft === 0) {
+      finishChunkSession('timeup')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chunkSecondsLeft])
+
+  async function finishChunkSession(reason: 'done' | 'timeup') {
+    if (chunkEnded) return
+    setChunkEnded(reason)
+    if (chunkSessionId) {
+      const curDone = item ? (stepDone[item.id] ?? new Set<number>()) : new Set<number>()
+      const tasksCompleted = chunkStepIndices.filter(i => curDone.has(i)).length
+      await supabase.from('content_focus_sessions').update({
+        ended_at: new Date().toISOString(),
+        actual_mins: focusMins,
+        tasks_completed: tasksCompleted,
+        status: reason === 'done' ? 'completed' : 'abandoned',
+      }).eq('id', chunkSessionId)
+    }
+    if (reason === 'done' && allStepsDone) {
+      // The chunk happened to cover the last remaining steps in the stage --
+      // hand off to the existing advance flow (its own overlay/sound/confetti
+      // takes it from here) instead of showing the chunk wrap-up screen.
+      await advanceStage()
+    } else {
+      sounds.playStageComplete()
+      celebrate('stage')
+    }
+  }
+
+  // A chunk-mode session ends the moment every task in this chunk is
+  // checked -- even if the wider stage still has steps left for next time.
+  useEffect(() => {
+    if (chunkMode && !chunkEnded && chunkStepIndices.length > 0) {
+      const curDone = item ? (stepDone[item.id] ?? new Set<number>()) : new Set<number>()
+      if (chunkStepIndices.every(i => curDone.has(i))) finishChunkSession('done')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepDone])
 
   // Rotate affirmation every 25 seconds
   useEffect(() => {
@@ -331,21 +449,35 @@ export default function ContentFocusPage() {
       {/* -- Session goal banner -- */}
       <div style={{ padding:'0.875rem 1.5rem 0', flexShrink:0 }}>
         <div style={{ maxWidth:'620px', margin:'0 auto' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 0.875rem', background:'rgba(0,255,136,0.05)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'0.875rem', marginBottom:'0.75rem', flexWrap:'wrap' }}>
-            <span style={{ fontSize:'0.72rem', fontWeight:800, color:C.green }}>&#127919; Goal:</span>
-            <span style={{ fontSize:'0.72rem', color:C.sec }}>
-              complete 1 stage on {videos.length > 1 ? 'each of your 2 active videos' : 'your active video'}
-            </span>
-            <div style={{ display:'flex', gap:'0.4rem', marginLeft:'auto' }}>
-              {videos.map((v, i) => (
-                <button key={v.id} onClick={() => setVideoIdx(i)}
-                  style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.2rem 0.6rem', borderRadius:'9999px', fontSize:'0.66rem', fontWeight:700, border:'1px solid '+(i===videoIdx?C.cyan:C.border), background:i===videoIdx?'rgba(0,212,255,0.1)':'transparent', color:i===videoIdx?C.cyan:C.muted, cursor:'pointer', fontFamily:'inherit' }}>
-                  {stageGoalMet.has(i) && <CheckCircle2 size={10} color={C.green}/>}
-                  {v.title.length > 18 ? v.title.slice(0,18)+'…' : v.title}
-                </button>
-              ))}
+          {chunkMode ? (
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 0.875rem', background:'rgba(0,212,255,0.05)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:'0.875rem', marginBottom:'0.75rem', flexWrap:'wrap' }}>
+              <span style={{ fontSize:'0.72rem', fontWeight:800, color:C.cyan }}>&#9203; Focus chunk:</span>
+              <span style={{ fontSize:'0.72rem', color:C.sec }}>
+                {chunkStepIndices.length} task{chunkStepIndices.length === 1 ? '' : 's'} this session
+              </span>
+              {!chunkEnded && chunkTotalMins > 0 && (
+                <span style={{ marginLeft:'auto', fontSize:'0.85rem', fontWeight:800, fontFamily:'ui-monospace,monospace', color: chunkSecondsLeft < 60 ? '#ff4466' : C.cyan }}>
+                  {String(Math.floor(chunkSecondsLeft / 60)).padStart(2, '0')}:{String(chunkSecondsLeft % 60).padStart(2, '0')}
+                </span>
+              )}
             </div>
-          </div>
+          ) : (
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 0.875rem', background:'rgba(0,255,136,0.05)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'0.875rem', marginBottom:'0.75rem', flexWrap:'wrap' }}>
+              <span style={{ fontSize:'0.72rem', fontWeight:800, color:C.green }}>&#127919; Goal:</span>
+              <span style={{ fontSize:'0.72rem', color:C.sec }}>
+                complete 1 stage on {videos.length > 1 ? 'each of your 2 active videos' : 'your active video'}
+              </span>
+              <div style={{ display:'flex', gap:'0.4rem', marginLeft:'auto' }}>
+                {videos.map((v, i) => (
+                  <button key={v.id} onClick={() => setVideoIdx(i)}
+                    style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.2rem 0.6rem', borderRadius:'9999px', fontSize:'0.66rem', fontWeight:700, border:'1px solid '+(i===videoIdx?C.cyan:C.border), background:i===videoIdx?'rgba(0,212,255,0.1)':'transparent', color:i===videoIdx?C.cyan:C.muted, cursor:'pointer', fontFamily:'inherit' }}>
+                    {stageGoalMet.has(i) && <CheckCircle2 size={10} color={C.green}/>}
+                    {v.title.length > 18 ? v.title.slice(0,18)+'…' : v.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -383,7 +515,28 @@ export default function ContentFocusPage() {
       {/* -- Main content -- */}
       <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem 1.5rem 2.5rem' }}>
 
-        {sessionComplete ? (
+        {chunkMode && chunkEnded && !stageOverlay ? (
+          <div style={{ textAlign:'center', maxWidth:'480px', animation:'fadeUp 0.6s ease' }}>
+            <div style={{ fontSize:'2.75rem', marginBottom:'1rem' }}>{chunkEnded === 'done' ? <>&#9989;</> : <>&#9203;</>}</div>
+            <h1 style={{ fontSize:'1.85rem', fontWeight:900, color: chunkEnded === 'done' ? C.green : C.amber, marginBottom:'0.625rem' }}>
+              {chunkEnded === 'done' ? 'Chunk complete!' : "Time's up"}
+            </h1>
+            <p style={{ fontSize:'0.85rem', color:C.sec, lineHeight:1.6, marginBottom:'2rem' }}>
+              {chunkStepIndices.filter(i => doneSet.has(i)).length}/{chunkStepIndices.length} task{chunkStepIndices.length === 1 ? '' : 's'} checked off on <strong style={{ color:C.text }}>{item?.title}</strong>
+            </p>
+            <div style={{ display:'flex', gap:'0.75rem', justifyContent:'center', flexWrap:'wrap' }}>
+              <button onClick={() => item && loadChunkItem(item.id)}
+                style={{ padding:'0.875rem 2rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.875rem', color:C.cyan, fontWeight:700, fontSize:'0.9rem', cursor:'pointer', fontFamily:'inherit' }}>
+                Start next chunk
+              </button>
+              <button onClick={() => { sounds.stopAmbient(); router.push('/') }}
+                style={{ padding:'0.875rem 2.5rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.875rem', color:'#000', fontWeight:700, fontSize:'1rem', cursor:'pointer', fontFamily:'inherit' }}>
+                Back to Home
+              </button>
+            </div>
+          </div>
+
+        ) : sessionComplete ? (
           <div style={{ textAlign:'center', maxWidth:'480px', animation:'fadeUp 0.6s ease' }}>
             <div style={{ fontSize:'3.5rem', marginBottom:'1rem' }}>[done]</div>
             <h1 style={{ fontSize:'2.25rem', fontWeight:900, color:C.green, marginBottom:'0.75rem' }}>Session Complete!</h1>
@@ -413,7 +566,11 @@ export default function ContentFocusPage() {
                 {item.format && <span style={{ fontSize:'0.65rem', color:C.muted, marginLeft:'0.6rem' }}>{item.format}</span>}
               </div>
               {steps.length > 0 && (
-                <span style={{ fontSize:'0.68rem', color:C.muted }}>{doneSet.size}/{steps.length} steps</span>
+                <span style={{ fontSize:'0.68rem', color:C.muted }}>
+                  {chunkMode
+                    ? `${chunkStepIndices.filter(i => doneSet.has(i)).length}/${chunkStepIndices.length} this chunk`
+                    : `${doneSet.size}/${steps.length} steps`}
+                </span>
               )}
             </div>
 
@@ -455,7 +612,8 @@ export default function ContentFocusPage() {
                   </div>
 
                   <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', marginBottom:'0.5rem' }}>
-                    {steps.map((step, i) => {
+                    {(chunkMode ? chunkStepIndices : steps.map((_, i) => i)).map(i => {
+                      const step = steps[i]
                       const checked = doneSet.has(i)
                       return (
                         <button key={i} onClick={() => toggleStep(i)} style={{
@@ -541,5 +699,13 @@ export default function ContentFocusPage() {
         }
       `}</style>
     </main>
+  )
+}
+
+export default function ContentFocusPage() {
+  return (
+    <Suspense fallback={null}>
+      <ContentFocusPageInner />
+    </Suspense>
   )
 }

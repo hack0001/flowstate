@@ -125,6 +125,40 @@ function calcStreakFromDates(dates: string[]): number {
   return streak
 }
 
+// ---- Focus sessions today (Content Pipeline chunked sessions) ----
+// Counts today's content_focus_sessions rows (see 035_content_focus_sessions.sql
+// / lib/sops.ts nextSessionChunk) so "how many focus sessions did I do today,
+// how much progress" is visible at a glance -- nothing surfaced this before.
+// Self-hides entirely if none have happened yet today.
+function FocusSessionsToday() {
+  const [stats, setStats] = useState<{ count: number; tasks: number; mins: number } | null>(null)
+  useEffect(() => {
+    (async () => {
+      const start = new Date(); start.setHours(0, 0, 0, 0)
+      const { data } = await supabase.from('content_focus_sessions')
+        .select('tasks_completed,actual_mins,estimated_mins,status')
+        .gte('started_at', start.toISOString())
+      const rows = (data ?? []) as { tasks_completed: number; actual_mins: number | null; estimated_mins: number; status: string }[]
+      const count = rows.filter(r => r.status !== 'in_progress').length
+      const tasks = rows.reduce((s, r) => s + (r.tasks_completed || 0), 0)
+      const mins = rows.reduce((s, r) => s + (r.actual_mins ?? r.estimated_mins ?? 0), 0)
+      setStats({ count, tasks, mins })
+    })()
+  }, [])
+  if (!stats || stats.count === 0) return null
+  return (
+    <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.012)' }}>
+      <div style={{ maxWidth:'900px', margin:'0 auto', padding:'0.75rem 2rem', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+        <div title="Chunked focus sessions completed today on the Content Pipeline" style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.35rem 0.7rem', background:C.cyan+'14', border:'1px solid '+C.cyan+'40', borderRadius:'9999px' }}>
+          <Zap size={12} color={C.cyan} />
+          <span style={{ fontSize:'0.72rem', fontWeight:700, color:C.cyan }}>{stats.count} focus session{stats.count === 1 ? '' : 's'} today</span>
+          <span style={{ fontSize:'0.72rem', color:C.sec }}>&middot; {stats.tasks} task{stats.tasks === 1 ? '' : 's'} &middot; {stats.mins}m</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ---- Today / Tomorrow adjustable lists ----
 // Pulls straight from master_tasks the same way Calendar does (due_date +
 // start_time/duration_min), and orders each day by start_time first --
@@ -837,6 +871,7 @@ export default function Home() {
   const [topTaskIsPipeline, setTopTaskIsPipeline] = useState(false)
   const [contentReady, setContentReady] = useState(false)
   const [showFocusCheck, setShowFocusCheck] = useState(false)
+  const [pendingFocusItem, setPendingFocusItem] = useState<string | null>(null)
   const [showReminder, setShowReminder] = useState(false)
   const [pageAlerts, setPageAlerts] = useState<Record<string, 'green' | 'orange' | 'red'>>({})
   const [pageWarn, setPageWarn] = useState<Set<string>>(new Set())
@@ -1154,6 +1189,7 @@ export default function Home() {
   // so it's the one waiting when the focus session actually opens.
   async function focusYoutubeItem(id: string) {
     supabase.from('content_items').update({ is_active_focus: true }).eq('id', id).then()
+    setPendingFocusItem(id)
     handleFocusClick()
   }
 
@@ -1177,7 +1213,8 @@ export default function Home() {
 
   function proceedToFocus() {
     setShowFocusCheck(false)
-    router.push('/content-focus')
+    router.push(pendingFocusItem ? '/content-focus?item=' + pendingFocusItem : '/content-focus')
+    setPendingFocusItem(null)
   }
 
   const accentColor = routineDone ? C.green : C.cyan
@@ -1355,6 +1392,8 @@ export default function Home() {
         </div>
       )}
 
+      {!loading && <FocusSessionsToday />}
+
       {/* Today / Tomorrow — full calendar-day view: tasks, reminders, and
           recurring habit blocks, same content and functionality as the
           Calendar tab for these two days. Directly under the streak bar so
@@ -1473,7 +1512,7 @@ export default function Home() {
                           </div>
                         </div>
                       )}
-                      <button onClick={() => topTaskIsPipeline ? handleFocusClick() : navToItem('tasks', topTask.id)} style={{
+                      <button onClick={() => { if (topTaskIsPipeline) { setPendingFocusItem(topTask.id); handleFocusClick() } else navToItem('tasks', topTask.id) }} style={{
                         display:'flex', alignItems:'center', justifyContent:'center', gap:'0.6rem',
                         width:'100%', padding:'0.95rem 1.5rem',
                         background:'linear-gradient(135deg,'+C.green+',#00cc6a)',

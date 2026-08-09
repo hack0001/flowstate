@@ -9,7 +9,13 @@
 // in app/content/page.tsx 1-for-1 (see STAGE_TO_SOP below).
 // ============================================================
 
-export type SOP = { id: string; icon: string; title: string; tagline: string; steps: string[]; group: 'setup' | 'production' }
+export type SOP = { id: string; icon: string; title: string; tagline: string; steps: string[]; stepMins?: number[]; group: 'setup' | 'production' }
+
+// Default minutes assumed for a step when a SOP has no stepMins array, or
+// the array is shorter than steps (defensive fallback -- keeps the focus
+// session's chunk-time math sane even if a SOP gets edited later without
+// updating its estimates).
+export const DEFAULT_STEP_MINS = 10
 
 export const SOPS: SOP[] = [
   {
@@ -83,6 +89,26 @@ export const SOPS: SOP[] = [
     ],
   },
   {
+    id:'00e', icon:'&#127916;', title:'Motion & Animation Style', group:'setup',
+    tagline:'One-time: lock how things MOVE — pacing, motion feel, and the After Effects workflow — so every short reads as one consistent, professional channel. Uses the Visual Brand Kit colours and Inter font.',
+    steps:[
+      '<strong>Pacing &mdash; think in BEATS, not lines. This is the #1 fix.</strong> A beat = one idea that gets to breathe for <strong>4&ndash;6 seconds</strong>, with one visual, not three. Rule: ~8&ndash;10 spoken words per beat, one visual per beat. A 50-second short is <strong>8&ndash;10 beats, not 18</strong>. Stop cramming a new visual into every sentence &mdash; it is why retention drops.',
+      '<strong>Slow down the two beats that matter most:</strong> the hook (first 2&ndash;4s) and the payoff (final beat) should be your SLOWEST, held longest. Dwelling on them is what lets them land. Machine-gunning every beat at the same speed is what loses people.',
+      '<strong>The read-aloud test:</strong> read the script out loud at a calm, unhurried pace. If you are rushing to fit the words into the beats, there is too much content &mdash; cut until the delivery feels relaxed. Fewer ideas delivered clearly beats more ideas delivered frantically.',
+      '<strong>Colour &mdash; pull straight from the Visual Brand Kit (SOP 00d):</strong> <code>#16181c</code> charcoal background on everything, <code>#f0ece2</code> off-white for line-work and text, and ONE accent per video matched to content type &mdash; <code>#b8935a</code> gold (wealth/gold/history), <code>#2fb8ac</code> teal (inflation/how-money-works), <code>#c15049</code> red (urgency, sparingly). Never a 4th colour. Restraint reads as premium.',
+      '<strong>Type:</strong> Inter &mdash; 900 Black for the big number/stat, 700 Bold for callouts, captions in Inter with a thick charcoal outline. Same font everywhere, no exceptions.',
+      '<strong>Motion feel &mdash; ease EVERYTHING.</strong> Nothing moves linearly (that reads robotic/amateur). Elements fade in and scale from 90&rarr;100% over ~0.4s with Easy Ease (F9), then open the Graph Editor and shape the curve so motion starts with energy and settles gently. This single habit is the biggest difference between amateur and professional motion.',
+      '<strong>Visual language:</strong> flat 2D only &mdash; simple line-and-fill icons (coin, bank, printer, chart) in the brand colours, ONE clean icon per beat. Not photos as the primary visual, not clip art, not 15 stock clips.',
+      '<strong>One transition only.</strong> Pick a single transition (a clean fade, or a quick gold wipe) and use ONLY that across every short. Variety of transitions is the amateur tell; one repeated transition is a brand signature.',
+      '<strong>Consistency anchors, reused every video:</strong> the same ~1s intro sting (coin &ldquo;cha-ching&rdquo; + logo), the same end card, the same caption style. Build each once as an After Effects comp and reuse forever.',
+      '<strong>AE master project:</strong> build <code>SoundMoney_MOTION.aep</code> once &mdash; the 5 brand hex codes saved as swatches, Inter text styles set up, and the intro-sting + end-card comps already inside. Every new video duplicates this project. Premiere is for cutting; After Effects is for the animated elements.',
+      '<strong>Save recurring animations as presets:</strong> any animation you will reuse (the count-up, a fade-scale-in, an icon pop) &mdash; select the keyframed properties &gt; Animation &gt; Save Animation Preset (.ffx). Reapply with one click. Export whole animated elements as .mogrt to your Local Templates folder so they appear in Premiere&apos;s Essential Graphics panel.',
+      '<strong>Reference example &mdash; the &ldquo;Count-Up&rdquo; number (build this first):</strong> New comp <code>SM_CountUp</code>, add a Text layer typing <code>0</code>. Alt-click the Source Text stopwatch and paste the expression <code>Math.round(effect(&quot;Amount&quot;)(&quot;Slider&quot;)).toLocaleString()</code>. Add a Slider Control effect renamed &ldquo;Amount&rdquo;, keyframe it 0&rarr;target over ~1s, F9 both keyframes, then in the Graph Editor drag the handles so it counts fast then decelerates. Add a scale bounce (100&rarr;108&rarr;100 over the last 5 frames) so the final number lands. Export as a .mogrt &mdash; now you drag it into any video and just type the start and end numbers. This is the exact count-up in every polished finance short.',
+      '<strong>Learn AE in this order:</strong> (1) keyframes + Easy Ease + Graph Editor, (2) expressions (like the count-up), (3) shape layers for your icons, (4) the mogrt export flow, (5) simple object rigging. Skills 1 and 2 alone transform the shorts.',
+      '<strong>Keep a one-page style sheet</strong> pinned at your desk: the 5 hex codes, &ldquo;Inter&rdquo;, &ldquo;ease everything&rdquo;, &ldquo;one transition&rdquo;, &ldquo;8&ndash;10 beats, one visual each&rdquo;. Every time you are tempted to add a colour or a flashy transition &mdash; don&apos;t. The discipline IS the brand.',
+    ],
+  },
+  {
     id:'01', icon:'&#128161;', title:'Idea & Validation', group:'production',
     tagline:'Commit only to topics that have demand, a clear angle, and meme/story potential. Pipeline stages: 💡 Idea → ✅ Validated.',
     steps:[
@@ -103,6 +129,7 @@ export const SOPS: SOP[] = [
       'Name the project and create the folder: <code>/videos/YYYY-MM_topic-name/</code>',
       'Move the idea to <strong>✅ Validated</strong> in the Content Pipeline once the angle, pitch, unique angle and format are confirmed.',
     ],
+    stepMins:[5,15,15,20,10,15,5,5,3,3,5,10,5,5,3,2],
   },
   {
     id:'02', icon:'&#128218;', title:'Research', group:'production',
@@ -116,6 +143,7 @@ export const SOPS: SOP[] = [
       'Source every fact &mdash; note URLs in a doc so you can sanity-check before publishing',
       'Scan for meme potential: check Know Your Meme, Twitter/X, Reddit for existing references your audience will already recognise',
     ],
+    stepMins:[75,20,15,10,5,15,15],
   },
   {
     id:'03', icon:'&#127919;', title:'Holy Trifecta (Concept)', group:'production',
@@ -129,6 +157,7 @@ export const SOPS: SOP[] = [
       '<strong>Pattern check:</strong> what hook opening did you use on your last 2&ndash;3 videos? Do not repeat it. Rotate between hook types: observation &rarr; promise &rarr; proof; shared struggle &rarr; contrarian insight; myth-bust with stakes; pain-point diagnosis; proof-first evidence. Picking a different one each time keeps hooks from blurring together.',
       'Lock the direction and move on &mdash; this stage is a fast decision, not a design session. The actual thumbnail asset gets produced later once you have real footage/b-roll (see Thumbnail & SEO SOP).',
     ],
+    stepMins:[20,5,15,5,5,5,2],
   },
   {
     id:'04', icon:'&#128221;', title:'Scripting', group:'production',
@@ -153,6 +182,7 @@ export const SOPS: SOP[] = [
       'Write the CTA conversationally &mdash; not like an ad. <em>&ldquo;If that surprised you, wait for the next one.&rdquo;</em>',
       'Read the full script aloud and time it. If you&apos;re bored reading it, the viewer is bored watching it. Cut.',
     ],
+    stepMins:[20,3,5,5,5,20,2,3,2,15,15,45,15,15,5,10,5,15],
   },
   {
     id:'05', icon:'&#127912;', title:'Asset Gathering', group:'production',
@@ -168,6 +198,7 @@ export const SOPS: SOP[] = [
       'For Shorts: 3&ndash;5 punchy clips max, each under 3 seconds',
       'Tidy projects save hours in the edit &mdash; never skip the folder structure',
     ],
+    stepMins:[15,20,10,15,10,10,10,10,2],
   },
   {
     id:'06', icon:'&#127908;', title:'Voiceover Recording', group:'production',
@@ -183,6 +214,7 @@ export const SOPS: SOP[] = [
       'For Shorts: record in 1&ndash;2 takes, energy must be immediate from the first word',
       'Keep any spontaneous ad-libs or jokes you discover during recording &mdash; often your best moments',
     ],
+    stepMins:[10,5,5,40,3,15,15,5,2],
   },
   {
     id:'07', icon:'&#9986;', title:'Editing (Fast-Cut Faceless)', group:'production',
@@ -209,6 +241,7 @@ export const SOPS: SOP[] = [
       'Watch full edit at 1x as a viewer. Note every moment where your eyes drift. Cut it.',
       'Export long form: 1080p or 4K, 30fps, H.264. Short: 1080&times;1920 vertical, 30fps, H.264.',
     ],
+    stepMins:[5,2,2,2,3,10,10,10,25,40,15,15,10,10,20,15,25,2,15,5],
   },
   {
     id:'08', icon:'&#128444;', title:'Thumbnail & SEO (Production)', group:'production',
@@ -224,6 +257,7 @@ export const SOPS: SOP[] = [
       'Add timestamps as chapters (every 2&ndash;3 minutes) + links: sources, socials, related videos.',
       '<strong>Tags:</strong> 3 broad topic tags, 5 specific niche tags, 5 long-tail question-style tags &mdash; research with TubeBuddy or vidIQ.',
     ],
+    stepMins:[30,2,5,10,5,5,10,10,10],
   },
   {
     id:'09', icon:'&#9729;', title:'Upload & Publish', group:'production',
@@ -243,6 +277,7 @@ export const SOPS: SOP[] = [
       'Schedule at your channel&apos;s peak time (check Analytics &rarr; Audience tab)',
       'Shorts: publish immediately &mdash; they benefit from the initial engagement window',
     ],
+    stepMins:[10,5,10,3,10,5,10,5,3,10,10,5,2],
   },
   {
     id:'10', icon:'&#128226;', title:'Post-Publish & Growth', group:'production',
@@ -266,6 +301,7 @@ export const SOPS: SOP[] = [
       '<strong>One-improvement rule:</strong> Pick the single weakest element from this video. Write it down. That is the only thing to fix next time. Trying to improve everything at once fixes nothing.',
       'Log the video in the Content Tracker.',
     ],
+    stepMins:[5,10,15,5,10,15,3,10,5,15,10,15,10,15,5,3,3],
   },
 ]
 
@@ -320,6 +356,36 @@ export function sopForStage(stage: string | null): SOP | null {
   const id = STAGE_TO_SOP[stage]
   if (!id) return null
   return SOPS.find(s => s.id === id) ?? null
+}
+
+// ── Focus-session chunking ──────────────────────────────────────────────
+// Turns "advance this stage" (which can mean anywhere from 7 to 20 steps)
+// into a manageable single sitting: the next 3-4 uncompleted steps, capped
+// by a total-time budget rather than a fixed count. A stage made of quick
+// planning steps fills up to SESSION_MAX_TASKS; a stage made of long
+// production steps (Editing's b-roll pass, VO cleanup, colour grade...)
+// naturally gets batched into fewer tasks per session so the countdown
+// stays realistic — "smaller sub-tasks when doing things that take time"
+// without having to rewrite any SOP content. Always returns at least one
+// step (even if it alone exceeds the budget) so a session never comes back
+// empty just because one task is big.
+export const SESSION_TIME_BUDGET_MINS = 60
+export const SESSION_MAX_TASKS = 4
+
+export type SessionChunk = { stepIndices: number[]; totalMins: number }
+
+export function nextSessionChunk(sop: SOP, completedIndices: Set<number>): SessionChunk | null {
+  const indices: number[] = []
+  let total = 0
+  for (let i = 0; i < sop.steps.length; i++) {
+    if (completedIndices.has(i)) continue
+    const mins = sop.stepMins?.[i] ?? DEFAULT_STEP_MINS
+    if (indices.length > 0 && (total + mins > SESSION_TIME_BUDGET_MINS || indices.length >= SESSION_MAX_TASKS)) break
+    indices.push(i)
+    total += mins
+    if (indices.length >= SESSION_MAX_TASKS) break
+  }
+  return indices.length > 0 ? { stepIndices: indices, totalMins: total } : null
 }
 
 // ── Idea "Validate" checklist (Content Pipeline Ideas Bank) ────────────────

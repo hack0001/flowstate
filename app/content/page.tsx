@@ -1337,6 +1337,7 @@ function FocusStar({ active, atCap, onToggle }: { active:boolean; atCap:boolean;
 
 // ── Pipeline card ───────────────────────────────────────────────────────────
 function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focusAtCap }: { item:ContentItem; stats?: YtStats; onMove:()=>void; onSaveRevenue:(note:string)=>void; onToggleFocus:()=>void; focusAtCap:boolean }) {
+  const router = useRouter()
   const s = stageStyle(item.pipeline_stage)
   const [revenue, setRevenue] = useState(item.revenue_note ?? '')
   const [scriptUrl, setScriptUrl] = useState(item.script_url ?? '')
@@ -1498,6 +1499,14 @@ function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focus
           </button>
         )}
       </div>
+      {sop && !isPostPublished && (
+        <button
+          onClick={() => router.push('/content-focus?item=' + item.id)}
+          title="Jump into a timed focus session for the next 3-4 tasks on this item"
+          style={{ width:'100%', marginTop:'0.3rem', padding:'0.35rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.5rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.66rem', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:'0.3rem' }}>
+          <Zap size={11}/>Start Focus Session
+        </button>
+      )}
       {(autoDone.length > 0 || autoMsg) && (
         <div style={{ marginTop:'0.4rem', padding:'0.4rem 0.5rem', background:'rgba(0,255,136,0.04)', border:'1px solid rgba(0,255,136,0.15)', borderRadius:'0.5rem' }}>
           {autoDone.map((d, i) => <p key={i} style={{ fontSize:'0.62rem', color:C.sec, margin:0, lineHeight:1.5 }}>{d}</p>)}

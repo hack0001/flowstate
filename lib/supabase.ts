@@ -57,6 +57,20 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
   return { videos: combined, error: null }
 }
 
+// Single-item lookup for the chunked focus session entry point (Content
+// Pipeline card / Home priority card -> /content-focus?item=<id>). Ignores
+// is_active_focus entirely -- clicking a specific item is its own signal to
+// work on it right now, pinned or not.
+export async function getContentItemById(id: string): Promise<{ video: ActiveFocusVideo | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('content_items')
+    .select('id,title,pipeline_stage,format,is_active_focus,updated_at')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) return { video: null, error: explainFocusError(error.message) }
+  return { video: data as ActiveFocusVideo | null, error: data ? null : 'Could not find that content item.' }
+}
+
 // ---- Per-stage AI-assist notes (Content Pipeline "Consult Claude") ----
 // One row per (content_item, sop_id) so each stage keeps its own output as
 // the video advances through the pipeline. Requires 020_daily_plan_and_stage_notes.sql.
