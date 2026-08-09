@@ -53,6 +53,26 @@ const SHORTS_CHECKLIST = [
 ]
 const LS_SHORTS = 'flowstate_yt_shorts'
 
+const AUDIT_ITEMS = [
+  { id:'aud-pl-exist',   group:'Playlists',            label:'Playlists exist, organised by topic &mdash; not by upload date', note:'A new visitor should be able to binge one theme without hunting through the whole Videos tab' },
+  { id:'aud-pl-name',    group:'Playlists',            label:'Playlist names signal outcome or audience, not just a topic word', note:'&ldquo;Start Here: Why Money Is Broken&rdquo; beats &ldquo;Inflation Videos&rdquo;' },
+  { id:'aud-pl-pillars', group:'Playlists',            label:'Playlists map to the 3 content pillars', note:'Gold &amp; monetary history, inflation data, urgency/crisis &mdash; every playlist should trace back to one of these' },
+  { id:'aud-th-base',    group:'Thumbnails',           label:'A consistent base colour is used across every thumbnail', note:'One recognisable background treatment so thumbnails read as one channel in a crowded feed' },
+  { id:'aud-th-accent',  group:'Thumbnails',           label:'Max 2 accent colours per thumbnail, matched to topic type', note:'More than 2 starts to look noisy and inconsistent between uploads' },
+  { id:'aud-th-font',    group:'Thumbnails',           label:'One font family used for thumbnail text, at heavy weight', note:'Mixed fonts across thumbnails is the fastest way to look unbranded' },
+  { id:'aud-th-faces',   group:'Thumbnails',           label:'No stock photos of faces on thumbnails', note:'Reads as generic finance-channel stock content rather than a distinct brand' },
+  { id:'aud-ti-trifecta',group:'Titles & Packaging',   label:'Title uses at least 2 of the 4 Holy Trifecta hook types', note:'Curiosity, stakes, specificity, contrarian &mdash; stacking hooks is what makes a title clickable' },
+  { id:'aud-ti-hashtags',group:'Titles & Packaging',   label:'Hashtags live in the description, never stacked in the title', note:'Hashtags in the title read as spam and push out real words search cares about' },
+  { id:'aud-ti-angle',   group:'Titles & Packaging',   label:'The Austrian-economics angle is clear from the title alone', note:'A viewer should know what lens this channel takes before they even click' },
+  { id:'aud-ti-typos',   group:'Titles & Packaging',   label:'No typos in titles, tags, or the channel tagline', note:'Small errors undercut credibility on a finance-trust channel more than most niches' },
+  { id:'aud-tr-palette', group:'Trailer & About',      label:'Banner and avatar match the documented Visual Brand Kit palette', note:'First-impression assets should not drift from the brand colours used everywhere else' },
+  { id:'aud-tr-about',   group:'Trailer & About',      label:'The About section states plainly who the channel is for', note:'One or two sentences a new visitor can read in 5 seconds and know if they belong here' },
+  { id:'aud-tr-trailer', group:'Trailer & About',      label:'A channel trailer or pinned &ldquo;start here&rdquo; video exists', note:'Answers, for a brand-new visitor: why subscribe right now' },
+  { id:'aud-tr-shelf',   group:'Trailer & About',      label:'Shorts are uploaded as Shorts so they land in the Shorts shelf', note:'Misfiled uploads split watch time and confuse the algorithm about what a video is' },
+]
+const LS_AUDIT = 'flowstate_yt_audit'
+const AUDIT_GROUPS = ['Playlists', 'Thumbnails', 'Titles & Packaging', 'Trailer & About'] as const
+
 // ---- Production SOPs ----
 // SOPS data now lives in lib/sops.ts (shared with the YouTube-Pipeline-driven
 // focus session at app/content-focus). Imported above.
@@ -121,8 +141,9 @@ export default function YouTubePage() {
   const [creation, setCreation] = useState<Set<string>>(new Set(INITIAL_CREATION))
   const [health, setHealth] = useState<Set<string>>(new Set())
   const [mounted, setMounted] = useState(false)
-  const [activeTab, setActiveTab] = useState<'checklists'|'shorts'|'sops'|'priority'>('checklists')
+  const [activeTab, setActiveTab] = useState<'checklists'|'shorts'|'audit'|'sops'|'priority'>('checklists')
   const [shorts, setShorts] = useState<Set<string>>(new Set())
+  const [audit, setAudit] = useState<Set<string>>(new Set())
   const [priorityOrder, setPriorityOrder] = useState<string[]>([])
   const [ytDragId, setYtDragId] = useState<string|null>(null)
   const [ytDragOver, setYtDragOver] = useState<string|null>(null)
@@ -135,9 +156,11 @@ export default function YouTubePage() {
       if (raw) setCreation(new Set(JSON.parse(raw) as string[]))
       const rs = localStorage.getItem(LS_SHORTS)
       if (rs) setShorts(new Set(JSON.parse(rs) as string[]))
+      const ra = localStorage.getItem(LS_AUDIT)
+      if (ra) setAudit(new Set(JSON.parse(ra) as string[]))
     } catch {}
     // Supabase authoritative fetch
-    supabase.from('checklist_state').select('key,state').in('key', ['yt_creation', 'yt_shorts']).then(({ data }) => {
+    supabase.from('checklist_state').select('key,state').in('key', ['yt_creation', 'yt_shorts', 'yt_audit']).then(({ data }) => {
       data?.forEach(row => {
         if (row.key === 'yt_creation' && Array.isArray(row.state)) {
           const s = new Set(row.state as string[])
@@ -148,6 +171,11 @@ export default function YouTubePage() {
           const s = new Set(row.state as string[])
           setShorts(s)
           try { localStorage.setItem(LS_SHORTS, JSON.stringify([...s])) } catch {}
+        }
+        if (row.key === 'yt_audit' && Array.isArray(row.state)) {
+          const s = new Set(row.state as string[])
+          setAudit(s)
+          try { localStorage.setItem(LS_AUDIT, JSON.stringify([...s])) } catch {}
         }
       })
     })
@@ -165,7 +193,7 @@ export default function YouTubePage() {
       } else if (ytPLsLoaded) {
         supabase.from('priority_lists').upsert({ key: 'youtube_priority', ordered_ids: ytLocalIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
       } else {
-        const allIds = [...CREATION_ITEMS, ...HEALTH_ITEMS, ...SHORTS_CHECKLIST].map(it => it.id)
+        const allIds = [...CREATION_ITEMS, ...HEALTH_ITEMS, ...SHORTS_CHECKLIST, ...AUDIT_ITEMS].map(it => it.id)
         setPriorityOrder(allIds)
         try { localStorage.setItem('fs_p_youtube', JSON.stringify(allIds)) } catch {}
         supabase.from('priority_lists').upsert({ key: 'youtube_priority', ordered_ids: allIds, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
@@ -174,7 +202,7 @@ export default function YouTubePage() {
     setMounted(true)
   }, [])
 
-  const ALL_YT_ITEMS = [...CREATION_ITEMS, ...HEALTH_ITEMS, ...SHORTS_CHECKLIST]
+  const ALL_YT_ITEMS = [...CREATION_ITEMS, ...HEALTH_ITEMS, ...SHORTS_CHECKLIST, ...AUDIT_ITEMS]
 
   function saveYtPriority(order: string[]) {
     const y = window.scrollY
@@ -214,6 +242,17 @@ export default function YouTubePage() {
     })
   }
 
+  function toggleAudit(id: string) {
+    setAudit(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      const arr = [...next]
+      try { localStorage.setItem(LS_AUDIT, JSON.stringify(arr)) } catch {}
+      supabase.from('checklist_state').upsert({ key: 'yt_audit', state: arr, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
+      return next
+    })
+  }
+
   const creationPct = Math.round(creation.size / CREATION_ITEMS.length * 100)
   const healthPct   = Math.round(health.size / HEALTH_ITEMS.length * 100)
 
@@ -243,8 +282,8 @@ export default function YouTubePage() {
           <p style={{ fontSize:'0.875rem', color:C.sec, margin:'0.25rem 0 1rem' }}>{t('checklists')} &amp; {t('productionSOPs')}</p>
         </div>
         <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', gap:'0.25rem', overflowX:'auto' }}>
-          {(['checklists','shorts','sops','priority'] as const).map(tab => {
-            const tabCol = tab === 'sops' ? C.amber : tab === 'shorts' ? C.green : tab === 'priority' ? '#ff6b35' : C.red
+          {(['checklists','shorts','audit','sops','priority'] as const).map(tab => {
+            const tabCol = tab === 'sops' ? C.amber : tab === 'shorts' ? C.green : tab === 'audit' ? C.purple : tab === 'priority' ? '#ff6b35' : C.red
             const ytActiveItems = ALL_YT_ITEMS.filter(it => !creation.has(it.id) && !health.has(it.id) && !shorts.has(it.id))
             const ytValidOrder = priorityOrder.filter(id => ytActiveItems.some(it => it.id === id))
             const ytUnassignedCount = ytActiveItems.filter(it => !ytValidOrder.includes(it.id)).length
@@ -257,7 +296,7 @@ export default function YouTubePage() {
                 marginBottom:'-1px', transition:'all 0.15s', textTransform:'capitalize',
                 display:'flex', alignItems:'center', gap:'0.25rem', whiteSpace:'nowrap', flexShrink:0,
               }}>
-                {tab === 'sops' ? t('productionSOPs') : tab === 'shorts' ? 'Shorts SOP' : tab === 'priority' ? 'Priority' : t('checklists')}
+                {tab === 'sops' ? t('productionSOPs') : tab === 'shorts' ? 'Shorts SOP' : tab === 'audit' ? 'Channel Audit' : tab === 'priority' ? 'Priority' : t('checklists')}
                 {tab === 'priority' && ytUnassignedCount > 0 && (
                   <span style={{ background:C.red, color:'#fff', fontSize:'0.55rem', fontWeight:800, borderRadius:'9999px', padding:'0.1rem 0.35rem', lineHeight:1 }}>{ytUnassignedCount}</span>
                 )}
@@ -513,6 +552,79 @@ export default function YouTubePage() {
               </div>
             </section>
 
+          </div>
+        )}
+
+        {activeTab === 'audit' && (
+          <div style={{ animation:'fadeInUp 0.3s ease both', display:'flex', flexDirection:'column', gap:'2rem' }}>
+
+            {/* Live findings from the last real audit */}
+            <section>
+              <div style={{ marginBottom:'1rem' }}>
+                <h2 style={{ fontSize:'1.05rem', fontWeight:800, margin:'0 0 0.15rem' }}>Live Audit &mdash; 9 Aug 2026</h2>
+                <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>Sound Money (@soundmoneyhq), 4 videos live at time of audit</p>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+                {([
+                  { label:'Tagline typo', note:'&ldquo;Simpifying&rdquo; should read &ldquo;Simplifying&rdquo; &mdash; visible on every visit to the channel' },
+                  { label:'Banner/avatar off-brand', note:'Colours do not match the documented Visual Brand Kit palette' },
+                  { label:'Thumbnail backgrounds inconsistent', note:'No shared base treatment across the 4 live videos &mdash; each looks like a different channel' },
+                  { label:'Stock face photo on one thumbnail', note:'Against the no-stock-faces brand rule' },
+                  { label:'No playlists', note:'Zero playlists set up &mdash; nothing to organise or retain new visitors' },
+                  { label:'Hashtags stacked in titles', note:'Should live in the description, not the title itself' },
+                  { label:'One video misfiled', note:'Sitting in the Videos tab instead of the Shorts shelf' },
+                ] as {label:string;note:string}[]).map((f, i) => (
+                  <div key={i} style={{ display:'flex', gap:'0.875rem', padding:'0.875rem 1rem', background:'rgba(255,68,102,0.04)', border:'1px solid rgba(255,68,102,0.15)', borderRadius:'0.875rem' }}>
+                    <span style={{ fontSize:'0.65rem', fontWeight:900, color:C.red, marginTop:'3px', flexShrink:0 }}>{'#'+(i+1)}</span>
+                    <div>
+                      <p style={{ fontSize:'0.83rem', fontWeight:700, color:C.text, margin:'0 0 0.2rem' }}>{f.label}</p>
+                      <p style={{ fontSize:'0.72rem', color:C.muted, margin:0, lineHeight:1.5 }} dangerouslySetInnerHTML={{ __html: f.note }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Recurring checklist, grouped by area */}
+            {AUDIT_GROUPS.map(group => {
+              const items = AUDIT_ITEMS.filter(it => it.group === group)
+              const done = items.filter(it => audit.has(it.id)).length
+              const pct = Math.round(done / items.length * 100)
+              return (
+                <section key={group}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem' }}>
+                    <div>
+                      <h2 style={{ fontSize:'1.05rem', fontWeight:800, margin:'0 0 0.15rem' }}>{group}</h2>
+                      <p style={{ fontSize:'0.72rem', color:C.sec, margin:0 }}>Recurring check &mdash; re-run monthly</p>
+                    </div>
+                    <div style={{ textAlign:'right' }}>
+                      <span style={{ fontSize:'1.3rem', fontWeight:900, color: pct === 100 ? C.green : C.purple }}>{pct}%</span>
+                      <p style={{ fontSize:'0.65rem', color:C.muted, margin:0 }}>{done}/{items.length}</p>
+                    </div>
+                  </div>
+                  <div style={{ height:'3px', background:'#2a2a3a', borderRadius:'2px', marginBottom:'1.25rem', overflow:'hidden' }}>
+                    <div style={{ height:'100%', borderRadius:'2px', transition:'width 0.4s ease', background: pct === 100 ? 'linear-gradient(90deg,'+C.green+',#00cc6a)' : 'linear-gradient(90deg,'+C.purple+',#6d28d9)', width:pct+'%' }} />
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+                    {items.map(item => (
+                      <CheckItem key={item.id} id={item.id} label={item.label} note={item.note} checked={audit.has(item.id)} onToggle={toggleAudit} />
+                    ))}
+                  </div>
+                </section>
+              )
+            })}
+
+            {audit.size > 0 && (
+              <div style={{ display:'flex', justifyContent:'flex-end' }}>
+                <button onClick={() => {
+                  setAudit(new Set())
+                  try { localStorage.removeItem(LS_AUDIT) } catch {}
+                  supabase.from('checklist_state').upsert({ key:'yt_audit', state:[], updated_at:new Date().toISOString() }, { onConflict:'key' }).then()
+                }} style={{ display:'flex', alignItems:'center', gap:'0.3rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', padding:'0.4rem 0.75rem' }}>
+                  <RotateCcw size={11} /> Reset for next audit
+                </button>
+              </div>
+            )}
           </div>
         )}
 
