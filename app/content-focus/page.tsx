@@ -8,6 +8,7 @@ import { sounds } from '@/lib/sounds'
 import { usePomodoro } from '@/hooks/usePomodoro'
 import { useCelebration } from '@/hooks/useCelebration'
 import FoodProgress from '@/components/FoodProgress'
+import MemeSuggestions from '@/components/MemeSuggestions'
 
 // ============================================================
 // YouTube-Pipeline-driven Focus Session
@@ -415,6 +416,8 @@ export default function ContentFocusPage() {
                 <span style={{ fontSize:'0.68rem', color:C.muted }}>{doneSet.size}/{steps.length} steps</span>
               )}
             </div>
+
+            <MemeSuggestions topic={item.title} />
 
             {/* -- SOP checklist card -- */}
             <div key={item.id + '-' + (sop?.id ?? 'none')} style={{

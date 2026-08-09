@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, Plus, Flame, GripVertical, ShoppingCart, Bell } from 'lucide-react'
+import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, Plus, Flame, GripVertical, ShoppingCart, Bell, Sparkles } from 'lucide-react'
 import { getActiveFocusVideos } from '@/lib/supabase'
 import { supabase, getPageVisits, recordPageVisit, getEveningReview, getDailyChecklistState, setDailyChecklistItem } from '@/lib/supabase'
 import { SECTION_LABEL, type DailyPlanSection } from '@/lib/dailyPlan'
@@ -409,9 +409,26 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
   if (!ready) return null
 
   return (
-    <div style={{ display:'flex', gap:'1.5rem', flexWrap:'wrap' }}>
-      <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} reminderList={todayReminders} habitList={todayHabits} fillIds={fillIds} />
-      <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} reminderList={tomorrowReminders} habitList={tomorrowHabits} fillIds={fillIds} />
+    <div>
+      {/* Pulls top-priority items from every workflow (Vault/Tasks/Etsy/X/
+          YouTube) onto today's Calendar and assigns each a real start_time by
+          filling open Timeline slots -- same engine as Calendar's own
+          "Recommend & Organise", opened here with today pre-selected so this
+          list updates the moment you confirm. */}
+      <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:'0.65rem' }}>
+        <button onClick={() => router.push('/calendar?openRecommend=today')} style={{
+          display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.4rem 0.75rem',
+          background:'linear-gradient(135deg,rgba(0,212,255,0.15),rgba(0,255,136,0.12))',
+          border:'1px solid rgba(0,212,255,0.35)', borderRadius:'0.75rem', color:C.cyan,
+          cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700,
+        }}>
+          <Sparkles size={12} />Organise Today
+        </button>
+      </div>
+      <div style={{ display:'flex', gap:'1.5rem', flexWrap:'wrap' }}>
+        <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} reminderList={todayReminders} habitList={todayHabits} fillIds={fillIds} />
+        <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} reminderList={tomorrowReminders} habitList={tomorrowHabits} fillIds={fillIds} />
+      </div>
     </div>
   )
 }

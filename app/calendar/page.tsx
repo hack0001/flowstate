@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X, RefreshCw, Bell, Settings2, Sparkles, ZoomIn, ZoomOut } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { generateDailyPlan, getDailyPlanSettings, saveDailyPlanSettings, getDailyPlanCandidates, commitDailyPlan, SECTION_LABEL, type DailyPlanSettings, type PlanCandidate } from '@/lib/dailyPlan'
@@ -461,6 +461,7 @@ function QuickAdd({ date, onSave, onClose }: { date: string; onSave: (title: str
 
 export default function CalendarPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const today = new Date()
   const todayStr = toDateStr(today)
   const [weekStart, setWeekStart] = useState(() => getMondayOfWeek(today))
@@ -489,15 +490,20 @@ export default function CalendarPage() {
   const [planSettings, setPlanSettings] = useState<DailyPlanSettings | null>(null)
   const [planGenerating, setPlanGenerating] = useState(false)
   const [planResult, setPlanResult] = useState<string | null>(null)
-  // Recommend for Tomorrow — same weighted-plan engine, but gathered as a
+  // Recommend & Organise — same weighted-plan engine, but gathered as a
   // checkable review list first (nothing is written until Confirm), and on
   // confirm the day also gets auto time-blocked (organised), not just filled.
+  // Works for Today or Tomorrow — Today is the default since that's what
+  // drives the Home page's Today column; a deep link from Home
+  // ("?openRecommend=today") opens straight into this modal.
   const [showRecModal, setShowRecModal] = useState(false)
+  const [recDateChoice, setRecDateChoice] = useState<'today' | 'tomorrow'>('today')
   const [recCandidates, setRecCandidates] = useState<(PlanCandidate & { checked: boolean })[] | null>(null)
   const [recLoading, setRecLoading] = useState(false)
   const [recCommitting, setRecCommitting] = useState(false)
   const [recResult, setRecResult] = useState<string | null>(null)
-  const recDate = toDateStr(addDays(today, 1))
+  const recDate = toDateStr(recDateChoice === 'today' ? today : addDays(today, 1))
+  const recDateLabel = recDateChoice === 'today' ? 'today' : 'tomorrow'
   // Task editing
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -658,12 +664,14 @@ export default function CalendarPage() {
     return toUpdate.length
   }
 
-  async function openRecommendModal() {
+  async function openRecommendModal(choice: 'today' | 'tomorrow' = recDateChoice) {
+    setRecDateChoice(choice)
     setShowRecModal(true)
     setRecResult(null)
     setRecLoading(true)
     try {
-      const candidates = await getDailyPlanCandidates(recDate)
+      const date = toDateStr(choice === 'today' ? today : addDays(today, 1))
+      const candidates = await getDailyPlanCandidates(date)
       setRecCandidates(candidates.map(c => ({ ...c, checked: true })))
     } catch (e) {
       setRecResult('Failed to load recommendations: ' + String(e))
@@ -671,6 +679,13 @@ export default function CalendarPage() {
     }
     setRecLoading(false)
   }
+
+  // Deep link from Home's "Organise Today" button — ?openRecommend=today|tomorrow
+  useEffect(() => {
+    const v = searchParams.get('openRecommend')
+    if (v === 'today' || v === 'tomorrow') openRecommendModal(v)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   function toggleRecCandidate(key: string) {
     setRecCandidates(prev => prev ? prev.map(c => c.key === key ? { ...c, checked: !c.checked } : c) : prev)
@@ -689,7 +704,7 @@ export default function CalendarPage() {
       setRecResult(
         created + scheduled === 0
           ? 'Nothing selected — check at least one recommendation, or add priority items in Vault/Tasks/Etsy/X first.'
-          : `Added ${created} new task${created !== 1 ? 's' : ''} and scheduled ${scheduled} from your backlog for tomorrow, and time-blocked ${organised} of them on the Timeline.`
+          : `Added ${created} new task${created !== 1 ? 's' : ''} and scheduled ${scheduled} from your backlog for ${recDateLabel}, and time-blocked ${organised} of them on the Timeline.`
       )
       await fetchWeek()
     } catch (e) {
@@ -1036,8 +1051,8 @@ export default function CalendarPage() {
           <button onClick={openPlanModal} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:'0.75rem', color:C.green, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
             <Sparkles size={12} />Weighted Plan
           </button>
-          <button onClick={openRecommendModal} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'linear-gradient(135deg,rgba(0,212,255,0.15),rgba(0,255,136,0.12))', border:'1px solid rgba(0,212,255,0.35)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
-            <Sparkles size={12} />Recommend for Tomorrow
+          <button onClick={() => openRecommendModal('today')} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.45rem 0.875rem', background:'linear-gradient(135deg,rgba(0,212,255,0.15),rgba(0,255,136,0.12))', border:'1px solid rgba(0,212,255,0.35)', borderRadius:'0.75rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
+            <Sparkles size={12} />Recommend &amp; Organise
           </button>
         </div>
       </div>
@@ -1544,7 +1559,18 @@ export default function CalendarPage() {
             <button onClick={() => { setShowRecModal(false); setRecCandidates(null) }} style={{ position:'absolute', top:'1rem', right:'1rem', background:'none', border:'none', color:C.muted, cursor:'pointer' }}><X size={16} /></button>
             <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.35rem' }}>
               <Sparkles size={16} color={C.cyan} />
-              <h2 style={{ margin:0, fontSize:'1rem', fontWeight:800, color:C.text }}>Recommend for Tomorrow</h2>
+              <h2 style={{ margin:0, fontSize:'1rem', fontWeight:800, color:C.text }}>Recommend &amp; Organise</h2>
+            </div>
+            <div style={{ display:'flex', gap:'0.35rem', marginBottom:'0.75rem' }}>
+              {(['today', 'tomorrow'] as const).map(choice => (
+                <button key={choice} onClick={() => openRecommendModal(choice)} style={{
+                  padding:'0.3rem 0.75rem', borderRadius:'9999px', fontSize:'0.72rem', fontWeight:700, textTransform:'capitalize',
+                  cursor:'pointer', fontFamily:'inherit',
+                  background: recDateChoice === choice ? 'rgba(0,212,255,0.15)' : 'transparent',
+                  border:'1px solid '+(recDateChoice === choice ? C.cyan : C.border),
+                  color: recDateChoice === choice ? C.cyan : C.muted,
+                }}>{choice}</button>
+              ))}
             </div>
             <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 1rem', lineHeight:1.5 }}>
               Top-priority items from Vault, Tasks, Etsy, X and your pinned YouTube videos — review and uncheck anything you don&apos;t want. Confirming adds the checked items to <strong style={{ color:C.text }}>{recDate}</strong> and auto time-blocks the whole day on the Timeline (Flow &rarr; morning, Personal/Admin &rarr; evening).

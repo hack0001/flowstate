@@ -1,10 +1,11 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle, Circle, RotateCcw, Tv, ChevronDown } from 'lucide-react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { ArrowLeft, CheckCircle, Circle, RotateCcw, Tv, ChevronDown, Search } from 'lucide-react'
 import { useLanguage } from '@/context/LanguageContext'
 import { supabase } from '@/lib/supabase'
 import { SOPS, type SOP } from '@/lib/sops'
+import { MEME_LIBRARY, MEME_TAG_LABELS, ALL_MEME_TAGS, searchMemes } from '@/lib/memes'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -137,13 +138,16 @@ function SOPCard({ sop }: { sop: SOP }) {
 
 export default function YouTubePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { t } = useLanguage()
   const [creation, setCreation] = useState<Set<string>>(new Set(INITIAL_CREATION))
   const [health, setHealth] = useState<Set<string>>(new Set())
   const [mounted, setMounted] = useState(false)
-  const [activeTab, setActiveTab] = useState<'checklists'|'shorts'|'audit'|'sops'|'priority'>('checklists')
+  const [activeTab, setActiveTab] = useState<'checklists'|'shorts'|'audit'|'memes'|'sops'|'priority'>('checklists')
   const [shorts, setShorts] = useState<Set<string>>(new Set())
   const [audit, setAudit] = useState<Set<string>>(new Set())
+  const [memeQuery, setMemeQuery] = useState('')
+  const [memeTag, setMemeTag] = useState<string | null>(null)
   const [priorityOrder, setPriorityOrder] = useState<string[]>([])
   const [ytDragId, setYtDragId] = useState<string|null>(null)
   const [ytDragOver, setYtDragOver] = useState<string|null>(null)
@@ -201,6 +205,18 @@ export default function YouTubePage() {
     })
     setMounted(true)
   }, [])
+
+  // Deep link from the focus session's "Browse full library" link --
+  // ?tab=memes&q=<video title> opens straight into a pre-searched Memes tab.
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab === 'memes' || tab === 'checklists' || tab === 'shorts' || tab === 'audit' || tab === 'sops' || tab === 'priority') {
+      setActiveTab(tab)
+    }
+    const q = searchParams.get('q')
+    if (q) setMemeQuery(q)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const ALL_YT_ITEMS = [...CREATION_ITEMS, ...HEALTH_ITEMS, ...SHORTS_CHECKLIST, ...AUDIT_ITEMS]
 
@@ -282,8 +298,8 @@ export default function YouTubePage() {
           <p style={{ fontSize:'0.875rem', color:C.sec, margin:'0.25rem 0 1rem' }}>{t('checklists')} &amp; {t('productionSOPs')}</p>
         </div>
         <div style={{ maxWidth:'960px', margin:'0 auto', display:'flex', gap:'0.25rem', overflowX:'auto' }}>
-          {(['checklists','shorts','audit','sops','priority'] as const).map(tab => {
-            const tabCol = tab === 'sops' ? C.amber : tab === 'shorts' ? C.green : tab === 'audit' ? C.purple : tab === 'priority' ? '#ff6b35' : C.red
+          {(['checklists','shorts','audit','memes','sops','priority'] as const).map(tab => {
+            const tabCol = tab === 'sops' ? C.amber : tab === 'shorts' ? C.green : tab === 'audit' ? C.purple : tab === 'memes' ? C.cyan : tab === 'priority' ? '#ff6b35' : C.red
             const ytActiveItems = ALL_YT_ITEMS.filter(it => !creation.has(it.id) && !health.has(it.id) && !shorts.has(it.id))
             const ytValidOrder = priorityOrder.filter(id => ytActiveItems.some(it => it.id === id))
             const ytUnassignedCount = ytActiveItems.filter(it => !ytValidOrder.includes(it.id)).length
@@ -296,7 +312,7 @@ export default function YouTubePage() {
                 marginBottom:'-1px', transition:'all 0.15s', textTransform:'capitalize',
                 display:'flex', alignItems:'center', gap:'0.25rem', whiteSpace:'nowrap', flexShrink:0,
               }}>
-                {tab === 'sops' ? t('productionSOPs') : tab === 'shorts' ? 'Shorts SOP' : tab === 'audit' ? 'Channel Audit' : tab === 'priority' ? 'Priority' : t('checklists')}
+                {tab === 'sops' ? t('productionSOPs') : tab === 'shorts' ? 'Shorts SOP' : tab === 'audit' ? 'Channel Audit' : tab === 'memes' ? 'Memes' : tab === 'priority' ? 'Priority' : t('checklists')}
                 {tab === 'priority' && ytUnassignedCount > 0 && (
                   <span style={{ background:C.red, color:'#fff', fontSize:'0.55rem', fontWeight:800, borderRadius:'9999px', padding:'0.1rem 0.35rem', lineHeight:1 }}>{ytUnassignedCount}</span>
                 )}
@@ -627,6 +643,75 @@ export default function YouTubePage() {
             )}
           </div>
         )}
+
+        {activeTab === 'memes' && (() => {
+          const memeResults = memeQuery.trim() ? searchMemes(memeQuery, MEME_LIBRARY.length) : MEME_LIBRARY.filter(m => !m.tags.includes('untagged'))
+          const filtered = memeTag ? memeResults.filter(m => m.tags.includes(memeTag)) : memeResults
+          return (
+            <div style={{ animation:'fadeInUp 0.3s ease both' }}>
+              <div style={{ marginBottom:'1rem', padding:'0.75rem 1rem', background:'rgba(0,212,255,0.05)', border:'1px solid rgba(0,212,255,0.15)', borderRadius:'0.875rem' }}>
+                <p style={{ fontSize:'0.72rem', color:C.sec, margin:0, lineHeight:1.5 }}>
+                  Snapshot of your &ldquo;Sound Money Memes&rdquo; Drive folder &mdash; {MEME_LIBRARY.length} images. This is a synced catalogue, not a live connection: ask Claude to &ldquo;refresh the meme library&rdquo; any time you add new memes to the folder. Click any card to open it in Drive.
+                </p>
+              </div>
+
+              <div style={{ position:'relative', marginBottom:'0.75rem' }}>
+                <Search size={14} color={C.muted} style={{ position:'absolute', left:'0.875rem', top:'50%', transform:'translateY(-50%)' }} />
+                <input
+                  value={memeQuery}
+                  onChange={e => setMemeQuery(e.target.value)}
+                  placeholder="Search memes by topic (e.g. gold, inflation, Peter Schiff)..."
+                  style={{ width:'100%', padding:'0.65rem 0.875rem 0.65rem 2.25rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.text, fontFamily:'inherit', fontSize:'0.82rem', outline:'none', boxSizing:'border-box' }}
+                />
+              </div>
+
+              <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap', marginBottom:'1.25rem' }}>
+                <button onClick={() => setMemeTag(null)} style={{
+                  padding:'0.3rem 0.7rem', borderRadius:'9999px', fontSize:'0.68rem', fontWeight:700, cursor:'pointer', fontFamily:'inherit',
+                  background: memeTag === null ? 'rgba(0,212,255,0.15)' : 'transparent',
+                  border:'1px solid '+(memeTag === null ? C.cyan : C.border),
+                  color: memeTag === null ? C.cyan : C.muted,
+                }}>All</button>
+                {ALL_MEME_TAGS.map(tag => (
+                  <button key={tag} onClick={() => setMemeTag(t => t === tag ? null : tag)} style={{
+                    padding:'0.3rem 0.7rem', borderRadius:'9999px', fontSize:'0.68rem', fontWeight:700, cursor:'pointer', fontFamily:'inherit',
+                    background: memeTag === tag ? 'rgba(0,212,255,0.15)' : 'transparent',
+                    border:'1px solid '+(memeTag === tag ? C.cyan : C.border),
+                    color: memeTag === tag ? C.cyan : C.muted,
+                  }}>{MEME_TAG_LABELS[tag] ?? tag}</button>
+                ))}
+              </div>
+
+              <p style={{ fontSize:'0.68rem', color:C.muted, margin:'0 0 0.75rem' }}>{filtered.length} meme{filtered.length !== 1 ? 's' : ''}</p>
+
+              {filtered.length === 0 ? (
+                <div style={{ padding:'2rem', textAlign:'center', border:'1px dashed '+C.border, borderRadius:'0.875rem' }}>
+                  <p style={{ fontSize:'0.8rem', color:C.muted, margin:0 }}>No matches &mdash; try a different search term or clear the tag filter.</p>
+                </div>
+              ) : (
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))', gap:'0.875rem' }}>
+                  {filtered.map(m => (
+                    <a key={m.id} href={m.viewUrl} target="_blank" rel="noopener noreferrer" style={{
+                      display:'flex', flexDirection:'column', textDecoration:'none',
+                      background:C.card, border:'1px solid '+C.border, borderRadius:'0.875rem', overflow:'hidden',
+                    }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={m.thumbUrl} alt={m.caption} loading="lazy" style={{ width:'100%', height:'140px', objectFit:'cover', background:C.surface, display:'block' }} />
+                      <div style={{ padding:'0.6rem 0.7rem' }}>
+                        <p style={{ fontSize:'0.68rem', color:C.text, margin:'0 0 0.35rem', lineHeight:1.4, display:'-webkit-box', WebkitLineClamp:3, WebkitBoxOrient:'vertical' as const, overflow:'hidden' }}>{m.caption}</p>
+                        <div style={{ display:'flex', gap:'0.25rem', flexWrap:'wrap' }}>
+                          {m.tags.slice(0, 2).map(tag => (
+                            <span key={tag} style={{ fontSize:'0.58rem', fontWeight:700, color:C.cyan, background:'rgba(0,212,255,0.08)', borderRadius:'0.3rem', padding:'0.1rem 0.35rem' }}>{MEME_TAG_LABELS[tag] ?? tag}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {activeTab === 'sops' && (
           <div style={{ animation:'fadeInUp 0.3s ease both' }}>
