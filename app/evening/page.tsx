@@ -428,6 +428,10 @@ function PhaseSleep({ onComplete }: { onComplete: () => void }) {
   function handleComplete() {
     // Save completion
     markEveningComplete(toDateStr())
+    // Home listens for this the whole time it's mounted so its evening-due
+    // banner/CTA clears immediately instead of waiting on a manual reload
+    // or the next visibilitychange/focus/60s poll -- same fix as morning.
+    try { window.dispatchEvent(new Event('flowstate:evening-complete')) } catch {}
     onComplete()
   }
 

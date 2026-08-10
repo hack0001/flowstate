@@ -310,6 +310,11 @@ export default function MorningPage() {
       // reads correctly there even if the write above ever fails.
       completeMorningRoutineHabit(today)
       setCelebrating(true)
+      // Home listens for this the whole time it's mounted (even in the
+      // background, if it's still alive from before you navigated here) so
+      // its CTA/streaks reflect completion immediately, not just after the
+      // next visibilitychange/focus/60s poll or a manual reload.
+      try { window.dispatchEvent(new Event('flowstate:routine-complete')) } catch {}
     }
   }
 

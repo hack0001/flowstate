@@ -998,7 +998,10 @@ export default function Home() {
   // Streaks row — active habits from the general Habit Tracker, including
   // the Morning routine (which now auto-ticks itself when the flow
   // finishes). 60-day lookback so multi-week streaks show their real count.
-  useEffect(() => {
+  // Pulled out to a callback (not just an inline mount effect) so it can
+  // also be re-run on demand -- see the 'flowstate:routine-complete' /
+  // 'flowstate:evening-complete' listener below.
+  const loadStreaks = useCallback(() => {
     const from = toDateStr(new Date(Date.now() - 60 * 86400000))
     Promise.all([
       supabase.from('habits').select('id,title,emoji,color').eq('active', true).order('sort_order'),
@@ -1032,6 +1035,27 @@ export default function Home() {
       }
     }).catch(() => {})
   }, [])
+
+  useEffect(() => { loadStreaks() }, [loadStreaks])
+
+  // Same-tab client-side navigation (router.push) back to Home doesn't
+  // always trigger a fresh mount or a visibilitychange/focus event -- so
+  // completing the morning/evening routine on its own page and clicking
+  // back here can leave the CTA, header chip, and streaks all showing
+  // stale "not done yet" state until a manual reload. Morning/evening pages
+  // dispatch these events the moment they actually finish writing
+  // completion, and Home listens for them the whole time it's mounted
+  // (even while another route is showing on top of it), so the fresh state
+  // is already loaded by the time you navigate back.
+  useEffect(() => {
+    const onRoutineComplete = () => { loadData(); loadStreaks() }
+    window.addEventListener('flowstate:routine-complete', onRoutineComplete)
+    window.addEventListener('flowstate:evening-complete', onRoutineComplete)
+    return () => {
+      window.removeEventListener('flowstate:routine-complete', onRoutineComplete)
+      window.removeEventListener('flowstate:evening-complete', onRoutineComplete)
+    }
+  }, [loadData, loadStreaks])
 
   // Top 5 per workflow — direct read of each workflow's own priority_lists
   // order (the same list its own Priority View drag-reorders), independent
