@@ -11,6 +11,7 @@ import { sounds } from '@/lib/sounds'
 import { useCelebration } from '@/hooks/useCelebration'
 import { useLanguage } from '@/context/LanguageContext'
 import { type Reminder, reminderOccursOn, fetchRemindersRow } from '@/lib/reminders'
+import { calcHabitStreak, calcConsistencyPct, type StreakHabit } from '@/lib/habitStreak'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -105,25 +106,11 @@ const SECTION_ICON: Record<DailyPlanSection, JSX.Element> = {
 }
 
 // ---- Streaks row (encouragement) ----
-// Same consecutive-day walk as app/tracking/page.tsx's calcStreak, but
-// fetched over a 60-day window (not tracking's 7-day window) so streaks
-// longer than a week still show their real length here.
+// Streak/consistency math itself now lives in lib/habitStreak.ts, shared
+// with app/tracking/page.tsx so both pages agree on the same number for the
+// same habit (schedule-aware, full history -- see that file for why the old
+// per-page versions of this disagreed with each other).
 type HabitStreak = { id: string; title: string; emoji: string; color: string; streak: number }
-
-function calcStreakFromDates(dates: string[]): number {
-  const sorted = [...dates].sort().reverse()
-  if (sorted.length === 0) return 0
-  const today = toDateStr(new Date())
-  const yesterday = toDateStr(new Date(Date.now() - 86400000))
-  if (sorted[0] !== today && sorted[0] !== yesterday) return 0
-  let streak = 1
-  for (let i = 1; i < sorted.length; i++) {
-    const diff = Math.round((new Date(sorted[i-1]).getTime() - new Date(sorted[i]).getTime()) / 86400000)
-    if (diff === 1) streak++
-    else break
-  }
-  return streak
-}
 
 // ---- Focus sessions today (Content Pipeline chunked sessions) ----
 // Counts today's content_focus_sessions rows (see 035_content_focus_sessions.sql
@@ -997,42 +984,39 @@ export default function Home() {
 
   // Streaks row — active habits from the general Habit Tracker, including
   // the Morning routine (which now auto-ticks itself when the flow
-  // finishes). 60-day lookback so multi-week streaks show their real count.
+  // finishes). Streak + consistency math is schedule-aware and shared with
+  // the Tracking page (lib/habitStreak.ts) so the two pages always agree on
+  // the same number for the same habit -- a Mon/Wed/Fri habit's own rest
+  // days no longer break its streak here just because they did on the old
+  // strict-consecutive-calendar-day math. Full completion history is
+  // fetched (not windowed) so a streak longer than a few weeks still shows
+  // its real length; this is a small personal table so that's cheap.
   // Pulled out to a callback (not just an inline mount effect) so it can
   // also be re-run on demand -- see the 'flowstate:routine-complete' /
   // 'flowstate:evening-complete' listener below.
   const loadStreaks = useCallback(() => {
-    const from = toDateStr(new Date(Date.now() - 60 * 86400000))
     Promise.all([
-      supabase.from('habits').select('id,title,emoji,color').eq('active', true).order('sort_order'),
-      supabase.from('habit_completions').select('habit_id,completed_date').gte('completed_date', from),
+      supabase.from('habits').select('id,title,emoji,color,schedule_type,schedule_days,schedule_time,created_at').eq('active', true).order('sort_order'),
+      supabase.from('habit_completions').select('habit_id,completed_date'),
     ]).then(([{ data: habits }, { data: completions }]) => {
-      const byHabit = new Map<string, string[]>()
+      const byHabit = new Map<string, Set<string>>()
       for (const c of (completions ?? []) as { habit_id: string; completed_date: string }[]) {
-        if (!byHabit.has(c.habit_id)) byHabit.set(c.habit_id, [])
-        byHabit.get(c.habit_id)!.push(c.completed_date)
+        if (!byHabit.has(c.habit_id)) byHabit.set(c.habit_id, new Set())
+        byHabit.get(c.habit_id)!.add(c.completed_date)
       }
-      const rows = ((habits ?? []) as { id: string; title: string; emoji: string; color: string }[])
-        .map(h => ({ id: h.id, title: h.title, emoji: h.emoji, color: h.color, streak: calcStreakFromDates(byHabit.get(h.id) ?? []) }))
+      const habitRows = (habits ?? []) as (StreakHabit & { title: string; emoji: string; color: string })[]
+      const rows = habitRows
+        .map(h => ({ id: h.id, title: h.title, emoji: h.emoji, color: h.color, streak: calcHabitStreak(h, byHabit.get(h.id) ?? new Set()) }))
         .filter(h => h.streak > 0)
         .sort((a, b) => b.streak - a.streak)
         .slice(0, 6)
       setStreaks(rows)
 
-      // Unified consistency score — % of active-habit-days actually completed
-      // over the trailing 7 days, across ALL active habits (not just the ones
-      // with a live streak). One number that trends up instead of five
-      // separate streak badges to mentally add together.
-      const allHabits = (habits ?? []) as { id: string }[]
-      if (allHabits.length > 0) {
-        const last7 = Array.from({ length: 7 }, (_, i) => toDateStr(new Date(Date.now() - i * 86400000)))
-        let done = 0
-        for (const h of allHabits) {
-          const dates = new Set(byHabit.get(h.id) ?? [])
-          for (const d of last7) if (dates.has(d)) done++
-        }
-        setConsistencyPct(Math.round((done / (allHabits.length * 7)) * 100))
-      }
+      // Unified consistency score — % of SCHEDULED habit-days actually
+      // completed over the trailing 7 days. Schedule-aware for the same
+      // reason streaks are: a habit's own off-days shouldn't count against
+      // it in the denominator.
+      setConsistencyPct(calcConsistencyPct(habitRows, byHabit, 7))
     }).catch(() => {})
   }, [])
 

@@ -1,8 +1,10 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Plus, Flame, CheckCircle2, Circle, Trash2, Edit3, X, ChevronLeft, AlertTriangle, Trophy, Target } from 'lucide-react'
+import { Plus, Flame, CheckCircle2, Circle, Trash2, Edit3, X, ChevronLeft, AlertTriangle, Trophy, Target, Sparkles } from 'lucide-react'
+import { calcHabitStreak, isHabitScheduledOn } from '@/lib/habitStreak'
+import { useCelebration } from '@/hooks/useCelebration'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -57,25 +59,29 @@ function isScheduledToday(h: Habit): boolean {
   return false
 }
 
-function calcStreak(completions: Completion[], habitId: string): number {
-  const dates = completions
-    .filter(c => c.habit_id === habitId)
-    .map(c => c.completed_date)
-    .sort()
-    .reverse()
-  if (dates.length === 0) return 0
-  const today = toDateStr(new Date())
-  const yesterday = toDateStr(new Date(Date.now() - 86400000))
-  if (dates[0] !== today && dates[0] !== yesterday) return 0
-  let streak = 1
-  for (let i = 1; i < dates.length; i++) {
-    const prev = new Date(dates[i-1])
-    const curr = new Date(dates[i])
-    const diff = Math.round((prev.getTime() - curr.getTime()) / 86400000)
-    if (diff === 1) streak++
-    else break
-  }
-  return streak
+// Schedule-aware streak math lives in lib/habitStreak.ts (shared with the
+// Home page so both agree on the same number for the same habit). This is
+// just a thin wrapper that builds the per-habit done-date set this page
+// already has in memory.
+function streakFor(habit: Habit, completions: Completion[]): number {
+  const doneDates = new Set(completions.filter(c => c.habit_id === habit.id).map(c => c.completed_date))
+  return calcHabitStreak(habit, doneDates)
+}
+
+// ---- Encouragement ----
+// Milestones get a bigger confetti burst and a specific callout; every other
+// completion still gets a small burst and a short pick from this pool, so
+// ticking a habit always feels like something instead of just a checkbox.
+const STREAK_MILESTONES = [3, 7, 14, 21, 30, 50, 75, 100, 150, 200, 250, 300, 365]
+const ENCOURAGE_MSGS = [
+  "Nice one.", "That's the discipline.", "Stacking another day.", "Keep the streak alive.",
+  "Small deposit, big compound.", "That's how it's done.", "One more day banked.",
+  "You showed up.", "Consistency wins.", "Locked in.",
+]
+function milestoneMsg(title: string, streak: number): string {
+  if (streak >= 100) return title + ' — ' + streak + ' days. That\'s not a habit anymore, that\'s who you are.'
+  if (streak >= 30) return title + ' — ' + streak + ' days straight. Serious momentum.'
+  return title + ' — ' + streak + ' day streak. Keep stacking.'
 }
 
 function isPastScheduledTime(h: Habit): boolean {
@@ -196,24 +202,29 @@ function StreakBadge({ streak, color }: { streak: number; color: string }) {
 }
 
 // ---- Mini week dots ----
-function WeekDots({ completions, habitId }: { completions: Completion[]; habitId: string }) {
+// Schedule-aware: a day this habit was never due on renders as a faint,
+// near-invisible dot instead of the same dark "missed" look a genuine skip
+// gets -- otherwise a Mon/Wed/Fri habit's Tue/Thu/weekend dots looked
+// identical to actual misses, which was misleading at a glance.
+function WeekDots({ habit, completions }: { habit: Habit; completions: Completion[] }) {
   const dots = Array.from({ length: 7 }, (_, i) => {
     const d = new Date()
     d.setDate(d.getDate() - (6 - i))
     const ds = toDateStr(d)
-    const done = completions.some(c => c.habit_id === habitId && c.completed_date === ds)
+    const done = completions.some(c => c.habit_id === habit.id && c.completed_date === ds)
+    const scheduled = isHabitScheduledOn(habit, d)
     const isToday = i === 6
-    return { ds, done, isToday }
+    return { ds, done, scheduled, isToday }
   })
   return (
     <div style={{ display:'flex', gap:'3px', alignItems:'center' }}>
       {dots.map((dot, i) => (
-        <div key={i} title={dot.ds} style={{
+        <div key={i} title={dot.ds + (dot.scheduled ? (dot.done ? ' — done' : ' — missed') : ' — not scheduled')} style={{
           width: dot.isToday ? '9px' : '7px',
           height: dot.isToday ? '9px' : '7px',
           borderRadius:'50%',
-          background: dot.done ? C.green : (dot.isToday ? C.border : '#1a1a26'),
-          border: dot.isToday ? '1px solid '+C.border : 'none',
+          background: dot.done ? C.green : !dot.scheduled ? 'transparent' : (dot.isToday ? C.border : '#1a1a26'),
+          border: !dot.scheduled ? '1px solid rgba(255,255,255,0.06)' : dot.isToday ? '1px solid '+C.border : 'none',
           transition:'background 0.2s',
         }}/>
       ))}
@@ -233,12 +244,19 @@ export default function TrackingPage() {
   const [showModal, setShowModal] = useState(false)
   const [editHabit, setEditHabit] = useState<Habit | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ id: number; text: string; big: boolean } | null>(null)
+  const toastIdRef = useRef(0)
+  const { celebrate } = useCelebration()
 
+  // Streaks need full history, not just a recent window -- a 7-day cap here
+  // meant this page's own streak badges could never show more than ~7 even
+  // when the real streak was much longer. This is a small personal table,
+  // so fetching it all is cheap and keeps this page's numbers agreeing with
+  // Home's (see lib/habitStreak.ts).
   const loadData = useCallback(async () => {
-    const sevenDaysAgo = toDateStr(new Date(Date.now() - 6 * 86400000))
     const [{ data: habitsData }, { data: completionsData }] = await Promise.all([
       supabase.from('habits').select('*').eq('active', true).order('sort_order').order('created_at'),
-      supabase.from('habit_completions').select('*').gte('completed_date', sevenDaysAgo).order('completed_date'),
+      supabase.from('habit_completions').select('*').order('completed_date'),
     ])
     setHabits(habitsData ?? [])
     setCompletions(completionsData ?? [])
@@ -246,6 +264,12 @@ export default function TrackingPage() {
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
+
+  function showToast(text: string, big: boolean) {
+    const id = ++toastIdRef.current
+    setToast({ id, text, big })
+    setTimeout(() => setToast(t => (t?.id === id ? null : t)), big ? 4200 : 2600)
+  }
 
   async function toggleCompletion(habit: Habit) {
     if (saving) return
@@ -258,7 +282,14 @@ export default function TrackingPage() {
     } else {
       // Tick
       const { data } = await supabase.from('habit_completions').insert({ habit_id: habit.id, completed_date: today }).select().single()
-      if (data) setCompletions(prev => [...prev, data])
+      if (data) {
+        const next = [...completions, data]
+        setCompletions(next)
+        const newStreak = streakFor(habit, next)
+        const isMilestone = STREAK_MILESTONES.includes(newStreak)
+        celebrate(isMilestone ? 'stage' : 'task')
+        showToast(isMilestone ? milestoneMsg(habit.title, newStreak) : ENCOURAGE_MSGS[Math.floor(Math.random() * ENCOURAGE_MSGS.length)], isMilestone)
+      }
     }
     setSaving(null)
   }
@@ -301,8 +332,8 @@ export default function TrackingPage() {
     return null
   })()
 
-  const totalStreaks = habits.reduce((sum, h) => sum + calcStreak(completions, h.id), 0)
-  const longestStreak = habits.reduce((max, h) => Math.max(max, calcStreak(completions, h.id)), 0)
+  const totalStreaks = habits.reduce((sum, h) => sum + streakFor(h, completions), 0)
+  const longestStreak = habits.reduce((max, h) => Math.max(max, streakFor(h, completions)), 0)
 
   return (
     <main style={{ minHeight:'100vh', background:C.bg, color:C.text, fontFamily:'inherit' }}>
@@ -338,7 +369,7 @@ export default function TrackingPage() {
             { icon:<Target size={16}/>, label:'Today', value: completedToday.length + ' / ' + todayHabits.length, color:C.cyan, sub:'habits done' },
             { icon:<Trophy size={16}/>, label:'Score', value: score + '%', color: score>=80?C.green:score>=50?C.amber:C.red, sub:score>=80?'great day':score>=50?'room to push':'needs work' },
             { icon:<Flame size={16}/>, label:'Longest streak', value: longestStreak+'d', color:'#ff6b35', sub:'consecutive days' },
-            { icon:<CheckCircle2 size={16}/>, label:'Total active streaks', value: habits.filter(h=>calcStreak(completions,h.id)>0).length+'', color:C.purple, sub:'of '+habits.length+' habits' },
+            { icon:<CheckCircle2 size={16}/>, label:'Total active streaks', value: habits.filter(h=>streakFor(h,completions)>0).length+'', color:C.purple, sub:'of '+habits.length+' habits' },
           ].map((s,i) => (
             <div key={i} style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1rem' }}>
               <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', color:s.color, marginBottom:'0.4rem' }}>
@@ -385,7 +416,7 @@ export default function TrackingPage() {
               {todayHabits.map(habit => {
                 const done = completions.some(c => c.habit_id === habit.id && c.completed_date === today)
                 const missed = !done && isPastScheduledTime(habit)
-                const streak = calcStreak(completions, habit.id)
+                const streak = streakFor(habit, completions)
                 return (
                   <div key={habit.id} style={{
                     display:'flex', alignItems:'center', gap:'1rem',
@@ -416,7 +447,7 @@ export default function TrackingPage() {
                         )}
                       </div>
                       <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginTop:'0.3rem' }}>
-                        <WeekDots completions={completions} habitId={habit.id}/>
+                        <WeekDots habit={habit} completions={completions}/>
                         {habit.schedule_time && (
                           <span style={{ fontSize:'0.65rem', color:C.muted }}>by {habit.schedule_time}</span>
                         )}
@@ -448,7 +479,7 @@ export default function TrackingPage() {
             </p>
             <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
               {habits.filter(h => !isScheduledToday(h)).map(habit => {
-                const streak = calcStreak(completions, habit.id)
+                const streak = streakFor(habit, completions)
                 return (
                   <div key={habit.id} style={{
                     display:'flex', alignItems:'center', gap:'1rem', padding:'0.75rem 1rem',
@@ -495,7 +526,30 @@ export default function TrackingPage() {
         />
       )}
 
+      {/* Encouragement toast — fires on every completion (small) and gets a
+          bigger, specific callout on streak milestones. */}
+      {toast && (
+        <div key={toast.id} style={{
+          position:'fixed', left:'50%', bottom: '2rem', transform:'translateX(-50%)',
+          zIndex:80, display:'flex', alignItems:'center', gap:'0.5rem',
+          padding: toast.big ? '0.875rem 1.5rem' : '0.65rem 1.1rem',
+          maxWidth:'min(90vw, 30rem)',
+          background: toast.big ? 'linear-gradient(135deg,rgba(255,184,0,0.16),rgba(255,107,53,0.16))' : 'rgba(18,18,26,0.95)',
+          border:'1px solid '+(toast.big ? 'rgba(255,184,0,0.4)' : C.border),
+          borderRadius:'9999px', backdropFilter:'blur(12px)',
+          boxShadow:'0 8px 28px rgba(0,0,0,0.4)',
+          animation:'toastIn 0.3s ease both, toastOut 0.3s ease '+(toast.big ? '3.9s' : '2.3s')+' both',
+        }}>
+          {toast.big ? <Trophy size={15} color={C.amber} style={{ flexShrink:0 }}/> : <Sparkles size={13} color={C.green} style={{ flexShrink:0 }}/>}
+          <span style={{ fontSize: toast.big ? '0.85rem' : '0.8rem', fontWeight:700, color: toast.big ? C.amber : C.text, lineHeight:1.4 }}>
+            {toast.text}
+          </span>
+        </div>
+      )}
+
       <style>{`
+        @keyframes toastIn { from{opacity:0;transform:translate(-50%,12px)} to{opacity:1;transform:translate(-50%,0)} }
+        @keyframes toastOut { from{opacity:1} to{opacity:0} }
         @keyframes fadeInUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
         input, select { outline:none; }
         input:focus, select:focus { border-color: #8b5cf6 !important; }
