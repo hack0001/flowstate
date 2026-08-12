@@ -998,15 +998,24 @@ export default function Home() {
     Promise.all([
       supabase.from('habits').select('id,title,emoji,color,schedule_type,schedule_days,schedule_time,created_at').eq('active', true).order('sort_order'),
       supabase.from('habit_completions').select('habit_id,completed_date'),
-    ]).then(([{ data: habits }, { data: completions }]) => {
+    ]).then(([{ data: habits, error: habitsErr }, { data: completions, error: compErr }]) => {
+      if (habitsErr) console.error('[home streaks] habits query failed', habitsErr.message)
+      if (compErr) console.error('[home streaks] completions query failed', compErr.message)
       const byHabit = new Map<string, Set<string>>()
       for (const c of (completions ?? []) as { habit_id: string; completed_date: string }[]) {
         if (!byHabit.has(c.habit_id)) byHabit.set(c.habit_id, new Set())
         byHabit.get(c.habit_id)!.add(c.completed_date)
       }
       const habitRows = (habits ?? []) as (StreakHabit & { title: string; emoji: string; color: string })[]
+      // Per-habit try/catch so one malformed row (e.g. a bad created_at)
+      // can't silently zero out every other habit's streak too.
       const rows = habitRows
-        .map(h => ({ id: h.id, title: h.title, emoji: h.emoji, color: h.color, streak: calcHabitStreak(h, byHabit.get(h.id) ?? new Set()) }))
+        .map(h => {
+          let streak = 0
+          try { streak = calcHabitStreak(h, byHabit.get(h.id) ?? new Set()) }
+          catch (e) { console.error('[home streaks] calc failed for habit', h.id, e) }
+          return { id: h.id, title: h.title, emoji: h.emoji, color: h.color, streak }
+        })
         .filter(h => h.streak > 0)
         .sort((a, b) => b.streak - a.streak)
         .slice(0, 6)
@@ -1016,8 +1025,9 @@ export default function Home() {
       // completed over the trailing 7 days. Schedule-aware for the same
       // reason streaks are: a habit's own off-days shouldn't count against
       // it in the denominator.
-      setConsistencyPct(calcConsistencyPct(habitRows, byHabit, 7))
-    }).catch(() => {})
+      try { setConsistencyPct(calcConsistencyPct(habitRows, byHabit, 7)) }
+      catch (e) { console.error('[home streaks] consistency calc failed', e) }
+    }).catch(e => console.error('[home streaks] load failed', e))
   }, [])
 
   useEffect(() => { loadStreaks() }, [loadStreaks])
