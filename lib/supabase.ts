@@ -206,9 +206,15 @@ export async function getMorningCompletionCounts(days: number): Promise<{ counts
 // after the last item — never errors on the unique(habit_id, completed_date)
 // constraint. Silently no-ops if the seed row was ever deleted/renamed.
 export async function completeMorningRoutineHabit(date: string): Promise<{ error: string | null }> {
-  const { data: habit, error: findError } = await supabase
-    .from('habits').select('id').eq('title', 'Morning routine').maybeSingle()
+  // .limit(1) instead of .maybeSingle() -- if duplicate "Morning routine"
+  // rows ever exist (see 036_dedupe_habits.sql for how that happened once
+  // already), .maybeSingle() errors out on >1 row and this whole function
+  // silently no-ops since its caller doesn't check the result. Picking the
+  // oldest row deterministically keeps working either way.
+  const { data: habitRows, error: findError } = await supabase
+    .from('habits').select('id').eq('title', 'Morning routine').order('created_at', { ascending: true }).limit(1)
   if (findError) return { error: findError.message }
+  const habit = habitRows?.[0]
   if (!habit) return { error: null }
   const { error } = await supabase
     .from('habit_completions')

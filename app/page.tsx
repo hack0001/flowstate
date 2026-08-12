@@ -902,13 +902,17 @@ export default function Home() {
         // to routine_completions AND this habit together when it finishes;
         // if one write ever silently fails, the other still lets us detect
         // "done" correctly instead of the CTA/header chip going stale.
-        supabase.from('habits').select('id').eq('title', 'Morning routine').maybeSingle(),
+        // .limit(1) not .maybeSingle() -- see 036_dedupe_habits.sql; this
+        // must not error out if duplicate "Morning routine" rows ever
+        // exist again, it should just pick the oldest and move on.
+        supabase.from('habits').select('id').eq('title', 'Morning routine').order('created_at', { ascending: true }).limit(1),
       ])
 
       let habitDoneToday = false
-      if (habitRes.data?.id) {
+      const morningHabitId = habitRes.data?.[0]?.id
+      if (morningHabitId) {
         const { data: hc } = await supabase.from('habit_completions')
-          .select('completed_date').eq('habit_id', habitRes.data.id).eq('completed_date', toDateStr(new Date())).maybeSingle()
+          .select('completed_date').eq('habit_id', morningHabitId).eq('completed_date', toDateStr(new Date())).maybeSingle()
         habitDoneToday = !!hc
       }
 

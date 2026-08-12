@@ -56,4 +56,13 @@ insert into habits (title, description, schedule_type, schedule_days, schedule_t
   ('No phone after 9pm',     'Phone in another room, no scrolling',              'daily',    '{}',        '21:00', '#4a4a6a', '📵', 5),
   ('Magnesium',              'Take magnesium supplement before bed',             'daily',    '{}',        '21:30', '#00d4ff', '💊', 6),
   ('Collagen 10g',           '10g collagen in water before bed',                 'daily',    '{}',        '21:30', '#ffb800', '🥛', 7)
+-- Deliberately left as a bare "on conflict do nothing" (no target column):
+-- this migration runs BEFORE 036_dedupe_habits.sql adds a unique(title)
+-- index, so "on conflict (title)" here would error on a from-scratch
+-- RUN_ALL.sql run ("no unique or exclusion constraint matching the ON
+-- CONFLICT specification") since that index wouldn't exist yet at this
+-- point in the script. The bare form never errors either way; once the
+-- index exists (from 036, later in the same run or a prior one) it starts
+-- actually catching conflicts, and until then any duplicates it lets
+-- through get cleaned up by 036 immediately after in the same run.
 on conflict do nothing;
