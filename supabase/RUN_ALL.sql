@@ -1546,3 +1546,50 @@ with ranked as (
 delete from habits where id in (select id from ranked where id <> keeper_id);
 
 create unique index if not exists habits_title_unique_idx on habits(title);
+
+-- =============================================================
+-- ---- migrations/037_dedupe_weekly_targets.sql ----
+-- =============================================================
+-- 037_dedupe_weekly_targets.sql — Same bug as 036_dedupe_habits.sql, same
+-- fix, different table. 028_weekly_targets.sql's seed insert already used
+-- a bare "on conflict do nothing", but weekly_targets never had a unique
+-- constraint on label -- so re-running RUN_ALL.sql kept silently adding
+-- another full set of the 4 default targets. That's the "lots of empty
+-- boxes" on Home's This week's targets section.
+
+with ranked as (
+  select id, label,
+         first_value(id) over (partition by label order by created_at asc, id asc) as keeper_id
+  from weekly_targets
+),
+dups as (
+  select id, keeper_id from ranked where id <> keeper_id
+)
+insert into weekly_target_progress (target_id, week_start, manual_count, updated_at)
+select d.keeper_id, wtp.week_start, wtp.manual_count, wtp.updated_at
+from weekly_target_progress wtp
+join dups d on d.id = wtp.target_id
+on conflict (target_id, week_start) do nothing;
+
+with ranked as (
+  select id, label,
+         first_value(id) over (partition by label order by created_at asc, id asc) as keeper_id
+  from weekly_targets
+),
+dups as (
+  select id, keeper_id from ranked where id <> keeper_id
+)
+insert into weekly_target_picks (target_id, week_start, content_item_id, updated_at)
+select d.keeper_id, wtp.week_start, wtp.content_item_id, wtp.updated_at
+from weekly_target_picks wtp
+join dups d on d.id = wtp.target_id
+on conflict (target_id, week_start) do nothing;
+
+with ranked as (
+  select id, label,
+         first_value(id) over (partition by label order by created_at asc, id asc) as keeper_id
+  from weekly_targets
+)
+delete from weekly_targets where id in (select id from ranked where id <> keeper_id);
+
+create unique index if not exists weekly_targets_label_unique_idx on weekly_targets(label);
