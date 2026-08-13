@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation'
 import { supabase, getStageNote, saveStageNote } from '@/lib/supabase'
 import { sopForStage, IDEA_VALIDATION_CHECKS, SOPS, type SOP } from '@/lib/sops'
 import { CHANNEL_BRIEF, SCRIPT_VOICE, OUTLIER_SEED_QUERIES } from '@/lib/channelBrief'
-import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check, ArrowUpDown } from 'lucide-react'
+import ContentItemDetail from '@/components/ContentItemDetail'
+import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check, ArrowUpDown, FileText } from 'lucide-react'
 
 const IDEA_VALIDATION_SOP_ID = 'idea_validation'
 // Manual log of a Claude-chat consult (copy prompt -> paste into Claude ->
@@ -1336,7 +1337,7 @@ function FocusStar({ active, atCap, onToggle }: { active:boolean; atCap:boolean;
 }
 
 // ── Pipeline card ───────────────────────────────────────────────────────────
-function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focusAtCap }: { item:ContentItem; stats?: YtStats; onMove:()=>void; onSaveRevenue:(note:string)=>void; onToggleFocus:()=>void; focusAtCap:boolean }) {
+function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focusAtCap, onShowDetail }: { item:ContentItem; stats?: YtStats; onMove:()=>void; onSaveRevenue:(note:string)=>void; onToggleFocus:()=>void; focusAtCap:boolean; onShowDetail:()=>void }) {
   const router = useRouter()
   const s = stageStyle(item.pipeline_stage)
   const [revenue, setRevenue] = useState(item.revenue_note ?? '')
@@ -1482,6 +1483,9 @@ function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focus
         </div>
       )}
       <div style={{ display:'flex', gap:'0.3rem' }}>
+        <button onClick={onShowDetail} title="Full history — attributes, every stage note, links" style={{ padding:'0.3rem 0.5rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.25rem' }}>
+          <FileText size={10}/>
+        </button>
         <button onClick={onMove} style={{ flex:1, padding:'0.3rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.25rem' }}>
           Move stage <ChevronRight size={10}/>
         </button>
@@ -1568,6 +1572,7 @@ export default function ContentPage() {
   const [loading,    setLoading]    = useState(true)
   const [view,       setView]       = useState<View>('ideas')
   const [moveTarget, setMoveTarget] = useState<ContentItem | null>(null)
+  const [detailItem, setDetailItem] = useState<ContentItem | null>(null)
   const [showAdd,    setShowAdd]    = useState(false)
   const [showFindIdeas, setShowFindIdeas] = useState(false)
   const [focusMsg,   setFocusMsg]   = useState<string | null>(null)
@@ -2107,7 +2112,7 @@ export default function ContentPage() {
                   {stage.items.length === 0 ? (
                     <p style={{ fontSize:'0.65rem', color:C.muted, textAlign:'center', padding:'0.75rem 0', margin:0 }}>empty</p>
                   ) : (
-                    stage.items.map(item => <PipelineCard key={item.id} item={item} stats={ytStats[extractYouTubeId(item.youtube_url) ?? ''] } onMove={() => setMoveTarget(item)} onSaveRevenue={note => saveRevenueNote(item, note)} onToggleFocus={() => toggleFocus(item)} focusAtCap={focusCount >= 2}/>)
+                    stage.items.map(item => <PipelineCard key={item.id} item={item} stats={ytStats[extractYouTubeId(item.youtube_url) ?? ''] } onMove={() => setMoveTarget(item)} onSaveRevenue={note => saveRevenueNote(item, note)} onToggleFocus={() => toggleFocus(item)} focusAtCap={focusCount >= 2} onShowDetail={() => setDetailItem(item)}/>)
                   )}
                 </div>
               ))}
@@ -2248,6 +2253,7 @@ export default function ContentPage() {
       </div>
 
       {moveTarget && <MoveModal item={moveTarget} onMove={s => moveStage(moveTarget, s)} onClose={() => setMoveTarget(null)}/>}
+      {detailItem && <ContentItemDetail itemId={detailItem.id} onClose={() => setDetailItem(null)}/>}
       {showAdd    && <AddIdeaModal onAdd={addIdea} onClose={() => setShowAdd(false)}/>}
       {showFindIdeas && (
         <FindIdeasModal

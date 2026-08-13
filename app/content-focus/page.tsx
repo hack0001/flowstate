@@ -9,6 +9,7 @@ import { usePomodoro } from '@/hooks/usePomodoro'
 import { useCelebration } from '@/hooks/useCelebration'
 import FoodProgress from '@/components/FoodProgress'
 import MemeSuggestions from '@/components/MemeSuggestions'
+import ContentItemDetail from '@/components/ContentItemDetail'
 
 // ============================================================
 // YouTube-Pipeline-driven Focus Session
@@ -296,6 +297,7 @@ function ContentFocusPageInner() {
   const [stageNote, setStageNote] = useState('')
   const [stageNoteKey, setStageNoteKey] = useState('')
   const [showStageNote, setShowStageNote] = useState(true)
+  const [showDetail, setShowDetail] = useState(false)
   const itemId = item?.id ?? null
   const sopId = sop?.id ?? null
   useEffect(() => {
@@ -565,13 +567,19 @@ function ContentFocusPageInner() {
                 <span style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.cyan }}>{item.pipeline_stage ?? '—'}</span>
                 {item.format && <span style={{ fontSize:'0.65rem', color:C.muted, marginLeft:'0.6rem' }}>{item.format}</span>}
               </div>
-              {steps.length > 0 && (
-                <span style={{ fontSize:'0.68rem', color:C.muted }}>
-                  {chunkMode
-                    ? `${chunkStepIndices.filter(i => doneSet.has(i)).length}/${chunkStepIndices.length} this chunk`
-                    : `${doneSet.size}/${steps.length} steps`}
-                </span>
-              )}
+              <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
+                {steps.length > 0 && (
+                  <span style={{ fontSize:'0.68rem', color:C.muted }}>
+                    {chunkMode
+                      ? `${chunkStepIndices.filter(i => doneSet.has(i)).length}/${chunkStepIndices.length} this chunk`
+                      : `${doneSet.size}/${steps.length} steps`}
+                  </span>
+                )}
+                <button onClick={() => setShowDetail(true)} title="Full history — attributes, every stage note, links"
+                  style={{ padding:'0.25rem 0.6rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'9999px', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                  Full history
+                </button>
+              </div>
             </div>
 
             <MemeSuggestions topic={item.title} />
@@ -685,6 +693,8 @@ function ContentFocusPageInner() {
           </div>
         </div>
       )}
+
+      {showDetail && item && <ContentItemDetail itemId={item.id} onClose={() => setShowDetail(false)}/>}
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
