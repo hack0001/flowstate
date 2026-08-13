@@ -76,6 +76,7 @@ export const MOBILITY_ALT_DAY_ANCHORS: MobilityExercise[] = [
 export const MOBILITY_DAILY_ANCHORS: MobilityExercise[] = [
   { id:'reverse-plank', name:'Reverse Planks', cue:'Hold 1 minute x5 -- every day', categories:['lowerback'] },
   { id:'supermans',     name:'Supermans',      cue:'Face down, arms and legs raised in a V, hold -- every day for months', categories:['lowerback'] },
+  { id:'crab-walk',     name:'Crab Position Holds & Walks', cue:'Hold crab position 30-60 seconds, then crab walk forward and back x10 -- every day', categories:['lowerback','hip'] },
 ]
 
 export const MOBILITY_PROGRAM_WEEKS = 4
