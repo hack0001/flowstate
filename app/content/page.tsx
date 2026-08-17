@@ -5,7 +5,7 @@ import { supabase, getStageNote, saveStageNote } from '@/lib/supabase'
 import { sopForStage, IDEA_VALIDATION_CHECKS, SOPS, type SOP } from '@/lib/sops'
 import { CHANNEL_BRIEF, SCRIPT_VOICE, OUTLIER_SEED_QUERIES } from '@/lib/channelBrief'
 import ContentItemDetail from '@/components/ContentItemDetail'
-import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check, ArrowUpDown, FileText } from 'lucide-react'
+import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check, ArrowUpDown, FileText, MessageSquare } from 'lucide-react'
 
 const IDEA_VALIDATION_SOP_ID = 'idea_validation'
 // Manual log of a Claude-chat consult (copy prompt -> paste into Claude ->
@@ -153,6 +153,14 @@ type ScannedOutlier = {
   channelCountry: string | null // channel's own declared country (About), not confirmed viewer geography
 }
 
+// Real top-level YouTube comment, filtered for substance and ranked by likes
+// — from /api/content/comments. The audience's own words on a video, used to
+// ground "comment_gap" in something real instead of a guess.
+type TopComment = {
+  id: string; author: string; text: string
+  likeCount: number; publishedAt: string; replyCount: number
+}
+
 // Parse a model reply that should be JSON, surviving markdown fences,
 // commentary around the object, and — the common failure — truncation at the
 // output-token limit. On truncation, walks back to the last complete object/
@@ -224,7 +232,22 @@ function formatScannedVelocity(rows: ScannedOutlier[]): string {
   ).join('\n')
 }
 
-function buildFindIdeasPrompt(existingTitles: string[], count: number, scannedOutliers?: ScannedOutlier[], scannedVelocity?: ScannedOutlier[]): { systemPrompt: string; userPrompt: string } {
+// Real audience comments pulled for one or more scanned videos, formatted as
+// grounding evidence for the idea generator — the actual words viewers used
+// to ask for something, praise something, or complain something was
+// missing, not Claude's guess at what a "comment gap" might be.
+function formatCommentInsights(commentsByVideo: Record<string, TopComment[]>, allVideos: ScannedOutlier[]): string {
+  const titleByVideo = new Map(allVideos.map(v => [v.videoId, v.title]))
+  const entries = Object.entries(commentsByVideo).filter(([, cs]) => cs.length > 0)
+  if (entries.length === 0) return ''
+  return entries.map(([videoId, cs]) => {
+    const title = titleByVideo.get(videoId) ?? videoId
+    const quotes = cs.slice(0, 6).map(c => `  - "${c.text.slice(0, 220)}" (${c.likeCount} likes)`).join('\n')
+    return `On "${title}":\n${quotes}`
+  }).join('\n\n')
+}
+
+function buildFindIdeasPrompt(existingTitles: string[], count: number, scannedOutliers?: ScannedOutlier[], scannedVelocity?: ScannedOutlier[], commentInsights?: Record<string, TopComment[]>): { systemPrompt: string; userPrompt: string } {
   const systemPrompt = 'You are a YouTube idea generator for SoundMoney.\n\n' + CHANNEL_BRIEF + '\n\n' + VALIDATION_METHOD +
     '\n\nThe outlier-opportunity method, in detail — this is the core of how ideas get selected, not just one check among many. There are two kinds of evidence, and both count, but they are not equally strong:\n\n' +
     '1. RATIO outliers (primary, strongest evidence) — a video that got unusually high views (100,000+) relative to how few subscribers its channel has (well under 100,000 subscribers — ideally a 5:1+ view-to-subscriber ratio), AND whose packaging is mediocre or bad — a weak title, a cluttered or low-effort thumbnail, or a video that clearly underdelivers on its own premise. That combination (proven demand + weak execution) isolates the topic from the channel: the topic itself pulled an audience beyond the creator\'s own following, and nobody has made a great version of it yet.\n\n' +
@@ -246,6 +269,9 @@ function buildFindIdeasPrompt(existingTitles: string[], count: number, scannedOu
       : '') +
     (scannedVelocity && scannedVelocity.length > 0
       ? `VERIFIED VELOCITY CANDIDATES — also from the YouTube Data API, REAL numbers. These are videos that gained a lot of views fast REGARDLESS of channel size or ratio (so some may be on large, established channels). Treat as secondary/corroborating evidence per the method above — worth building an idea on, but flag the channel size and note it's velocity-based rather than a ratio outlier:\n${formatScannedVelocity(scannedVelocity)}\n\n`
+      : '') +
+    (commentInsights && Object.keys(commentInsights).length > 0
+      ? `REAL AUDIENCE COMMENTS — pulled directly from YouTube via the comment analyser (filtered for substance, ranked by likes), so these are actual viewer words, not inferred. Use these as your first source for "comment_gap" — quote or closely paraphrase what a comment actually asked for, praised, or complained was missing, rather than inventing a plausible-sounding gap:\n${formatCommentInsights(commentInsights, [...(scannedOutliers ?? []), ...(scannedVelocity ?? [])])}\n\n`
       : '') +
     `For each idea, ground it in a real outlier or velocity video first (see the method above)${(scannedOutliers && scannedOutliers.length > 0) || (scannedVelocity && scannedVelocity.length > 0) ? ', preferably one from the verified lists' : ''}, then build the idea around beating it. Run through all 7 checks and only include ideas that would score Viable or at worst Needs More Research — do not include ideas that would fail, and do not include an idea if you cannot find genuine outlier or velocity evidence backing it.\n\n` +
     `Return JSON exactly in this shape:\n` +
@@ -797,13 +823,47 @@ function AddIdeaModal({ onAdd, onClose }: { onAdd:(title:string,format:string,no
   )
 }
 
+// ── Comment analyser panel ──────────────────────────────────────────────────
+// Inline readout of real top comments for one scanned video — filtered for
+// substance and ranked by likes server-side, so what's shown here is already
+// "insightful and lots of likes" by construction, not just a raw dump.
+function CommentsPanel({ state, onRetry }: {
+  state: { loading?: boolean; comments?: TopComment[]; error?: string; disabled?: boolean }
+  onRetry: () => void
+}) {
+  return (
+    <div style={{ padding:'0.45rem 0.55rem', background:'rgba(0,212,255,0.03)', border:'1px solid rgba(0,212,255,0.15)', borderRadius:'0.4rem' }}>
+      {state.loading ? (
+        <p style={{ fontSize:'0.62rem', color:C.muted, margin:0 }}>Pulling top comments…</p>
+      ) : state.error ? (
+        <p style={{ fontSize:'0.62rem', color:C.red, margin:0 }}>
+          {state.error}{' '}
+          <button onClick={onRetry} style={{ background:'none', border:'none', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.62rem', textDecoration:'underline', padding:0 }}>retry</button>
+        </p>
+      ) : state.disabled ? (
+        <p style={{ fontSize:'0.62rem', color:C.muted, margin:0 }}>Comments are disabled on this video.</p>
+      ) : state.comments && state.comments.length > 0 ? (
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
+          {state.comments.slice(0, 8).map(c => (
+            <p key={c.id} style={{ fontSize:'0.64rem', lineHeight:1.45, margin:0, color:C.sec }}>
+              <span style={{ color:C.teal, fontWeight:700 }}>{c.likeCount} likes</span> — {c.text} <span style={{ color:C.muted }}>({c.author})</span>
+            </p>
+          ))}
+        </div>
+      ) : (
+        <p style={{ fontSize:'0.62rem', color:C.muted, margin:0 }}>No substantial comments found — mostly short reactions on this one.</p>
+      )}
+    </div>
+  )
+}
+
 // ── Find Ideas modal ────────────────────────────────────────────────────────
 // Generates new video ideas from scratch (rather than validating one you
 // already have) — each one is checked against the same 7-step method before
 // it's proposed, grounded in real search where possible, on-topic for the
 // channel, and titled so YouTube can actually tell what it's about.
 function FindIdeasModal({ onGenerate, onAdd, onClose }: {
-  onGenerate: (model: string, webSearch: boolean, count: number, scannedOutliers?: ScannedOutlier[], scannedVelocity?: ScannedOutlier[]) => Promise<{ ideas: FoundIdea[] } | { error: string }>
+  onGenerate: (model: string, webSearch: boolean, count: number, scannedOutliers?: ScannedOutlier[], scannedVelocity?: ScannedOutlier[], commentInsights?: Record<string, TopComment[]>) => Promise<{ ideas: FoundIdea[] } | { error: string }>
   onAdd: (idea: FoundIdea) => Promise<boolean>
   onClose: () => void
 }) {
@@ -837,6 +897,43 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
   const [hookLoading, setHookLoading] = useState(false)
   const [hookMsg, setHookMsg] = useState<string | null>(null)
   const [hookResult, setHookResult] = useState<HookAnalysis | null>(null)
+
+  // Comment analyser — per-video real top comments, keyed by videoId. Kept
+  // here (not per-row local state) so both the inline panel AND the
+  // add-to-ideas / full-generation flows can read whatever's been fetched.
+  const [commentState, setCommentState] = useState<Record<string, { loading?: boolean; open?: boolean; comments?: TopComment[]; error?: string; disabled?: boolean }>>({})
+
+  async function analyseComments(videoId: string) {
+    setCommentState(prev => ({ ...prev, [videoId]: { ...prev[videoId], loading: true, open: true, error: undefined } }))
+    try {
+      const res = await fetch('/api/content/comments', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId }),
+      })
+      const data = await res.json()
+      if (data?.error) { setCommentState(prev => ({ ...prev, [videoId]: { open: true, error: String(data.error) } })); return }
+      setCommentState(prev => ({ ...prev, [videoId]: { open: true, comments: data.comments ?? [], disabled: !!data.disabled } }))
+    } catch (e) {
+      setCommentState(prev => ({ ...prev, [videoId]: { open: true, error: String(e) } }))
+    }
+  }
+
+  // Toggle open/closed without refetching if we already have the comments —
+  // only hits the API the first time a video is expanded.
+  function toggleComments(videoId: string) {
+    const existing = commentState[videoId]
+    if (existing?.comments || existing?.error || existing?.disabled) {
+      setCommentState(prev => ({ ...prev, [videoId]: { ...prev[videoId], open: !prev[videoId]?.open } }))
+    } else {
+      analyseComments(videoId)
+    }
+  }
+
+  // The map handed to onGenerate / folded into an added idea's comment_gap —
+  // only videos that actually returned real comments.
+  const commentInsights: Record<string, TopComment[]> = Object.fromEntries(
+    Object.entries(commentState).filter(([, s]) => s.comments && s.comments.length > 0).map(([id, s]) => [id, s.comments!])
+  )
 
   async function runHookAnalysis() {
     if (!scanResults || scanResults.length === 0) { setHookMsg('Scan for outliers first.'); return }
@@ -944,13 +1041,22 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
   // Send a verified outlier straight to the Ideas board — for when the topic
   // is obviously worth beating and you don't need Claude to package it first.
   // The idea keeps the outlier's real numbers as evidence; retitle it later.
+  // Turns fetched real comments (if any were pulled for this video) into a
+  // ready-made comment_gap note — actual audience quotes rather than a blank
+  // field waiting for Claude to guess.
+  function commentGapFor(videoId: string): string {
+    const cs = commentState[videoId]?.comments
+    if (!cs || cs.length === 0) return ''
+    return 'Real audience comments: ' + cs.slice(0, 3).map(c => `"${c.text.slice(0, 140)}${c.text.length > 140 ? '…' : ''}" (${c.likeCount} likes)`).join(' / ')
+  }
+
   async function addOutlierToIdeas(o: ScannedOutlier) {
     setOutlierAddStatus(prev => ({ ...prev, [o.videoId]: 'adding' }))
     const months = Math.max(0, Math.round((Date.now() - new Date(o.publishedAt).getTime()) / (30 * 24 * 3600 * 1000)))
     const idea: FoundIdea = {
       title: o.title,
       description: `Beat this verified outlier (found via "${o.query}"): ${o.url} — same proven topic, sharper SoundMoney version (better packaging + the prescriptive savings ending).`,
-      video_type: '', format: 'Long-form', unique_angle: '', pattern: '', comment_gap: '', why_now: '',
+      video_type: '', format: 'Long-form', unique_angle: '', pattern: '', comment_gap: commentGapFor(o.videoId), why_now: '',
       rationale: 'Added directly from the YouTube Data API scan — numbers are real, packaging/angle still to be worked out.',
       researched: true,
       outlier: {
@@ -977,7 +1083,7 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
     const idea: FoundIdea = {
       title: o.title,
       description: `Beat this verified velocity candidate (found via "${o.query}"): ${o.url} — gained ${o.views.toLocaleString()} views in ${o.ageDays} days (~${o.viewsPerDay.toLocaleString()}/day) on a ${o.subscribers.toLocaleString()}-subscriber channel. Same proven topic, sharper SoundMoney version.`,
-      video_type: '', format: 'Long-form', unique_angle: '', pattern: '', comment_gap: '', why_now: '',
+      video_type: '', format: 'Long-form', unique_angle: '', pattern: '', comment_gap: commentGapFor(o.videoId), why_now: '',
       rationale: 'Added directly from the YouTube Data API scan — real numbers, but this is a velocity signal (big views fast, not a small-channel ratio outlier), so weigh replicability before committing.',
       researched: true,
       outlier: {
@@ -1003,6 +1109,7 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
       modelKey, webSearch, count,
       scanResults && scanResults.length > 0 ? scanResults : undefined,
       scanVelocity && scanVelocity.length > 0 ? scanVelocity : undefined,
+      Object.keys(commentInsights).length > 0 ? commentInsights : undefined,
     )
     if ('error' in res) setMsg(res.error)
     else setIdeas(res.ideas)
@@ -1101,27 +1208,39 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
           {scanResults && scanResults.length > 0 && (
             <div style={{ marginTop:'0.6rem' }}>
               <p style={{ fontSize:'0.66rem', color:C.green, margin:'0 0 0.35rem', fontWeight:700 }}>
-                {scanResults.length} verified outliers found — they&apos;ll be handed to Claude as evidence when you hit Find ideas, or add one straight to the board.
+                {scanResults.length} verified outliers found — they&apos;ll be handed to Claude as evidence when you hit Find ideas, or add one straight to the board. Tap <MessageSquare size={9} style={{ display:'inline', verticalAlign:'-1px' }}/> on any row to pull its real top comments first — most-liked and substantial ones only.
               </p>
               <div style={{ maxHeight:'11rem', overflowY:'auto' as const, display:'flex', flexDirection:'column', gap:'0.25rem' }}>
                 {scanResults.map(o => {
                   const st = outlierAddStatus[o.videoId]
+                  const cs = commentState[o.videoId]
                   return (
-                    <div key={o.videoId} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.25rem 0.4rem', background:C.card, borderRadius:'0.35rem', border:'1px solid '+C.border }}>
-                      <a href={o.url} target="_blank" rel="noreferrer" style={{ flex:1, fontSize:'0.66rem', color:C.sec, textDecoration:'none', lineHeight:1.4 }}>
-                        <span style={{ color:C.text, fontWeight:600 }}>{o.title}</span>
-                        {' '}— {o.channel}{o.channelCountry && <span style={{ color:o.channelCountry==='US'?C.green:C.muted, fontWeight:700 }}> [{o.channelCountry}]</span>} · {o.views.toLocaleString()} views / {o.subscribers.toLocaleString()} subs · <span style={{ color:C.cyan, fontWeight:700 }}>{o.ratio}:1</span>
-                      </a>
-                      <button
-                        onClick={() => addOutlierToIdeas(o)}
-                        disabled={st === 'adding' || st === 'added'}
-                        title="Add this topic to the Ideas board with its verified numbers attached"
-                        style={{ display:'flex', alignItems:'center', gap:'0.25rem', flexShrink:0, padding:'0.25rem 0.5rem', background: st === 'added' ? 'rgba(34,197,94,0.12)' : 'rgba(255,184,0,0.1)', border:'1px solid '+(st === 'added' ? 'rgba(34,197,94,0.4)' : 'rgba(255,184,0,0.3)'), borderRadius:'0.35rem', color: st === 'added' ? '#22c55e' : C.amber, cursor:(st === 'adding' || st === 'added') ? 'default' : 'pointer', fontFamily:'inherit', fontSize:'0.62rem', fontWeight:700, whiteSpace:'nowrap' as const }}
-                      >
-                        {st === 'added' ? <Check size={10}/> : <Plus size={10}/>}
-                        {st === 'adding' ? 'Adding…' : st === 'added' ? 'Added' : 'Add'}
-                      </button>
-                      {st === 'error' && <span style={{ fontSize:'0.6rem', color:C.red }}>failed</span>}
+                    <div key={o.videoId} style={{ display:'flex', flexDirection:'column', gap:'0.25rem' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.25rem 0.4rem', background:C.card, borderRadius:'0.35rem', border:'1px solid '+C.border }}>
+                        <a href={o.url} target="_blank" rel="noreferrer" style={{ flex:1, fontSize:'0.66rem', color:C.sec, textDecoration:'none', lineHeight:1.4 }}>
+                          <span style={{ color:C.text, fontWeight:600 }}>{o.title}</span>
+                          {' '}— {o.channel}{o.channelCountry && <span style={{ color:o.channelCountry==='US'?C.green:C.muted, fontWeight:700 }}> [{o.channelCountry}]</span>} · {o.views.toLocaleString()} views / {o.subscribers.toLocaleString()} subs · <span style={{ color:C.cyan, fontWeight:700 }}>{o.ratio}:1</span>
+                        </a>
+                        <button
+                          onClick={() => toggleComments(o.videoId)}
+                          disabled={cs?.loading}
+                          title="Pull real top comments — filtered for substance, ranked by likes"
+                          style={{ display:'flex', alignItems:'center', gap:'0.2rem', flexShrink:0, padding:'0.25rem 0.4rem', background: cs?.open ? 'rgba(0,212,255,0.1)' : 'rgba(255,255,255,0.02)', border:'1px solid '+(cs?.open ? 'rgba(0,212,255,0.3)' : C.border), borderRadius:'0.35rem', color: cs?.open ? C.cyan : C.muted, cursor:cs?.loading?'wait':'pointer', fontFamily:'inherit', fontSize:'0.6rem', fontWeight:700 }}
+                        >
+                          <MessageSquare size={10}/>{cs?.comments ? cs.comments.length : ''}
+                        </button>
+                        <button
+                          onClick={() => addOutlierToIdeas(o)}
+                          disabled={st === 'adding' || st === 'added'}
+                          title="Add this topic to the Ideas board with its verified numbers attached"
+                          style={{ display:'flex', alignItems:'center', gap:'0.25rem', flexShrink:0, padding:'0.25rem 0.5rem', background: st === 'added' ? 'rgba(34,197,94,0.12)' : 'rgba(255,184,0,0.1)', border:'1px solid '+(st === 'added' ? 'rgba(34,197,94,0.4)' : 'rgba(255,184,0,0.3)'), borderRadius:'0.35rem', color: st === 'added' ? '#22c55e' : C.amber, cursor:(st === 'adding' || st === 'added') ? 'default' : 'pointer', fontFamily:'inherit', fontSize:'0.62rem', fontWeight:700, whiteSpace:'nowrap' as const }}
+                        >
+                          {st === 'added' ? <Check size={10}/> : <Plus size={10}/>}
+                          {st === 'adding' ? 'Adding…' : st === 'added' ? 'Added' : 'Add'}
+                        </button>
+                        {st === 'error' && <span style={{ fontSize:'0.6rem', color:C.red }}>failed</span>}
+                      </div>
+                      {cs?.open && <CommentsPanel state={cs} onRetry={() => analyseComments(o.videoId)}/>}
                     </div>
                   )
                 })}
@@ -1139,22 +1258,34 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
               <div style={{ maxHeight:'11rem', overflowY:'auto' as const, display:'flex', flexDirection:'column', gap:'0.25rem' }}>
                 {scanVelocity.map(o => {
                   const st = velocityAddStatus[o.videoId]
+                  const cs = commentState[o.videoId]
                   return (
-                    <div key={o.videoId} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.25rem 0.4rem', background:C.card, borderRadius:'0.35rem', border:'1px solid '+C.border }}>
-                      <a href={o.url} target="_blank" rel="noreferrer" style={{ flex:1, fontSize:'0.66rem', color:C.sec, textDecoration:'none', lineHeight:1.4 }}>
-                        <span style={{ color:C.text, fontWeight:600 }}>{o.title}</span>
-                        {' '}— {o.channel}{o.channelCountry && <span style={{ color:o.channelCountry==='US'?C.green:C.muted, fontWeight:700 }}> [{o.channelCountry}]</span>} ({o.subscribers.toLocaleString()} subs) · {o.views.toLocaleString()} views in {o.ageDays}d · <span style={{ color:C.amber, fontWeight:700 }}>~{o.viewsPerDay.toLocaleString()}/day</span>
-                      </a>
-                      <button
-                        onClick={() => addVelocityToIdeas(o)}
-                        disabled={st === 'adding' || st === 'added'}
-                        title="Add this topic to the Ideas board — flagged as a velocity signal, not a ratio outlier"
-                        style={{ display:'flex', alignItems:'center', gap:'0.25rem', flexShrink:0, padding:'0.25rem 0.5rem', background: st === 'added' ? 'rgba(34,197,94,0.12)' : 'rgba(255,184,0,0.1)', border:'1px solid '+(st === 'added' ? 'rgba(34,197,94,0.4)' : 'rgba(255,184,0,0.3)'), borderRadius:'0.35rem', color: st === 'added' ? '#22c55e' : C.amber, cursor:(st === 'adding' || st === 'added') ? 'default' : 'pointer', fontFamily:'inherit', fontSize:'0.62rem', fontWeight:700, whiteSpace:'nowrap' as const }}
-                      >
-                        {st === 'added' ? <Check size={10}/> : <Plus size={10}/>}
-                        {st === 'adding' ? 'Adding…' : st === 'added' ? 'Added' : 'Add'}
-                      </button>
-                      {st === 'error' && <span style={{ fontSize:'0.6rem', color:C.red }}>failed</span>}
+                    <div key={o.videoId} style={{ display:'flex', flexDirection:'column', gap:'0.25rem' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.25rem 0.4rem', background:C.card, borderRadius:'0.35rem', border:'1px solid '+C.border }}>
+                        <a href={o.url} target="_blank" rel="noreferrer" style={{ flex:1, fontSize:'0.66rem', color:C.sec, textDecoration:'none', lineHeight:1.4 }}>
+                          <span style={{ color:C.text, fontWeight:600 }}>{o.title}</span>
+                          {' '}— {o.channel}{o.channelCountry && <span style={{ color:o.channelCountry==='US'?C.green:C.muted, fontWeight:700 }}> [{o.channelCountry}]</span>} ({o.subscribers.toLocaleString()} subs) · {o.views.toLocaleString()} views in {o.ageDays}d · <span style={{ color:C.amber, fontWeight:700 }}>~{o.viewsPerDay.toLocaleString()}/day</span>
+                        </a>
+                        <button
+                          onClick={() => toggleComments(o.videoId)}
+                          disabled={cs?.loading}
+                          title="Pull real top comments — filtered for substance, ranked by likes"
+                          style={{ display:'flex', alignItems:'center', gap:'0.2rem', flexShrink:0, padding:'0.25rem 0.4rem', background: cs?.open ? 'rgba(0,212,255,0.1)' : 'rgba(255,255,255,0.02)', border:'1px solid '+(cs?.open ? 'rgba(0,212,255,0.3)' : C.border), borderRadius:'0.35rem', color: cs?.open ? C.cyan : C.muted, cursor:cs?.loading?'wait':'pointer', fontFamily:'inherit', fontSize:'0.6rem', fontWeight:700 }}
+                        >
+                          <MessageSquare size={10}/>{cs?.comments ? cs.comments.length : ''}
+                        </button>
+                        <button
+                          onClick={() => addVelocityToIdeas(o)}
+                          disabled={st === 'adding' || st === 'added'}
+                          title="Add this topic to the Ideas board — flagged as a velocity signal, not a ratio outlier"
+                          style={{ display:'flex', alignItems:'center', gap:'0.25rem', flexShrink:0, padding:'0.25rem 0.5rem', background: st === 'added' ? 'rgba(34,197,94,0.12)' : 'rgba(255,184,0,0.1)', border:'1px solid '+(st === 'added' ? 'rgba(34,197,94,0.4)' : 'rgba(255,184,0,0.3)'), borderRadius:'0.35rem', color: st === 'added' ? '#22c55e' : C.amber, cursor:(st === 'adding' || st === 'added') ? 'default' : 'pointer', fontFamily:'inherit', fontSize:'0.62rem', fontWeight:700, whiteSpace:'nowrap' as const }}
+                        >
+                          {st === 'added' ? <Check size={10}/> : <Plus size={10}/>}
+                          {st === 'adding' ? 'Adding…' : st === 'added' ? 'Added' : 'Add'}
+                        </button>
+                        {st === 'error' && <span style={{ fontSize:'0.6rem', color:C.red }}>failed</span>}
+                      </div>
+                      {cs?.open && <CommentsPanel state={cs} onRetry={() => analyseComments(o.videoId)}/>}
                     </div>
                   )
                 })}
@@ -1734,9 +1865,9 @@ export default function ContentPage() {
 
   // Generates new ideas from scratch — same checklist + research requirement
   // as validation, just run before an idea exists rather than after.
-  async function runFindIdeas(model: string, webSearch: boolean, count: number, scannedOutliers?: ScannedOutlier[], scannedVelocity?: ScannedOutlier[]): Promise<{ ideas: FoundIdea[] } | { error: string }> {
+  async function runFindIdeas(model: string, webSearch: boolean, count: number, scannedOutliers?: ScannedOutlier[], scannedVelocity?: ScannedOutlier[], commentInsights?: Record<string, TopComment[]>): Promise<{ ideas: FoundIdea[] } | { error: string }> {
     const existingTitles = items.map(i => i.title).slice(0, 60)
-    const { systemPrompt, userPrompt } = buildFindIdeasPrompt(existingTitles, count, scannedOutliers, scannedVelocity)
+    const { systemPrompt, userPrompt } = buildFindIdeasPrompt(existingTitles, count, scannedOutliers, scannedVelocity, commentInsights)
     try {
       const res = await fetch('/api/content/consult', {
         method: 'POST',
