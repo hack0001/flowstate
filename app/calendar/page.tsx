@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Trash2, Zap, Sun, X, RefreshCw, Bell, Settings2, Sparkles, ZoomIn, ZoomOut } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Plus, Trash2, Zap, Sun, X, RefreshCw, Bell, Settings2, Sparkles, ZoomIn, ZoomOut } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { generateDailyPlan, getDailyPlanSettings, saveDailyPlanSettings, getDailyPlanCandidates, commitDailyPlan, SECTION_LABEL, type DailyPlanSettings, type PlanCandidate } from '@/lib/dailyPlan'
 import { type Reminder, type ReminderRecurrence, reminderOccursOn, describeRecurrence } from '@/lib/reminders'
@@ -35,6 +35,15 @@ function getMondayOfWeek(d: Date): Date {
   const day = d.getDay()
   const diff = day === 0 ? -6 : 1 - day
   const mon = new Date(d); mon.setDate(d.getDate() + diff); mon.setHours(0,0,0,0); return mon
+}
+// Picks a range start so `d` lands roughly in the middle column of a
+// `days`-wide view instead of wherever a Monday-aligned week happens to put
+// it (which could be the very first or very last column depending on the
+// weekday). Used for "jump to today" so today's always easy to spot rather
+// than buried at an edge.
+function centeredStart(d: Date, days: number): Date {
+  const start = new Date(d); start.setHours(0, 0, 0, 0)
+  return addDays(start, -Math.floor(Math.max(1, days) / 2))
 }
 function addDays(d: Date, n: number): Date {
   const r = new Date(d); r.setDate(r.getDate() + n); return r
@@ -274,7 +283,12 @@ function TimelineBlock({
   onHover?: (e: React.MouseEvent) => void
   onHoverEnd?: () => void
 }) {
-  const [drag, setDrag] = useState<{ mode: 'move' | 'resize'; startY: number; deltaMin: number } | null>(null)
+  // 'move' drags the whole block (shifts start+end together). 'resize'
+  // drags the bottom handle (adjusts the finish time, start stays put).
+  // 'resize-top' drags the top handle (adjusts the start time, finish stays
+  // put) — the three together cover "move it", "change when it ends" and
+  // "change when it starts" with just the cursor.
+  const [drag, setDrag] = useState<{ mode: 'move' | 'resize' | 'resize-top'; startY: number; deltaMin: number } | null>(null)
   const draggable = block.kind === 'task' && !!onCommit
 
   useEffect(() => {
@@ -291,9 +305,14 @@ function TimelineBlock({
           if (d.mode === 'move') {
             const newStart = Math.min(TL_END_MIN - 10, Math.max(TL_START_MIN, block.start + d.deltaMin))
             onCommit(newStart, block.duration)
-          } else {
+          } else if (d.mode === 'resize') {
             const newDuration = Math.max(TL_SNAP_MIN, block.duration + d.deltaMin)
             onCommit(block.start, newDuration)
+          } else {
+            // resize-top: end time (start+duration) stays fixed, start moves
+            const end = block.start + block.duration
+            const newStart = Math.min(end - TL_SNAP_MIN, Math.max(TL_START_MIN, block.start + d.deltaMin))
+            onCommit(newStart, end - newStart)
           }
         }
         return null
@@ -304,8 +323,17 @@ function TimelineBlock({
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
   }, [drag, onCommit, block.start, block.duration, pxPerMin])
 
-  const liveStart = drag?.mode === 'move' ? Math.min(TL_END_MIN - 10, Math.max(TL_START_MIN, block.start + drag.deltaMin)) : block.start
-  const liveDuration = drag?.mode === 'resize' ? Math.max(TL_SNAP_MIN, block.duration + drag.deltaMin) : block.duration
+  const blockEnd = block.start + block.duration
+  const liveStart = drag?.mode === 'move'
+    ? Math.min(TL_END_MIN - 10, Math.max(TL_START_MIN, block.start + drag.deltaMin))
+    : drag?.mode === 'resize-top'
+      ? Math.min(blockEnd - TL_SNAP_MIN, Math.max(TL_START_MIN, block.start + drag.deltaMin))
+      : block.start
+  const liveDuration = drag?.mode === 'resize'
+    ? Math.max(TL_SNAP_MIN, block.duration + drag.deltaMin)
+    : drag?.mode === 'resize-top'
+      ? blockEnd - liveStart
+      : block.duration
   const top = (liveStart - TL_START_MIN) * pxPerMin
   const height = Math.max(16, liveDuration * pxPerMin)
   const widthPct = 100 / block.lanes
@@ -315,6 +343,7 @@ function TimelineBlock({
     <div
       onMouseDown={e => { if (draggable) { e.stopPropagation(); setDrag({ mode:'move', startY:e.clientY, deltaMin:0 }) } }}
       onClick={e => { e.stopPropagation(); if (!drag) onOpen?.() }}
+      onDoubleClick={e => e.stopPropagation()}
       onMouseEnter={onHover}
       onMouseLeave={onHoverEnd}
       title={block.timed ? undefined : 'No fixed time yet — showing a suggested slot. Drag to lock it in.'}
@@ -331,12 +360,20 @@ function TimelineBlock({
       }}
     >
       <p style={{ margin:0, fontSize:'0.6rem', fontWeight:700, color:block.color, lineHeight:1.25, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{block.title}</p>
-      {height > 28 && <p style={{ margin:0, fontSize:'0.53rem', color:C.muted }}>{fmtHour12(liveStart)}{drag ? ' → ' + fmtHour12(liveStart) : ''}</p>}
+      {height > 28 && <p style={{ margin:0, fontSize:'0.53rem', color:C.muted }}>{fmtHour12(liveStart)} – {fmtHour12(liveStart + liveDuration)}</p>}
       {draggable && (
-        <div
-          onMouseDown={e => { e.stopPropagation(); setDrag({ mode:'resize', startY:e.clientY, deltaMin:0 }) }}
-          style={{ position:'absolute', left:0, right:0, bottom:0, height:'6px', cursor:'ns-resize' }}
-        />
+        <>
+          <div
+            onMouseDown={e => { e.stopPropagation(); setDrag({ mode:'resize-top', startY:e.clientY, deltaMin:0 }) }}
+            title="Drag to change the start time"
+            style={{ position:'absolute', left:0, right:0, top:0, height:'6px', cursor:'ns-resize' }}
+          />
+          <div
+            onMouseDown={e => { e.stopPropagation(); setDrag({ mode:'resize', startY:e.clientY, deltaMin:0 }) }}
+            title="Drag to change the finish time"
+            style={{ position:'absolute', left:0, right:0, bottom:0, height:'6px', cursor:'ns-resize' }}
+          />
+        </>
       )}
     </div>
   )
@@ -347,7 +384,7 @@ function TimelineBlock({
 // above the grid for reminders/habits with no parseable time.
 function TimelineDay({
   date, tasks, reminders, habits, isToday, pxPerMin,
-  onCommitTask, onOpenTask, onOpenReminder, onOpenHabit, onHoverTask, onHoverGeneric, onHoverEnd,
+  onCommitTask, onOpenTask, onOpenReminder, onOpenHabit, onHoverTask, onHoverGeneric, onHoverEnd, onCreateAt,
 }: {
   date: string
   tasks: Task[]
@@ -362,6 +399,7 @@ function TimelineDay({
   onHoverTask: (e: React.MouseEvent, task: Task) => void
   onHoverGeneric: (e: React.MouseEvent, color: string, title: string, lines: string[]) => void
   onHoverEnd: () => void
+  onCreateAt: (date: string, startMin: number) => void
 }) {
   const autoPlaced = autoPlaceTasks(tasks)
   const taskBlocks: TLBlock[] = tasks.map(t => {
@@ -417,7 +455,15 @@ function TimelineDay({
               <span style={{ fontSize:'0.53rem', color:C.muted, transform:'translateY(-6px)', paddingLeft:'2px', background:C.bg }}>{fmtHour12(h)}</span>
             </div>
           ))}
-          <div style={{ position:'absolute', left:'26px', right:0, top:0, bottom:0 }}>
+          <div
+            onDoubleClick={e => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              const rawMin = TL_START_MIN + (e.clientY - rect.top) / pxPerMin
+              onCreateAt(date, rawMin)
+            }}
+            title="Double-click to add a task at this time"
+            style={{ position:'absolute', left:'26px', right:0, top:0, bottom:0, cursor:'copy' }}
+          >
             {laidOut.map(b => (
               <TimelineBlock
                 key={b.id}
@@ -464,7 +510,10 @@ function CalendarPageInner() {
   const searchParams = useSearchParams()
   const today = new Date()
   const todayStr = toDateStr(today)
-  const [weekStart, setWeekStart] = useState(() => getMondayOfWeek(today))
+  // Centered on today (not Monday-aligned) so today lands mid-row instead of
+  // wherever a calendar week happens to put it — e.g. on a Sunday, a
+  // Monday-start week would bury today in the last column.
+  const [weekStart, setWeekStart] = useState(() => centeredStart(today, 7))
   // How many day columns to show at once (1-7). Nav buttons step by this
   // amount so "next" always lands on the day right after the visible range.
   const [viewDays, setViewDays] = useState(7)
@@ -511,7 +560,13 @@ function CalendarPageInner() {
   const [editDueDate, setEditDueDate] = useState('')
   const [editUrgency, setEditUrgency] = useState('')
   const [editIsFrog, setEditIsFrog] = useState(false)
+  const [editStartTime, setEditStartTime] = useState('')
+  const [editDurationMin, setEditDurationMin] = useState(TL_DEFAULT_DURATION)
   const [savingEdit, setSavingEdit] = useState(false)
+  // true when the modal is being used to create a brand-new task (opened by
+  // double-clicking empty Timeline space) rather than edit an existing one —
+  // same modal, Save inserts instead of updates.
+  const [isCreatingTask, setIsCreatingTask] = useState(false)
   // Habits
   const [habits, setHabits] = useState<HabitBlock[]>([])
   const [showHabitModal, setShowHabitModal] = useState(false)
@@ -875,39 +930,87 @@ function CalendarPageInner() {
   }
 
   function openEdit(task: Task) {
+    setIsCreatingTask(false)
     setEditingTask(task)
     setEditTitle(task.title)
     setEditType(task.task_type ?? 'Flow')
     setEditDueDate(task.due_date ?? todayStr)
     setEditUrgency(task.urgency ?? '')
     setEditIsFrog(task.is_frog)
+    setEditStartTime(task.start_time ?? '')
+    setEditDurationMin(task.duration_min ?? TL_DEFAULT_DURATION)
+  }
+
+  // Opens the same edit modal in "create" mode, pre-filled with the date and
+  // time the user double-clicked in the Timeline grid — Notion-style "click
+  // empty space, fill in the details" instead of a separate add-task form.
+  function openCreateAt(date: string, startMin: number) {
+    const snapped = Math.max(TL_START_MIN, Math.min(TL_END_MIN - TL_SNAP_MIN, Math.round(startMin / TL_SNAP_MIN) * TL_SNAP_MIN))
+    const startTime = minutesToHHMM(snapped)
+    setIsCreatingTask(true)
+    setEditingTask({
+      id: '', title: '', due_date: date, status: 'Not started',
+      urgency: null, importance: null, time_commitment: null,
+      task_type: 'Flow', is_frog: false, why_note: null,
+      notion_id: null, notion_url: null, priority: null,
+      start_time: startTime, duration_min: TL_DEFAULT_DURATION,
+    })
+    setEditTitle('')
+    setEditType('Flow')
+    setEditDueDate(date)
+    setEditUrgency('')
+    setEditIsFrog(false)
+    setEditStartTime(startTime)
+    setEditDurationMin(TL_DEFAULT_DURATION)
+  }
+
+  function closeEditModal() {
+    setEditingTask(null)
+    setIsCreatingTask(false)
   }
 
   async function handleSaveEdit() {
-    if (!editingTask) return
+    if (!editingTask || !editTitle.trim()) return
     setSavingEdit(true)
     try {
-      await supabase.from('master_tasks').update({
-        title: editTitle, task_type: editType, due_date: editDueDate,
-        urgency: editUrgency || null, is_frog: editIsFrog,
-      }).eq('id', editingTask.id)
-      const oldDate = editingTask.due_date ?? todayStr
-      const updated = { ...editingTask, title: editTitle, task_type: editType, due_date: editDueDate, urgency: editUrgency || null, is_frog: editIsFrog }
-      setWeekTasks(prev => {
-        const next = { ...prev }
-        if (next[oldDate]) next[oldDate] = next[oldDate].filter(t => t.id !== editingTask.id)
-        if (next[editDueDate] !== undefined) next[editDueDate] = [...(next[editDueDate] ?? []), updated]
-        return next
-      })
-      setEditingTask(null)
+      const timeFields = { start_time: editStartTime || null, duration_min: editStartTime ? editDurationMin : null }
+      if (isCreatingTask) {
+        const { data, error } = await supabase
+          .from('master_tasks')
+          .insert({
+            title: editTitle, task_type: editType, due_date: editDueDate,
+            urgency: editUrgency || null, is_frog: editIsFrog, status: 'Not started',
+            ...timeFields,
+          })
+          .select()
+          .single()
+        if (!error && data) {
+          setWeekTasks(prev => ({ ...prev, [editDueDate]: [...(prev[editDueDate] ?? []), data as Task] }))
+        }
+      } else {
+        await supabase.from('master_tasks').update({
+          title: editTitle, task_type: editType, due_date: editDueDate,
+          urgency: editUrgency || null, is_frog: editIsFrog,
+          ...timeFields,
+        }).eq('id', editingTask.id)
+        const oldDate = editingTask.due_date ?? todayStr
+        const updated = { ...editingTask, title: editTitle, task_type: editType, due_date: editDueDate, urgency: editUrgency || null, is_frog: editIsFrog, ...timeFields }
+        setWeekTasks(prev => {
+          const next = { ...prev }
+          if (next[oldDate]) next[oldDate] = next[oldDate].filter(t => t.id !== editingTask.id)
+          if (next[editDueDate] !== undefined) next[editDueDate] = [...(next[editDueDate] ?? []), updated]
+          return next
+        })
+      }
+      closeEditModal()
     } catch {}
     setSavingEdit(false)
   }
 
   async function handleDeleteFromEdit() {
     if (!editingTask) return
-    await handleDelete(editingTask.id, editingTask.due_date ?? todayStr)
-    setEditingTask(null)
+    if (!isCreatingTask) await handleDelete(editingTask.id, editingTask.due_date ?? todayStr)
+    closeEditModal()
   }
 
   function openHabitForm(h: HabitBlock | null) {
@@ -1092,7 +1195,7 @@ function CalendarPageInner() {
               )
             })}
           </div>
-          <button onClick={() => { setCalDate(new Date(today.getFullYear(), today.getMonth(), 1)); setWeekStart(getMondayOfWeek(today)) }}
+          <button onClick={() => { setCalDate(new Date(today.getFullYear(), today.getMonth(), 1)); setWeekStart(centeredStart(today, viewDays)) }}
             style={{ marginTop:'0.75rem', width:'100%', padding:'0.4rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem' }}>Today</button>
 
           <div style={{ marginTop:'1.25rem', display:'flex', flexDirection:'column', gap:'0.4rem' }}>
@@ -1228,9 +1331,11 @@ function CalendarPageInner() {
         {/* Week grid */}
         {calTab === 'calendar' && <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
           <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', borderBottom:'1px solid '+C.border, flexShrink:0, flexWrap:'wrap' }}>
-            <button onClick={() => setWeekStart(w => addDays(w, -viewDays))} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronLeft size={16} /></button>
-            <span style={{ fontWeight:700, fontSize:'0.9rem', color:C.text, flex:1 }}>{fmtWeekRange(weekStart, viewDays)}</span>
-            <button onClick={() => setWeekStart(w => addDays(w, viewDays))} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronRight size={16} /></button>
+            <button onClick={() => setWeekStart(w => addDays(w, -viewDays))} title={`Back ${viewDays} day${viewDays===1?'':'s'}`} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronsLeft size={16} /></button>
+            <button onClick={() => setWeekStart(w => addDays(w, -1))} title="Back 1 day" style={{ width:'26px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'none', color:C.muted, cursor:'pointer' }}><ChevronLeft size={14} /></button>
+            <span style={{ fontWeight:700, fontSize:'0.9rem', color:C.text, flex:1, textAlign:'center' }}>{fmtWeekRange(weekStart, viewDays)}</span>
+            <button onClick={() => setWeekStart(w => addDays(w, 1))} title="Forward 1 day" style={{ width:'26px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'none', color:C.muted, cursor:'pointer' }}><ChevronRight size={14} /></button>
+            <button onClick={() => setWeekStart(w => addDays(w, viewDays))} title={`Forward ${viewDays} day${viewDays===1?'':'s'}`} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronsRight size={16} /></button>
             <div style={{ display:'flex', gap:'2px', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'2px' }}>
               {[1,2,3,4,5,6,7].map(n => (
                 <button key={n} onClick={() => setViewDays(n)} title={n + ' day' + (n===1?'':'s')} style={{ width:'22px', height:'24px', display:'flex', alignItems:'center', justifyContent:'center', background:viewDays===n?C.cyan:'transparent', border:'none', borderRadius:'0.35rem', color:viewDays===n?'#000':C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:700 }}>{n}</button>
@@ -1380,6 +1485,7 @@ function CalendarPageInner() {
                   onHoverTask={handleTaskHover}
                   onHoverGeneric={showTip}
                   onHoverEnd={hideTip}
+                  onCreateAt={openCreateAt}
                 />
               )
             })}
@@ -1619,12 +1725,13 @@ function CalendarPageInner() {
       {editingTask && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60 }}>
           <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem', width:'90%', maxWidth:'28rem', position:'relative' }}>
-            <button onClick={() => setEditingTask(null)} style={{ position:'absolute', top:'1rem', right:'1rem', background:'none', border:'none', color:C.muted, cursor:'pointer' }}><X size={16} /></button>
-            <h2 style={{ margin:'0 0 1.25rem', fontSize:'1rem', fontWeight:800, color:C.text }}>Edit Task</h2>
+            <button onClick={closeEditModal} style={{ position:'absolute', top:'1rem', right:'1rem', background:'none', border:'none', color:C.muted, cursor:'pointer' }}><X size={16} /></button>
+            <h2 style={{ margin:'0 0 1.25rem', fontSize:'1rem', fontWeight:800, color:C.text }}>{isCreatingTask ? 'New Task' : 'Edit Task'}</h2>
             <div style={{ display:'flex', flexDirection:'column', gap:'0.875rem' }}>
               <div>
                 <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Title</label>
-                <input value={editTitle} onChange={e => setEditTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSaveEdit()}
+                <input autoFocus={isCreatingTask} value={editTitle} onChange={e => setEditTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSaveEdit()}
+                  placeholder={isCreatingTask ? "What's this?" : undefined}
                   style={{ width:'100%', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.875rem', padding:'0.5rem 0.75rem', outline:'none', boxSizing:'border-box' }} />
               </div>
               <div>
@@ -1653,6 +1760,23 @@ function CalendarPageInner() {
                   ))}
                 </div>
               </div>
+              <div>
+                <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Time (optional — leave blank to auto-place)</label>
+                <div style={{ display:'flex', gap:'0.5rem', alignItems:'center', flexWrap:'wrap' }}>
+                  <input type="time" value={editStartTime} onChange={e => setEditStartTime(e.target.value)}
+                    style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', colorScheme:'dark' }} />
+                  <select value={editDurationMin} onChange={e => setEditDurationMin(Number(e.target.value))} disabled={!editStartTime}
+                    style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:editStartTime?C.text:C.muted, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', cursor:editStartTime?'pointer':'not-allowed' }}>
+                    {[15,30,45,60,90,120,180].map(m => <option key={m} value={m}>{m < 60 ? m+' min' : (m/60)+'h'+(m%60?' '+(m%60)+'m':'')}</option>)}
+                  </select>
+                  {editStartTime && (
+                    <button onClick={() => setEditStartTime('')} title="Clear fixed time — goes back to auto-placed"
+                      style={{ fontSize:'0.68rem', padding:'0.3rem 0.55rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.muted, cursor:'pointer', fontFamily:'inherit' }}>
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
               <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap' }}>
                 <div>
                   <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Urgency</label>
@@ -1670,11 +1794,13 @@ function CalendarPageInner() {
               </div>
             </div>
             <div style={{ display:'flex', gap:'0.5rem', justifyContent:'space-between', marginTop:'1.5rem' }}>
-              <button onClick={handleDeleteFromEdit} style={{ padding:'0.5rem 0.875rem', background:'transparent', border:'1px solid rgba(255,68,68,0.3)', borderRadius:'0.625rem', color:C.red, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Delete</button>
+              {isCreatingTask
+                ? <span />
+                : <button onClick={handleDeleteFromEdit} style={{ padding:'0.5rem 0.875rem', background:'transparent', border:'1px solid rgba(255,68,68,0.3)', borderRadius:'0.625rem', color:C.red, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Delete</button>}
               <div style={{ display:'flex', gap:'0.5rem' }}>
-                <button onClick={() => setEditingTask(null)} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Cancel</button>
+                <button onClick={closeEditModal} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Cancel</button>
                 <button onClick={handleSaveEdit} disabled={savingEdit || !editTitle.trim()} style={{ padding:'0.5rem 1.25rem', background:C.cyan, border:'none', borderRadius:'0.625rem', color:'#000', fontWeight:700, cursor:(savingEdit||!editTitle.trim())?'not-allowed':'pointer', fontFamily:'inherit', fontSize:'0.8rem', opacity:(savingEdit||!editTitle.trim())?0.5:1 }}>
-                  {savingEdit ? 'Saving...' : 'Save'}
+                  {savingEdit ? 'Saving...' : isCreatingTask ? 'Create' : 'Save'}
                 </button>
               </div>
             </div>
