@@ -18,7 +18,7 @@ const ALLOWED_MODELS: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { systemPrompt, userPrompt, model, webSearch } = await req.json()
+    const { systemPrompt, userPrompt, model, webSearch, messages } = await req.json()
     const resolvedModel = ALLOWED_MODELS[model] ?? ALLOWED_MODELS['claude-haiku-4-5-20251001']
 
     const headers: Record<string, string> = {
@@ -33,7 +33,9 @@ export async function POST(req: NextRequest) {
       // mid-array, which surfaced as JSON parse errors in the UI.
       max_tokens: webSearch ? 8000 : 4000,
       system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
+      // Multi-turn callers (Yap Session) pass a full messages array; every
+      // other caller still just passes a single userPrompt string.
+      messages: Array.isArray(messages) && messages.length > 0 ? messages : [{ role: 'user', content: userPrompt }],
     }
     // Idea validation opts into Claude's native web search tool so it can
     // actually look up comparable YouTube videos and comment themes instead

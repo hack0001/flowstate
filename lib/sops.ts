@@ -245,7 +245,7 @@ export const SOPS: SOP[] = [
   },
   {
     id:'08', icon:'&#128444;', title:'Thumbnail & SEO (Production)', group:'production',
-    tagline:'Build the real thumbnail from the concept you locked in Holy Trifecta, and finalise the SEO metadata. Pipeline stage: 🖼️ Thumbnail & SEO.',
+    tagline:'Long-form / Both / Podcast clip only — pure Shorts skip this stage entirely (no custom thumbnail, upload goes straight from Editing to Scheduled). Build the real thumbnail from the concept you locked in Holy Trifecta, and finalise the SEO metadata. Pipeline stage: 🖼️ Thumbnail & SEO.',
     steps:[
       '<strong>Thumbnail:</strong> Build the actual image using the type-combo you picked in Holy Trifecta. Bold graphic, minimal text (max 5 words), high contrast &mdash; check at 120px wide (mobile grid). High-quality source images matter more than most creators admit.',
       'No face &mdash; use charts, money visuals, bold typography, or dramatic imagery.',
@@ -351,11 +351,31 @@ export const STAGE_ADVANCE: Record<string, string> = {
   '📣 Live':              '📊 Post-Published',
 }
 
-export function sopForStage(stage: string | null): SOP | null {
+// A pure Short (format === 'Short') skips the Thumbnail & SEO production
+// stage entirely — no custom thumbnail, minimal metadata, folded straight
+// into Upload & Publish. 'Long-form', 'Both' and 'Podcast clip' all still
+// produce a real long-form asset and keep the full chain.
+export function isShortsOnly(format: string | null | undefined): boolean {
+  return format === 'Short'
+}
+
+const STAGE_TO_SOP_SHORTS: Record<string, string> = { ...STAGE_TO_SOP, '✂️ Editing': '09' }
+const STAGE_ADVANCE_SHORTS: Record<string, string> = { ...STAGE_ADVANCE, '✂️ Editing': '☁️ Scheduled' }
+
+export function sopForStage(stage: string | null, format?: string | null): SOP | null {
   if (!stage) return null
-  const id = STAGE_TO_SOP[stage]
+  const map = isShortsOnly(format) ? STAGE_TO_SOP_SHORTS : STAGE_TO_SOP
+  const id = map[stage]
   if (!id) return null
   return SOPS.find(s => s.id === id) ?? null
+}
+
+// Format-aware replacement for a raw STAGE_ADVANCE[stage] lookup — use this
+// at every call site that decides where an item goes next, so Shorts skip
+// the Thumbnail & SEO stage instead of getting stuck needing it.
+export function stageAdvance(stage: string, format?: string | null): string | undefined {
+  const map = isShortsOnly(format) ? STAGE_ADVANCE_SHORTS : STAGE_ADVANCE
+  return map[stage]
 }
 
 // ── Focus-session chunking ──────────────────────────────────────────────

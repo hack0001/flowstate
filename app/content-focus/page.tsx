@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Circle, Play, Pause, RefreshCw, SkipForward, Wind, Waves, VolumeX, Zap, Music2, ChevronRight } from 'lucide-react'
 import { supabase, getActiveFocusVideos, getContentItemById, getStageNote, saveStageNote, type ActiveFocusVideo } from '@/lib/supabase'
-import { STAGE_ADVANCE, sopForStage, nextSessionChunk } from '@/lib/sops'
+import { stageAdvance, sopForStage, nextSessionChunk } from '@/lib/sops'
 import { sounds } from '@/lib/sounds'
 import { usePomodoro } from '@/hooks/usePomodoro'
 import { useCelebration } from '@/hooks/useCelebration'
@@ -117,7 +117,7 @@ function ContentFocusPageInner() {
         const item = combined.find(v => v.id === row.content_item_id)
         // Only restore ticks that belong to the item's CURRENT sop — stale
         // ticks from a stage the item has already moved past are ignored.
-        if (item && sopForStage(item.pipeline_stage)?.id === row.sop_id) {
+        if (item && sopForStage(item.pipeline_stage, item.format)?.id === row.sop_id) {
           if (!map[row.content_item_id]) map[row.content_item_id] = new Set()
           map[row.content_item_id].add(row.step_index)
         }
@@ -145,7 +145,7 @@ function ContentFocusPageInner() {
     setVideoIdx(0)
     setChunkMode(true)
 
-    const sopObj = sopForStage(video.pipeline_stage)
+    const sopObj = sopForStage(video.pipeline_stage, video.format)
     let doneIdx = new Set<number>()
     if (sopObj) {
       const { data: completions } = await supabase
@@ -284,7 +284,8 @@ function ContentFocusPageInner() {
   }
 
   const item = videos[videoIdx] ?? null
-  const sop = item ? sopForStage(item.pipeline_stage) : null
+  const sop = item ? sopForStage(item.pipeline_stage, item.format) : null
+  const nextStage = item ? stageAdvance(item.pipeline_stage ?? '', item.format) : undefined
   const steps = sop?.steps ?? []
   const doneSet = item ? (stepDone[item.id] ?? new Set<number>()) : new Set<number>()
   const allStepsDone = steps.length > 0 && doneSet.size === steps.length
@@ -332,7 +333,7 @@ function ContentFocusPageInner() {
   async function advanceStage() {
     if (!item) return
     const fromStage = item.pipeline_stage ?? ''
-    const toStage = STAGE_ADVANCE[fromStage]
+    const toStage = stageAdvance(fromStage, item.format)
     if (!toStage) return
     const idx = videoIdx
     sounds.playStageComplete()
@@ -644,7 +645,7 @@ function ContentFocusPageInner() {
               ) : (
                 <div style={{ padding:'1rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.875rem' }}>
                   <p style={{ fontSize:'0.8rem', color:C.sec, lineHeight:1.6, margin:0 }}>
-                    {STAGE_ADVANCE[item.pipeline_stage ?? '']
+                    {nextStage
                       ? 'No SOP checklist is mapped to this exact stage — advance it manually when it’s ready.'
                       : 'This video is fully published — there’s nothing further in the pipeline for it. Swap it out from the Content Pipeline.'}
                   </p>
@@ -658,13 +659,13 @@ function ContentFocusPageInner() {
                 width:'100%', padding:'1.0625rem', border:'none', borderRadius:'0.875rem',
                 fontWeight:800, fontSize:'1.0625rem', cursor: (allStepsDone || !sop) ? 'pointer' : 'default',
                 fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.5rem',
-                background: (allStepsDone || (!sop && !!STAGE_ADVANCE[item.pipeline_stage ?? ''])) ? 'linear-gradient(135deg,'+C.green+',#00cc6a)' : C.surface,
-                color: (allStepsDone || (!sop && !!STAGE_ADVANCE[item.pipeline_stage ?? ''])) ? '#000' : C.muted,
-                opacity: (!sop && !STAGE_ADVANCE[item.pipeline_stage ?? '']) ? 0.4 : 1,
+                background: (allStepsDone || (!sop && !!nextStage)) ? 'linear-gradient(135deg,'+C.green+',#00cc6a)' : C.surface,
+                color: (allStepsDone || (!sop && !!nextStage)) ? '#000' : C.muted,
+                opacity: (!sop && !nextStage) ? 0.4 : 1,
                 letterSpacing:'-0.01em',
               }}>
               <CheckCircle2 size={18}/>
-              {STAGE_ADVANCE[item.pipeline_stage ?? ''] ? `Advance to ${STAGE_ADVANCE[item.pipeline_stage ?? '']}` : 'Nothing further to advance'}
+              {nextStage ? `Advance to ${nextStage}` : 'Nothing further to advance'}
             </button>
 
             {videos.length > 1 && (

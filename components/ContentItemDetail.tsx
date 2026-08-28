@@ -1,8 +1,10 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { X, ChevronRight, FileText, FolderOpen, Play } from 'lucide-react'
+import { X, ChevronRight, FileText, FolderOpen, Play, Sparkles, Clapperboard } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { SOPS, STAGE_TO_SOP } from '@/lib/sops'
+import { SOPS, sopForStage, isShortsOnly } from '@/lib/sops'
+import YapSession from './YapSession'
+import Storyboard from './Storyboard'
 
 // ============================================================
 // Full history / attributes view for one Content Pipeline item.
@@ -51,6 +53,8 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
   const [scriptUrl, setScriptUrl] = useState('')
   const [driveUrl, setDriveUrl] = useState('')
   const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [showYap, setShowYap] = useState(false)
+  const [showStoryboard, setShowStoryboard] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -75,8 +79,9 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
       setNotes(map)
       // Default-open whichever stage the item is actively working on right
       // now, or failing that the most recent stage that actually has a note.
-      const currentSopId = itemData?.pipeline_stage ? STAGE_TO_SOP[itemData.pipeline_stage] : null
-      const withNotes = PRODUCTION_SOP_IDS.filter(id => map[id]?.trim())
+      const currentSopId = itemData?.pipeline_stage ? sopForStage(itemData.pipeline_stage, itemData.format)?.id ?? null : null
+      const sopIds = isShortsOnly(itemData?.format) ? PRODUCTION_SOP_IDS.filter(id => id !== '08') : PRODUCTION_SOP_IDS
+      const withNotes = sopIds.filter(id => map[id]?.trim())
       setOpenStage(currentSopId && map[currentSopId] ? currentSopId : (withNotes[withNotes.length - 1] ?? null))
       setLoading(false)
     })()
@@ -167,13 +172,13 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
             {/* Full stage history — every SOP note this item has ever had, in order */}
             <p style={{ fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>Full history</p>
             <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-              {PRODUCTION_SOP_IDS.map(sopId => {
+              {(isShortsOnly(item.format) ? PRODUCTION_SOP_IDS.filter(id => id !== '08') : PRODUCTION_SOP_IDS).map(sopId => {
                 const sop = SOPS.find(s => s.id === sopId)
                 if (!sop) return null
                 const note = notes[sopId] ?? ''
                 const hasNote = note.trim().length > 0
                 const isOpen = openStage === sopId
-                const isCurrent = STAGE_TO_SOP[item.pipeline_stage ?? ''] === sopId
+                const isCurrent = sopForStage(item.pipeline_stage, item.format)?.id === sopId
                 return (
                   <div key={sopId} style={{ border:'1px solid '+(isCurrent ? 'rgba(0,212,255,0.3)' : C.border), borderRadius:'0.75rem', background: isCurrent ? 'rgba(0,212,255,0.03)' : 'transparent', overflow:'hidden' }}>
                     <button onClick={() => setOpenStage(isOpen ? null : sopId)} style={{ width:'100%', display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 0.75rem', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', textAlign:'left' }}>
@@ -185,6 +190,18 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
                     </button>
                     {isOpen && (
                       <div style={{ padding:'0 0.75rem 0.75rem' }}>
+                        {sopId === '04' && (
+                          <div style={{ display:'flex', gap:'0.5rem', marginBottom:'0.5rem' }}>
+                            <button onClick={() => setShowYap(true)}
+                              style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:'0.35rem', padding:'0.5rem', background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.5rem', color:C.purple, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700 }}>
+                              <Sparkles size={12}/> Yap Session
+                            </button>
+                            <button onClick={() => setShowStoryboard(true)}
+                              style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:'0.35rem', padding:'0.5rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.5rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700 }}>
+                              <Clapperboard size={12}/> Storyboard
+                            </button>
+                          </div>
+                        )}
                         <textarea
                           value={note}
                           onChange={e => updateNoteDraft(sopId, e.target.value)}
@@ -202,6 +219,18 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
           </>
         )}
       </div>
+      {showYap && item && (
+        <YapSession
+          itemId={itemId}
+          itemTitle={item.title}
+          itemContext={item.unique_angle ?? item.notes ?? undefined}
+          onClose={() => setShowYap(false)}
+          onSaved={outline => { updateNoteDraft('04', outline); setShowYap(false) }}
+        />
+      )}
+      {showStoryboard && item && (
+        <Storyboard itemId={itemId} itemTitle={item.title} onClose={() => setShowStoryboard(false)} />
+      )}
     </div>
   )
 }

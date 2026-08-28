@@ -930,7 +930,7 @@ export default function Home() {
       // own why_note -- so the home page CTA can show more than a title.
       const topVideo = focusResult.videos[0]
       if (topVideo) {
-        const sop = sopForStage(topVideo.pipeline_stage)
+        const sop = sopForStage(topVideo.pipeline_stage, topVideo.format)
         setTopTask({
           id: topVideo.id,
           title: sop ? sop.title + ' — ' + topVideo.title : 'Advance "' + topVideo.title + '"',

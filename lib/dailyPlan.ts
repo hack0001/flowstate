@@ -64,7 +64,7 @@ async function pullYoutube(budget: number): Promise<Draft[]> {
   if (videos.length === 0) return []
   const per = Math.max(30, Math.floor(budget / videos.length))
   return videos.map(v => {
-    const sop = sopForStage(v.pipeline_stage)
+    const sop = sopForStage(v.pipeline_stage, v.format)
     return {
       section: 'youtube' as const, source_id: v.id,
       title: sop ? sop.title + ' — ' + v.title : 'Advance "' + v.title + '"',

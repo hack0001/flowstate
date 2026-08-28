@@ -2,9 +2,11 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, getStageNote, saveStageNote } from '@/lib/supabase'
-import { sopForStage, IDEA_VALIDATION_CHECKS, SOPS, type SOP } from '@/lib/sops'
+import { sopForStage, isShortsOnly, IDEA_VALIDATION_CHECKS, SOPS, type SOP } from '@/lib/sops'
 import { CHANNEL_BRIEF, SCRIPT_VOICE, OUTLIER_SEED_QUERIES } from '@/lib/channelBrief'
 import ContentItemDetail from '@/components/ContentItemDetail'
+import YapSession from '@/components/YapSession'
+import Storyboard from '@/components/Storyboard'
 import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check, ArrowUpDown, FileText, MessageSquare } from 'lucide-react'
 
 const IDEA_VALIDATION_SOP_ID = 'idea_validation'
@@ -421,7 +423,7 @@ function MoveModal({ item, onMove, onClose }: { item:ContentItem; onMove:(s:stri
         </div>
         <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 1rem', lineHeight:1.4 }}>{item.title}</p>
         <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
-          {ALL_STAGES.map(s => (
+          {ALL_STAGES.filter(s => !(isShortsOnly(item.format) && s.key === '🖼️ Thumbnail & SEO')).map(s => (
             <button key={s.key} onClick={() => onMove(s.key)} style={{
               textAlign:'left', padding:'0.55rem 0.875rem',
               background: item.pipeline_stage === s.key ? s.bg : C.card,
@@ -1480,12 +1482,14 @@ function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focus
     await supabase.from('content_items').update({ [field]: value.trim() || null }).eq('id', item.id)
   }
   const isPostPublished = item.pipeline_stage === '📊 Post-Published'
-  const sop = sopForStage(item.pipeline_stage)
+  const sop = sopForStage(item.pipeline_stage, item.format)
   const [expanded, setExpanded] = useState(false)
   const [note, setNote] = useState('')
   const [noteLoaded, setNoteLoaded] = useState(false)
   const [consulting, setConsulting] = useState(false)
   const [noteMsg, setNoteMsg] = useState<string | null>(null)
+  const [showYap, setShowYap] = useState(false)
+  const [showStoryboard, setShowStoryboard] = useState(false)
 
   useEffect(() => {
     if (!expanded || !sop || noteLoaded) return
@@ -1541,8 +1545,9 @@ function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focus
     setAutoMsg(null)
     setAutoDone([])
     const prior: { title: string; output: string }[] = []
+    const stagesToRun = isShortsOnly(item.format) ? AUTO_DRAFT_STAGES.filter(s => s.sopId !== '08') : AUTO_DRAFT_STAGES
     try {
-      for (const { sopId, label } of AUTO_DRAFT_STAGES) {
+      for (const { sopId, label } of stagesToRun) {
         const stageSop = SOPS.find(sp => sp.id === sopId)
         if (!stageSop) continue
         setAutoStage(label)
@@ -1583,6 +1588,7 @@ function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focus
   }
 
   return (
+    <>
     <div style={{ background:C.card, border:'1px solid '+(item.is_active_focus ? 'rgba(255,184,0,0.35)' : C.border), borderRadius:'0.875rem', padding:'0.75rem', marginBottom:'0.4rem' }}>
       <div style={{ display:'flex', alignItems:'flex-start', gap:'0.4rem', marginBottom:'0.4rem' }}>
         <p style={{ fontSize:'0.82rem', fontWeight:700, color:C.text, margin:0, lineHeight:1.35, flex:1 }}>{item.title}</p>
@@ -1662,6 +1668,19 @@ function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focus
             <Sparkles size={11}/>{consulting ? 'Consulting Claude…' : 'Consult Claude'}
           </button>
 
+          {sop.id === '04' && (
+            <div style={{ display:'flex', gap:'0.35rem', marginBottom:'0.4rem' }}>
+              <button onClick={() => setShowYap(true)}
+                style={{ flex:1, padding:'0.4rem', background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.5rem', color:C.purple, fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.66rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.3rem' }}>
+                Yap Session
+              </button>
+              <button onClick={() => setShowStoryboard(true)}
+                style={{ flex:1, padding:'0.4rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.5rem', color:C.cyan, fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.66rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.3rem' }}>
+                Storyboard
+              </button>
+            </div>
+          )}
+
           {noteMsg && <p style={{ fontSize:'0.62rem', color:C.amber, margin:'0 0 0.4rem', lineHeight:1.4 }}>{noteMsg}</p>}
 
           <textarea
@@ -1693,6 +1712,19 @@ function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focus
         </div>
       )}
     </div>
+    {showYap && (
+      <YapSession
+        itemId={item.id}
+        itemTitle={item.title}
+        itemContext={item.unique_angle ?? item.notes ?? undefined}
+        onClose={() => setShowYap(false)}
+        onSaved={outline => { setNote(outline); setShowYap(false) }}
+      />
+    )}
+    {showStoryboard && (
+      <Storyboard itemId={item.id} itemTitle={item.title} onClose={() => setShowStoryboard(false)}/>
+    )}
+    </>
   )
 }
 
@@ -1702,6 +1734,13 @@ export default function ContentPage() {
   const [items,      setItems]      = useState<ContentItem[]>([])
   const [loading,    setLoading]    = useState(true)
   const [view,       setView]       = useState<View>('ideas')
+  // Two boards, one kanban component — Shorts drops the Thumbnail & SEO
+  // column entirely (see isShortsOnly in lib/sops.ts) since a pure Short
+  // never needs a custom thumbnail or real SEO metadata. Everything else
+  // (Long-form, Both, Podcast clip, or unset) is treated as the long-form
+  // board's territory — 'Both' items live there since the short cut is a
+  // downstream clip made at Post-Publish, not a separate top-to-bottom run.
+  const [pipelineFormat, setPipelineFormat] = useState<'long' | 'shorts'>('long')
   const [moveTarget, setMoveTarget] = useState<ContentItem | null>(null)
   const [detailItem, setDetailItem] = useState<ContentItem | null>(null)
   const [showAdd,    setShowAdd]    = useState(false)
@@ -2027,9 +2066,11 @@ export default function ContentPage() {
   const pipeline = items.filter(i => i.pipeline_stage && STAGE_KEYS.includes(i.pipeline_stage) && i.pipeline_stage !== '💡 Idea')
   const liveCount = items.filter(i => i.pipeline_stage === '📣 Live').length
 
-  const byStage = PIPELINE_STAGES.map(s => ({
+  const boardItems = pipeline.filter(i => pipelineFormat === 'shorts' ? isShortsOnly(i.format) : !isShortsOnly(i.format))
+  const boardStages = pipelineFormat === 'shorts' ? PIPELINE_STAGES.filter(s => s.key !== '🖼️ Thumbnail & SEO') : PIPELINE_STAGES
+  const byStage = boardStages.map(s => ({
     ...s,
-    items: items.filter(i => i.pipeline_stage === s.key),
+    items: boardItems.filter(i => i.pipeline_stage === s.key),
   }))
 
   return (
@@ -2204,9 +2245,26 @@ export default function ContentPage() {
 
           /* ── PIPELINE KANBAN ── */
           <div>
-            <p style={{ fontSize:'0.75rem', color:C.muted, margin:'0 0 1.25rem' }}>
-              Hover a stage chip to see the SOP checklist for that step. {pipeline.length} videos in active production.
-            </p>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.6rem', marginBottom:'0.75rem' }}>
+              <p style={{ fontSize:'0.75rem', color:C.muted, margin:0 }}>
+                Hover a stage chip to see the SOP checklist for that step. {boardItems.length} in this board.
+              </p>
+              <div style={{ display:'flex', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', overflow:'hidden' }}>
+                {([
+                  { v:'long' as const,   label:'Long-form',    count: pipeline.filter(i => !isShortsOnly(i.format)).length },
+                  { v:'shorts' as const, label:'Shorts',       count: pipeline.filter(i => isShortsOnly(i.format)).length },
+                ]).map(b => (
+                  <button key={b.v} onClick={() => setPipelineFormat(b.v)} style={{ padding:'0.4rem 0.75rem', background:pipelineFormat===b.v?'rgba(0,212,255,0.12)':'transparent', border:'none', borderRight: b.v==='long' ? '1px solid '+C.border : 'none', color:pipelineFormat===b.v?C.cyan:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700 }}>
+                    {b.label} <span style={{ opacity:0.7 }}>({b.count})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {pipelineFormat === 'shorts' && (
+              <p style={{ fontSize:'0.68rem', color:C.muted, margin:'0 0 1rem', fontStyle:'italic' }}>
+                Shorts board — Thumbnail &amp; SEO is skipped entirely; Editing advances straight to Scheduled.
+              </p>
+            )}
 
             {weeklyTargets.length > 0 && (
               <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap', marginBottom:'1.25rem', padding:'0.75rem 1rem', background:'rgba(0,212,255,0.04)', border:'1px solid rgba(0,212,255,0.18)', borderRadius:'0.875rem' }}>
