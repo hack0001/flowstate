@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { X, ChevronRight, FileText, FolderOpen, Play, Sparkles, Clapperboard } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { SOPS, sopForStage, isShortsOnly } from '@/lib/sops'
+import { SOPS, sopForStage, productionSopIdsFor } from '@/lib/sops'
 import YapSession from './YapSession'
 import Storyboard from './Storyboard'
 
@@ -80,7 +80,7 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
       // Default-open whichever stage the item is actively working on right
       // now, or failing that the most recent stage that actually has a note.
       const currentSopId = itemData?.pipeline_stage ? sopForStage(itemData.pipeline_stage, itemData.format)?.id ?? null : null
-      const sopIds = isShortsOnly(itemData?.format) ? PRODUCTION_SOP_IDS.filter(id => id !== '08') : PRODUCTION_SOP_IDS
+      const sopIds = productionSopIdsFor(itemData?.format, PRODUCTION_SOP_IDS)
       const withNotes = sopIds.filter(id => map[id]?.trim())
       setOpenStage(currentSopId && map[currentSopId] ? currentSopId : (withNotes[withNotes.length - 1] ?? null))
       setLoading(false)
@@ -172,7 +172,7 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
             {/* Full stage history — every SOP note this item has ever had, in order */}
             <p style={{ fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>Full history</p>
             <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-              {(isShortsOnly(item.format) ? PRODUCTION_SOP_IDS.filter(id => id !== '08') : PRODUCTION_SOP_IDS).map(sopId => {
+              {productionSopIdsFor(item.format, PRODUCTION_SOP_IDS).map(sopId => {
                 const sop = SOPS.find(s => s.id === sopId)
                 if (!sop) return null
                 const note = notes[sopId] ?? ''

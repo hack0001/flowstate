@@ -5,10 +5,12 @@ const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 export const supabase = createClient(url, key)
 
 // ---- YouTube-Pipeline-driven focus session (Home "Start focus session") ----
-// Up to 2 content_items pinned via is_active_focus in the Content Pipeline,
-// topped up with whichever item(s) have sat longest in their current stage
-// if fewer than 2 are pinned. Shared by the Home page preview and
-// app/content-focus/page.tsx (which runs the actual guided session).
+// Up to getMaxFocusItems() content_items pinned via is_active_focus in the
+// Content Pipeline (a configurable setting, default 2 — see
+// content_focus_settings below), topped up with whichever item(s) have sat
+// longest in their current stage if fewer than that are pinned. Shared by
+// the Home page preview and app/content-focus/page.tsx (which runs the
+// actual guided session).
 export type ActiveFocusVideo = {
   id: string
   title: string
@@ -16,6 +18,12 @@ export type ActiveFocusVideo = {
   format: string | null
   is_active_focus: boolean
   updated_at: string | null
+  // Added so the Focus Session can build the same rich Consult Claude
+  // prompt (lib/stageDraftPrompt.ts) the Pipeline's Produce button uses,
+  // now that per-stage AI drafting lives only in the focus session.
+  video_type?: string | null
+  unique_angle?: string | null
+  notes?: string | null
 }
 
 export type ActiveFocusResult = { videos: ActiveFocusVideo[]; error: string | null }
@@ -30,27 +38,48 @@ function explainFocusError(message: string | undefined): string {
   return message ?? 'Unknown error loading active focus videos.'
 }
 
+// ---- Configurable focus-star cap (039_content_focus_settings.sql) ----
+// How many content_items can be pinned (is_active_focus = true) at once.
+// Used to be a hardcoded 2 everywhere; now a single-row settings table Tom
+// can change from the Content Pipeline. Falls back to 2 if the migration
+// hasn't been run yet, so nothing breaks on an older database.
+export const DEFAULT_MAX_FOCUS_ITEMS = 2
+
+export async function getMaxFocusItems(): Promise<number> {
+  const { data } = await supabase.from('content_focus_settings').select('max_focus_items').eq('id', 1).maybeSingle()
+  return data?.max_focus_items ?? DEFAULT_MAX_FOCUS_ITEMS
+}
+
+export async function setMaxFocusItems(n: number): Promise<{ error: string | null }> {
+  const clamped = Math.max(1, Math.min(20, Math.round(n)))
+  const { error } = await supabase.from('content_focus_settings')
+    .upsert({ id: 1, max_focus_items: clamped, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+  if (error) return { error: "Setup needed: run supabase/migrations/039_content_focus_settings.sql against your database first." }
+  return { error: null }
+}
+
 export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
+  const maxItems = await getMaxFocusItems()
   const { data: pinnedData, error: pinnedErr } = await supabase
     .from('content_items')
-    .select('id,title,pipeline_stage,format,is_active_focus,updated_at')
+    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes')
     .eq('is_active_focus', true)
     .neq('archived', true)
 
   if (pinnedErr) return { videos: [], error: explainFocusError(pinnedErr.message) }
 
   const pinned: ActiveFocusVideo[] = pinnedData ?? []
-  let combined = pinned.slice(0, 2)
-  if (combined.length < 2) {
+  let combined = pinned.slice(0, maxItems)
+  if (combined.length < maxItems) {
     const { data: fallbackData, error: fallbackErr } = await supabase
       .from('content_items')
-      .select('id,title,pipeline_stage,format,is_active_focus,updated_at')
+      .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes')
       .eq('is_active_focus', false)
       .neq('archived', true)
       .not('pipeline_stage', 'is', null)
       .neq('pipeline_stage', '📊 Post-Published')
       .order('updated_at', { ascending: true })
-      .limit(2 - combined.length)
+      .limit(maxItems - combined.length)
     if (fallbackErr) return { videos: combined, error: explainFocusError(fallbackErr.message) }
     combined = [...combined, ...((fallbackData ?? []) as ActiveFocusVideo[])]
   }
@@ -64,7 +93,7 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
 export async function getContentItemById(id: string): Promise<{ video: ActiveFocusVideo | null; error: string | null }> {
   const { data, error } = await supabase
     .from('content_items')
-    .select('id,title,pipeline_stage,format,is_active_focus,updated_at')
+    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes')
     .eq('id', id)
     .maybeSingle()
   if (error) return { video: null, error: explainFocusError(error.message) }

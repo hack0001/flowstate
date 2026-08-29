@@ -1,12 +1,11 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase, getStageNote, saveStageNote } from '@/lib/supabase'
-import { sopForStage, isShortsOnly, IDEA_VALIDATION_CHECKS, SOPS, type SOP } from '@/lib/sops'
+import { supabase, getStageNote, saveStageNote, getMaxFocusItems, setMaxFocusItems, DEFAULT_MAX_FOCUS_ITEMS } from '@/lib/supabase'
+import { sopForStage, isShortsOnly, isStageSkippedForShorts, productionSopIdsFor, IDEA_VALIDATION_CHECKS, SOPS } from '@/lib/sops'
 import { CHANNEL_BRIEF, SCRIPT_VOICE, OUTLIER_SEED_QUERIES } from '@/lib/channelBrief'
+import { buildStageDraftPrompt } from '@/lib/stageDraftPrompt'
 import ContentItemDetail from '@/components/ContentItemDetail'
-import YapSession from '@/components/YapSession'
-import Storyboard from '@/components/Storyboard'
 import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check, ArrowUpDown, FileText, MessageSquare } from 'lucide-react'
 
 const IDEA_VALIDATION_SOP_ID = 'idea_validation'
@@ -282,43 +281,6 @@ function buildFindIdeasPrompt(existingTitles: string[], count: number, scannedOu
   return { systemPrompt, userPrompt }
 }
 
-// ── Stage draft prompt (shared by per-stage Consult Claude + Auto-draft) ────
-// One builder so a single stage consult and the full production-pack chain
-// produce consistent output. priorStages lets the chain feed each stage the
-// stages drafted before it (script builds on research + trifecta, etc.).
-function buildStageDraftPrompt(
-  item: ContentItem,
-  sop: SOP,
-  opts?: { existingNote?: string; priorStages?: { title: string; output: string }[] }
-): { systemPrompt: string; userPrompt: string } {
-  // The voice spec only applies to stages that actually produce spoken words
-  // — Scripting (04) and the Holy Trifecta hook (03). Research (02), Assets
-  // (05) and Thumbnail/SEO (08) are logistics, not delivery, so they stay
-  // plain to avoid the model trying to write those in a comedy voice.
-  const isScripting = sop.id === '04' || sop.id === '03'
-  const systemPrompt = 'You are a YouTube production assistant for SoundMoney.\n\n' + CHANNEL_BRIEF +
-    (isScripting ? '\n\n' + SCRIPT_VOICE : '') +
-    '\n\nYou draft concrete, ready-to-use output for one pipeline stage at a time — never generic advice, always specific to the video described, always consistent with the CHANNEL BRIEF above (packaging patterns, prescriptive ending, faceless format)' +
-    (isScripting ? ', and written in the SOUNDMONEY SCRIPT VOICE above' : '') +
-    '. Keep output tight and scannable, using the checklist as your brief. Write in plain text (no markdown headers), short paragraphs or a short list where useful.'
-  const prior = (opts?.priorStages ?? []).filter(p => p.output?.trim())
-  const wantsShort = !!item.format && item.format !== 'Long-form'
-  const userPrompt = `Video title: ${item.title}\n` +
-    (item.video_type ? `Video type: ${item.video_type}\n` : '') +
-    (item.format ? `Format: ${item.format}\n` : '') +
-    (item.unique_angle ? `Unique angle: ${item.unique_angle}\n` : '') +
-    (item.notes ? `Existing notes: ${item.notes}\n` : '') +
-    (prior.length > 0
-      ? `\nOutputs already drafted for earlier stages — build on these and stay consistent with them:\n` +
-        prior.map(p => `--- ${p.title} ---\n${p.output}`).join('\n\n') + '\n'
-      : '') +
-    (opts?.existingNote ? `\nWork already drafted for this stage (improve and extend it rather than starting over):\n${opts.existingNote}\n` : '') +
-    `\nCurrent pipeline stage: ${sop.title}\nWhat this stage needs (checklist, strip the HTML tags mentally):\n` +
-    sop.steps.map((st, i) => (i + 1) + '. ' + st.replace(/<[^>]+>/g, '')).join('\n') +
-    `\n\nDraft the actual output for this stage for this specific video — e.g. if this is Research, give the wild stats, the story arc, the historical parallel and the sources to verify; if it's Holy Trifecta, give 3 title options + thumbnail concept + hook; if it's Scripting, give the section outline and the full opening${wantsShort ? ', plus a 60-80 word Shorts version cut from the strongest moment' : ''}; if it's Asset Gathering, list the specific memes, b-roll shots and charts the script calls for; if it's Thumbnail & SEO, give the final title pick, thumbnail build spec, description and tags. Where a fact is missing, write [FILL IN: what's needed] rather than inventing it.`
-  return { systemPrompt, userPrompt }
-}
-
 // The stages the auto-draft chain fills, in dependency order. Voiceover,
 // Editing and Upload stay human — that's where the creator's voice and
 // judgment go; the chain's job is to have everything ready for them.
@@ -423,7 +385,7 @@ function MoveModal({ item, onMove, onClose }: { item:ContentItem; onMove:(s:stri
         </div>
         <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 1rem', lineHeight:1.4 }}>{item.title}</p>
         <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
-          {ALL_STAGES.filter(s => !(isShortsOnly(item.format) && s.key === '🖼️ Thumbnail & SEO')).map(s => (
+          {ALL_STAGES.filter(s => !isStageSkippedForShorts(s.key, item.format)).map(s => (
             <button key={s.key} onClick={() => onMove(s.key)} style={{
               textAlign:'left', padding:'0.55rem 0.875rem',
               background: item.pipeline_stage === s.key ? s.bg : C.card,
@@ -1446,14 +1408,15 @@ function FindIdeasModal({ onGenerate, onAdd, onClose }: {
 }
 
 // ── Focus pin star ──────────────────────────────────────────────────────────
-// Pins up to 2 items as the Home page's "active focus" videos/shorts. Capped
-// at 2 in the app layer (see toggleFocus in the main page component below).
-function FocusStar({ active, atCap, onToggle }: { active:boolean; atCap:boolean; onToggle:()=>void }) {
+// Pins up to `max` items as the Home page's "active focus" videos/shorts —
+// max is Tom's own setting now (content_focus_settings, default 2), not a
+// hardcoded cap. See toggleFocus in the main page component below.
+function FocusStar({ active, atCap, max, onToggle }: { active:boolean; atCap:boolean; max:number; onToggle:()=>void }) {
   return (
     <button
       onClick={e => { e.stopPropagation(); onToggle() }}
       disabled={!active && atCap}
-      title={active ? 'Unpin from Home focus' : atCap ? 'Already 2 pinned — unpin one first' : 'Pin as active focus on Home'}
+      title={active ? 'Unpin from Home focus' : atCap ? `Already ${max} pinned — unpin one first, or raise the limit above the board` : 'Pin as active focus on Home'}
       style={{
         display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
         width:'1.375rem', height:'1.375rem', borderRadius:'0.4rem',
@@ -1470,65 +1433,18 @@ function FocusStar({ active, atCap, onToggle }: { active:boolean; atCap:boolean;
 }
 
 // ── Pipeline card ───────────────────────────────────────────────────────────
-function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focusAtCap, onShowDetail }: { item:ContentItem; stats?: YtStats; onMove:()=>void; onSaveRevenue:(note:string)=>void; onToggleFocus:()=>void; focusAtCap:boolean; onShowDetail:()=>void }) {
+// Deliberately slim: attributes, links, stats, and a small action row. All
+// per-stage work — the SOP checklist, Consult Claude, the stage note, Yap
+// Session and Storyboard — lives one click away in the Focus Session
+// (Start Focus Session below), not inline here. Cramming all of that into
+// every card in the Kanban made the board unreadable; the Focus Session is
+// already built to hold exactly this per-stage detail one item at a time.
+function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focusAtCap, focusMax, onShowDetail }: { item:ContentItem; stats?: YtStats; onMove:()=>void; onSaveRevenue:(note:string)=>void; onToggleFocus:()=>void; focusAtCap:boolean; focusMax:number; onShowDetail:()=>void }) {
   const router = useRouter()
   const s = stageStyle(item.pipeline_stage)
   const [revenue, setRevenue] = useState(item.revenue_note ?? '')
-  const [scriptUrl, setScriptUrl] = useState(item.script_url ?? '')
-  const [driveUrl, setDriveUrl] = useState(item.drive_url ?? '')
-  const [youtubeUrl, setYoutubeUrl] = useState(item.youtube_url ?? '')
-
-  async function saveLink(field: 'script_url' | 'drive_url' | 'youtube_url', value: string) {
-    await supabase.from('content_items').update({ [field]: value.trim() || null }).eq('id', item.id)
-  }
   const isPostPublished = item.pipeline_stage === '📊 Post-Published'
   const sop = sopForStage(item.pipeline_stage, item.format)
-  const [expanded, setExpanded] = useState(false)
-  const [note, setNote] = useState('')
-  const [noteLoaded, setNoteLoaded] = useState(false)
-  const [consulting, setConsulting] = useState(false)
-  const [noteMsg, setNoteMsg] = useState<string | null>(null)
-  const [showYap, setShowYap] = useState(false)
-  const [showStoryboard, setShowStoryboard] = useState(false)
-
-  useEffect(() => {
-    if (!expanded || !sop || noteLoaded) return
-    getStageNote(item.id, sop.id).then(({ output, error }) => {
-      if (error) setNoteMsg(error)
-      else setNote(output ?? '')
-      setNoteLoaded(true)
-    })
-  }, [expanded, sop, item.id, noteLoaded])
-
-  async function saveNote(text: string) {
-    if (!sop) return
-    const { error } = await saveStageNote(item.id, sop.id, text)
-    if (error) setNoteMsg(error)
-  }
-
-  async function consultClaude() {
-    if (!sop) return
-    setConsulting(true)
-    setNoteMsg(null)
-    const { systemPrompt, userPrompt } = buildStageDraftPrompt(item, sop, { existingNote: note })
-    try {
-      const res = await fetch('/api/content/consult', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ systemPrompt, userPrompt }),
-      })
-      const data = await res.json()
-      if (data?.error) { setNoteMsg('API error: ' + JSON.stringify(data.error)); return }
-      const raw = data?.content?.[0]?.text ?? ''
-      if (!raw) { setNoteMsg('Empty response from Claude.'); return }
-      setNote(raw)
-      await saveNote(raw)
-    } catch (e) {
-      setNoteMsg('Consult failed: ' + String(e))
-    } finally {
-      setConsulting(false)
-    }
-  }
 
   // ── One-click production pack ─────────────────────────────────────────────
   // Runs the whole AI-draftable chain (Research → Trifecta → Script → Assets
@@ -1545,7 +1461,8 @@ function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focus
     setAutoMsg(null)
     setAutoDone([])
     const prior: { title: string; output: string }[] = []
-    const stagesToRun = isShortsOnly(item.format) ? AUTO_DRAFT_STAGES.filter(s => s.sopId !== '08') : AUTO_DRAFT_STAGES
+    const stagesToRunIds = productionSopIdsFor(item.format, AUTO_DRAFT_STAGES.map(s => s.sopId))
+    const stagesToRun = AUTO_DRAFT_STAGES.filter(s => stagesToRunIds.includes(s.sopId))
     try {
       for (const { sopId, label } of stagesToRun) {
         const stageSop = SOPS.find(sp => sp.id === sopId)
@@ -1576,8 +1493,6 @@ function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focus
         if (error) { setAutoMsg(`Stopped at ${label}: ` + error); return }
         prior.push({ title: stageSop.title, output: raw })
         setAutoDone(d => [...d, label + ' ✓'])
-        // If the card's currently-open stage just got drafted, show it.
-        if (sop && sop.id === sopId) { setNote(raw); setNoteLoaded(true) }
       }
       setAutoMsg('Production pack ready — open each stage, edit into your voice, tick the checklist, then record.')
     } catch (e) {
@@ -1588,11 +1503,10 @@ function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focus
   }
 
   return (
-    <>
     <div style={{ background:C.card, border:'1px solid '+(item.is_active_focus ? 'rgba(255,184,0,0.35)' : C.border), borderRadius:'0.875rem', padding:'0.75rem', marginBottom:'0.4rem' }}>
       <div style={{ display:'flex', alignItems:'flex-start', gap:'0.4rem', marginBottom:'0.4rem' }}>
         <p style={{ fontSize:'0.82rem', fontWeight:700, color:C.text, margin:0, lineHeight:1.35, flex:1 }}>{item.title}</p>
-        <FocusStar active={item.is_active_focus} atCap={focusAtCap} onToggle={onToggleFocus}/>
+        <FocusStar active={item.is_active_focus} atCap={focusAtCap} max={focusMax} onToggle={onToggleFocus}/>
       </div>
       <div style={{ display:'flex', alignItems:'center', gap:'0.3rem', flexWrap:'wrap' as const, marginBottom:'0.4rem' }}>
         {item.format && <span style={{ fontSize:'0.6rem', color:C.muted, background:C.surface, border:'1px solid '+C.border, borderRadius:'9999px', padding:'0.1rem 0.4rem' }}>{item.format}</span>}
@@ -1634,18 +1548,13 @@ function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focus
             <Zap size={10}/>{autoStage ? `Drafting ${autoStage}…` : 'Produce'}
           </button>
         )}
-        {sop && (
-          <button onClick={() => setExpanded(e => !e)} style={{ padding:'0.3rem 0.5rem', background: expanded ? 'rgba(139,92,246,0.1)' : 'rgba(255,255,255,0.02)', border:'1px solid '+(expanded ? 'rgba(139,92,246,0.3)' : C.border), borderRadius:'0.5rem', color: expanded ? C.purple : C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.25rem' }}>
-            SOP &amp; AI <ChevronDown size={10} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition:'transform 0.15s' }}/>
-          </button>
-        )}
       </div>
       {sop && !isPostPublished && (
         <button
           onClick={() => router.push('/content-focus?item=' + item.id)}
-          title="Jump into a timed focus session for the next 3-4 tasks on this item"
-          style={{ width:'100%', marginTop:'0.3rem', padding:'0.35rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.5rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.66rem', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:'0.3rem' }}>
-          <Zap size={11}/>Start Focus Session
+          title="Open the SOP checklist, Consult Claude, Yap Session and Storyboard for this stage in a focused session"
+          style={{ width:'100%', marginTop:'0.3rem', padding:'0.5rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.5rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:'0.3rem' }}>
+          <Zap size={12}/>Start Focus Session
         </button>
       )}
       {(autoDone.length > 0 || autoMsg) && (
@@ -1654,77 +1563,7 @@ function PipelineCard({ item, stats, onMove, onSaveRevenue, onToggleFocus, focus
           {autoMsg && <p style={{ fontSize:'0.62rem', color: autoMsg.startsWith('Stopped') || autoMsg.startsWith('Auto-draft failed') ? C.amber : C.green, margin: autoDone.length ? '0.2rem 0 0' : 0, lineHeight:1.5, fontWeight:600 }}>{autoMsg}</p>}
         </div>
       )}
-
-      {expanded && sop && (
-        <div style={{ marginTop:'0.5rem', paddingTop:'0.5rem', borderTop:'1px solid '+C.border }}>
-          <p style={{ fontSize:'0.68rem', fontWeight:700, color:C.purple, margin:'0 0 0.3rem' }}>{sop.icon ? <span dangerouslySetInnerHTML={{ __html: sop.icon + ' ' }}/> : null}{sop.title}</p>
-          <ul style={{ margin:'0 0 0.5rem', paddingLeft:'1rem', display:'flex', flexDirection:'column', gap:'0.15rem' }}>
-            {sop.steps.map((st, i) => (
-              <li key={i} style={{ fontSize:'0.65rem', color:C.sec, lineHeight:1.4 }} dangerouslySetInnerHTML={{ __html: st }}/>
-            ))}
-          </ul>
-
-          <button onClick={consultClaude} disabled={consulting} style={{ width:'100%', marginBottom:'0.4rem', padding:'0.4rem', background: consulting ? C.surface : 'rgba(0,212,255,0.1)', border:'1px solid '+(consulting ? C.border : 'rgba(0,212,255,0.3)'), borderRadius:'0.5rem', color: consulting ? C.muted : C.cyan, fontWeight:700, cursor: consulting ? 'default' : 'pointer', fontFamily:'inherit', fontSize:'0.68rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.35rem' }}>
-            <Sparkles size={11}/>{consulting ? 'Consulting Claude…' : 'Consult Claude'}
-          </button>
-
-          {sop.id === '04' && (
-            <div style={{ display:'flex', gap:'0.35rem', marginBottom:'0.4rem' }}>
-              <button onClick={() => setShowYap(true)}
-                style={{ flex:1, padding:'0.4rem', background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.5rem', color:C.purple, fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.66rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.3rem' }}>
-                Yap Session
-              </button>
-              <button onClick={() => setShowStoryboard(true)}
-                style={{ flex:1, padding:'0.4rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.5rem', color:C.cyan, fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.66rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.3rem' }}>
-                Storyboard
-              </button>
-            </div>
-          )}
-
-          {noteMsg && <p style={{ fontSize:'0.62rem', color:C.amber, margin:'0 0 0.4rem', lineHeight:1.4 }}>{noteMsg}</p>}
-
-          <textarea
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            onBlur={() => saveNote(note)}
-            placeholder="Consult Claude above, or write this stage's notes yourself…"
-            rows={4}
-            style={{ width:'100%', padding:'0.5rem 0.6rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.7rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}
-          />
-
-          {/* Per-video links — script doc, Drive asset folder, published video */}
-          <div style={{ marginTop:'0.5rem', display:'flex', flexDirection:'column', gap:'0.3rem' }}>
-            {([
-              { label:'Script link', value:scriptUrl, set:setScriptUrl, field:'script_url' as const, ph:'Google Doc / Drive link to the script' },
-              { label:'Asset folder', value:driveUrl, set:setDriveUrl, field:'drive_url' as const, ph:'Google Drive folder with VO, b-roll, thumbnail' },
-              { label:'YouTube URL', value:youtubeUrl, set:setYoutubeUrl, field:'youtube_url' as const, ph:'Published video link — enables live stats on this card' },
-            ]).map(l => (
-              <div key={l.field} style={{ display:'flex', alignItems:'center', gap:'0.4rem' }}>
-                <span style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase', color:C.muted, width:'5.2rem', flexShrink:0 }}>{l.label}</span>
-                <input
-                  value={l.value} onChange={e => l.set(e.target.value)} onBlur={() => saveLink(l.field, l.value)}
-                  placeholder={l.ph}
-                  style={{ flex:1, padding:'0.3rem 0.5rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.text, fontFamily:'inherit', fontSize:'0.64rem', outline:'none', boxSizing:'border-box' as const }}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
-    {showYap && (
-      <YapSession
-        itemId={item.id}
-        itemTitle={item.title}
-        itemContext={item.unique_angle ?? item.notes ?? undefined}
-        onClose={() => setShowYap(false)}
-        onSaved={outline => { setNote(outline); setShowYap(false) }}
-      />
-    )}
-    {showStoryboard && (
-      <Storyboard itemId={item.id} itemTitle={item.title} onClose={() => setShowStoryboard(false)}/>
-    )}
-    </>
   )
 }
 
@@ -1754,6 +1593,10 @@ export default function ContentPage() {
   const [ideaLogMsg, setIdeaLogMsg] = useState<string | null>(null)
   const [weeklyTargets, setWeeklyTargets] = useState<{ id:string; label:string; tracking:string }[]>([])
   const [weeklyPicks, setWeeklyPicks] = useState<Record<string, string>>({}) // target_id -> content_item_id
+  // How many items can be starred as active focus at once — used to be a
+  // hardcoded 2, now Tom's own setting (039_content_focus_settings.sql).
+  const [maxFocusItems, setMaxFocusItemsLocal] = useState(DEFAULT_MAX_FOCUS_ITEMS)
+  const [maxFocusMsg, setMaxFocusMsg] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -1766,6 +1609,14 @@ export default function ContentPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => { getMaxFocusItems().then(setMaxFocusItemsLocal) }, [])
+
+  async function updateMaxFocusItems(n: number) {
+    setMaxFocusItemsLocal(n) // optimistic — feels instant on the +/- buttons
+    const { error } = await setMaxFocusItems(n)
+    if (error) setMaxFocusMsg(error)
+    else setMaxFocusMsg(null)
+  }
 
   // ── This week's Long-form / Short pick ─────────────────────────────────────
   // Companion to the home page's auto-counted Weekly Targets (Shorts/Long-form
@@ -1967,7 +1818,7 @@ export default function ContentPage() {
   const focusCount = items.filter(i => i.is_active_focus).length
 
   async function toggleFocus(item: ContentItem) {
-    if (!item.is_active_focus && focusCount >= 2) return // capped in the UI too, this is a safety net
+    if (!item.is_active_focus && focusCount >= maxFocusItems) return // capped in the UI too, this is a safety net
     const next = !item.is_active_focus
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, is_active_focus: next } : i))
     const { error } = await supabase.from('content_items').update({ is_active_focus: next }).eq('id', item.id)
@@ -2067,7 +1918,7 @@ export default function ContentPage() {
   const liveCount = items.filter(i => i.pipeline_stage === '📣 Live').length
 
   const boardItems = pipeline.filter(i => pipelineFormat === 'shorts' ? isShortsOnly(i.format) : !isShortsOnly(i.format))
-  const boardStages = pipelineFormat === 'shorts' ? PIPELINE_STAGES.filter(s => s.key !== '🖼️ Thumbnail & SEO') : PIPELINE_STAGES
+  const boardStages = pipelineFormat === 'shorts' ? PIPELINE_STAGES.filter(s => !isStageSkippedForShorts(s.key, 'Short')) : PIPELINE_STAGES
   const byStage = boardStages.map(s => ({
     ...s,
     items: boardItems.filter(i => i.pipeline_stage === s.key),
@@ -2189,7 +2040,7 @@ export default function ContentPage() {
                             : <span style={{ fontSize:'0.7rem', fontWeight:800, color:C.orange }}>{rank + 1}</span>}
                         </td>
                         <td style={{ padding:'0.75rem 0.875rem', whiteSpace:'nowrap' as const }}>
-                          <FocusStar active={item.is_active_focus} atCap={focusCount >= 2} onToggle={() => toggleFocus(item)}/>
+                          <FocusStar active={item.is_active_focus} atCap={focusCount >= maxFocusItems} max={maxFocusItems} onToggle={() => toggleFocus(item)}/>
                         </td>
                         <td style={{ padding:'0.75rem 0.875rem', fontWeight:700, color:C.text, maxWidth:'240px' }}>
                           <div
@@ -2249,17 +2100,29 @@ export default function ContentPage() {
               <p style={{ fontSize:'0.75rem', color:C.muted, margin:0 }}>
                 Hover a stage chip to see the SOP checklist for that step. {boardItems.length} in this board.
               </p>
-              <div style={{ display:'flex', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', overflow:'hidden' }}>
-                {([
-                  { v:'long' as const,   label:'Long-form',    count: pipeline.filter(i => !isShortsOnly(i.format)).length },
-                  { v:'shorts' as const, label:'Shorts',       count: pipeline.filter(i => isShortsOnly(i.format)).length },
-                ]).map(b => (
-                  <button key={b.v} onClick={() => setPipelineFormat(b.v)} style={{ padding:'0.4rem 0.75rem', background:pipelineFormat===b.v?'rgba(0,212,255,0.12)':'transparent', border:'none', borderRight: b.v==='long' ? '1px solid '+C.border : 'none', color:pipelineFormat===b.v?C.cyan:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700 }}>
-                    {b.label} <span style={{ opacity:0.7 }}>({b.count})</span>
-                  </button>
-                ))}
+              <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', flexWrap:'wrap' as const }}>
+                <div title="How many items can be starred as active focus on Home at once" style={{ display:'flex', alignItems:'center', gap:'0.4rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', padding:'0.3rem 0.5rem' }}>
+                  <Star size={11} color={C.amber}/>
+                  <span style={{ fontSize:'0.68rem', color:C.sec, whiteSpace:'nowrap' as const }}>Focus slots</span>
+                  <button onClick={() => updateMaxFocusItems(maxFocusItems - 1)} disabled={maxFocusItems <= 1}
+                    style={{ width:'1.1rem', height:'1.1rem', display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.3rem', color: maxFocusItems <= 1 ? C.muted : C.sec, cursor: maxFocusItems <= 1 ? 'not-allowed' : 'pointer', fontFamily:'inherit', fontSize:'0.7rem', lineHeight:1, padding:0 }}>&minus;</button>
+                  <span style={{ fontSize:'0.75rem', fontWeight:800, color:C.text, width:'1.1rem', textAlign:'center' }}>{maxFocusItems}</span>
+                  <button onClick={() => updateMaxFocusItems(maxFocusItems + 1)} disabled={maxFocusItems >= 20}
+                    style={{ width:'1.1rem', height:'1.1rem', display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.3rem', color: maxFocusItems >= 20 ? C.muted : C.sec, cursor: maxFocusItems >= 20 ? 'not-allowed' : 'pointer', fontFamily:'inherit', fontSize:'0.7rem', lineHeight:1, padding:0 }}>+</button>
+                </div>
+                <div style={{ display:'flex', background:C.card, border:'1px solid '+C.border, borderRadius:'0.625rem', overflow:'hidden' }}>
+                  {([
+                    { v:'long' as const,   label:'Long-form',    count: pipeline.filter(i => !isShortsOnly(i.format)).length },
+                    { v:'shorts' as const, label:'Shorts',       count: pipeline.filter(i => isShortsOnly(i.format)).length },
+                  ]).map(b => (
+                    <button key={b.v} onClick={() => setPipelineFormat(b.v)} style={{ padding:'0.4rem 0.75rem', background:pipelineFormat===b.v?'rgba(0,212,255,0.12)':'transparent', border:'none', borderRight: b.v==='long' ? '1px solid '+C.border : 'none', color:pipelineFormat===b.v?C.cyan:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700 }}>
+                      {b.label} <span style={{ opacity:0.7 }}>({b.count})</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
+            {maxFocusMsg && <p style={{ fontSize:'0.68rem', color:C.amber, margin:'0 0 0.75rem', lineHeight:1.4 }}>{maxFocusMsg}</p>}
             {pipelineFormat === 'shorts' && (
               <p style={{ fontSize:'0.68rem', color:C.muted, margin:'0 0 1rem', fontStyle:'italic' }}>
                 Shorts board — Thumbnail &amp; SEO is skipped entirely; Editing advances straight to Scheduled.
@@ -2301,7 +2164,7 @@ export default function ContentPage() {
                   {stage.items.length === 0 ? (
                     <p style={{ fontSize:'0.65rem', color:C.muted, textAlign:'center', padding:'0.75rem 0', margin:0 }}>empty</p>
                   ) : (
-                    stage.items.map(item => <PipelineCard key={item.id} item={item} stats={ytStats[extractYouTubeId(item.youtube_url) ?? ''] } onMove={() => setMoveTarget(item)} onSaveRevenue={note => saveRevenueNote(item, note)} onToggleFocus={() => toggleFocus(item)} focusAtCap={focusCount >= 2} onShowDetail={() => setDetailItem(item)}/>)
+                    stage.items.map(item => <PipelineCard key={item.id} item={item} stats={ytStats[extractYouTubeId(item.youtube_url) ?? ''] } onMove={() => setMoveTarget(item)} onSaveRevenue={note => saveRevenueNote(item, note)} onToggleFocus={() => toggleFocus(item)} focusAtCap={focusCount >= maxFocusItems} focusMax={maxFocusItems} onShowDetail={() => setDetailItem(item)}/>)
                   )}
                 </div>
               ))}
@@ -2426,7 +2289,7 @@ export default function ContentPage() {
                     </p>
                     {group.map(item => (
                       <div key={item.id} style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.625rem 0.875rem', background:C.card, border:'1px solid '+(item.is_active_focus ? 'rgba(255,184,0,0.35)' : C.border), borderRadius:'0.75rem', marginBottom:'0.25rem' }}>
-                        <FocusStar active={item.is_active_focus} atCap={focusCount >= 2} onToggle={() => toggleFocus(item)}/>
+                        <FocusStar active={item.is_active_focus} atCap={focusCount >= maxFocusItems} max={maxFocusItems} onToggle={() => toggleFocus(item)}/>
                         <p style={{ flex:1, fontSize:'0.83rem', fontWeight:600, color:C.text, margin:0 }}>{item.title}</p>
                         {item.format && <span style={{ fontSize:'0.65rem', color:C.muted, flexShrink:0 }}>{item.format}</span>}
                         {item.due_date && <span style={{ fontSize:'0.65rem', color:C.muted, flexShrink:0 }}>{item.due_date}</span>}

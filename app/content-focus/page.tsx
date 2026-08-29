@@ -1,23 +1,28 @@
 'use client'
 import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, Circle, Play, Pause, RefreshCw, SkipForward, Wind, Waves, VolumeX, Zap, Music2, ChevronRight } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Circle, Play, Pause, RefreshCw, SkipForward, Wind, Waves, VolumeX, Zap, Music2, ChevronRight, Sparkles, Clapperboard } from 'lucide-react'
 import { supabase, getActiveFocusVideos, getContentItemById, getStageNote, saveStageNote, type ActiveFocusVideo } from '@/lib/supabase'
 import { stageAdvance, sopForStage, nextSessionChunk } from '@/lib/sops'
+import { buildStageDraftPrompt } from '@/lib/stageDraftPrompt'
 import { sounds } from '@/lib/sounds'
 import { usePomodoro } from '@/hooks/usePomodoro'
 import { useCelebration } from '@/hooks/useCelebration'
 import FoodProgress from '@/components/FoodProgress'
 import MemeSuggestions from '@/components/MemeSuggestions'
 import ContentItemDetail from '@/components/ContentItemDetail'
+import YapSession from '@/components/YapSession'
+import Storyboard from '@/components/Storyboard'
 
 // ============================================================
 // YouTube-Pipeline-driven Focus Session
 // Replaces the generic workflow_sessions source for the Home page's
-// "Start focus session" button. Drives a focus session off up to 2
-// content_items pinned in the Content Pipeline (is_active_focus = true),
-// falling back to the item(s) that have sat longest in their current stage
-// if fewer than 2 are pinned. Each video's current pipeline_stage maps to
+// "Start focus session" button. Drives a focus session off however many
+// content_items are pinned in the Content Pipeline (is_active_focus =
+// true) — the cap is Tom's own setting (content_focus_settings, see
+// lib/supabase.ts getMaxFocusItems), not a hardcoded 2 — falling back to
+// the item(s) that have sat longest in their current stage if fewer than
+// the cap are pinned. Each video's current pipeline_stage maps to
 // an SOP checklist (lib/sops.ts) — ticking every step advances the item to
 // its next pipeline stage. Session goal: complete 1 stage on each pinned
 // video. Reuses the same focus-mode shell (pomodoro, ambient sound,
@@ -299,6 +304,10 @@ function ContentFocusPageInner() {
   const [stageNoteKey, setStageNoteKey] = useState('')
   const [showStageNote, setShowStageNote] = useState(true)
   const [showDetail, setShowDetail] = useState(false)
+  const [consulting, setConsulting] = useState(false)
+  const [consultMsg, setConsultMsg] = useState<string | null>(null)
+  const [showYap, setShowYap] = useState(false)
+  const [showStoryboard, setShowStoryboard] = useState(false)
   const itemId = item?.id ?? null
   const sopId = sop?.id ?? null
   useEffect(() => {
@@ -311,6 +320,37 @@ function ContentFocusPageInner() {
 
   function saveCurrentStageNote() {
     if (itemId && sopId) saveStageNote(itemId, sopId, stageNote)
+  }
+
+  // Consult Claude for the current stage — moved here from the Pipeline
+  // card (see app/content/page.tsx PipelineCard) so all per-stage AI work
+  // lives in one place: the focus session you're already sitting in.
+  async function consultClaude() {
+    if (!item || !sop) return
+    setConsulting(true)
+    setConsultMsg(null)
+    const { systemPrompt, userPrompt } = buildStageDraftPrompt(item, sop, { existingNote: stageNote })
+    try {
+      const res = await fetch('/api/content/consult', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ systemPrompt, userPrompt }),
+      })
+      const data = await res.json()
+      if (data?.error) { setConsultMsg('API error: ' + JSON.stringify(data.error)); return }
+      const raw = (data?.content ?? [])
+        .filter((b: { type: string; text?: string }) => b.type === 'text')
+        .map((b: { text?: string }) => b.text ?? '')
+        .join('\n').trim()
+      if (!raw) { setConsultMsg('Empty response from Claude.'); return }
+      setStageNote(raw)
+      setShowStageNote(true)
+      if (itemId && sopId) await saveStageNote(itemId, sopId, raw)
+    } catch (e) {
+      setConsultMsg('Consult failed: ' + String(e))
+    } finally {
+      setConsulting(false)
+    }
   }
 
   async function toggleStep(idx: number) {
@@ -345,13 +385,21 @@ function ContentFocusPageInner() {
     const newGoalMet = new Set(stageGoalMet); newGoalMet.add(idx)
     setStageGoalMet(newGoalMet)
 
-    const otherIdx = idx === 0 ? 1 : 0
-    const otherPending = videos.length > otherIdx && !newGoalMet.has(otherIdx)
+    // Find the next pinned video (in order, wrapping around) that hasn't hit
+    // its goal yet — generalised from a hardcoded 2-video toggle now that
+    // the focus-star cap (content_focus_settings) can be any number.
+    let nextPendingIdx = -1
+    for (let step = 1; step <= videos.length; step++) {
+      const candidate = (idx + step) % videos.length
+      if (candidate === idx) break
+      if (!newGoalMet.has(candidate)) { nextPendingIdx = candidate; break }
+    }
+    const otherPending = nextPendingIdx !== -1
 
     setStageOverlay({
       title: item.title, from: fromStage, to: toStage,
       action: otherPending ? 'switch' : 'complete',
-      nextIdx: otherPending ? otherIdx : idx,
+      nextIdx: otherPending ? nextPendingIdx : idx,
     })
   }
 
@@ -382,7 +430,7 @@ function ContentFocusPageInner() {
       ) : (
         <>
           <p style={{ fontSize:'1.1rem', fontWeight:800, color:C.text }}>No active videos yet</p>
-          <p style={{ fontSize:'0.85rem', maxWidth:'26rem', lineHeight:1.6 }}>Pin up to 2 videos or shorts as your active focus from the Content Pipeline, or add an idea to get started.</p>
+          <p style={{ fontSize:'0.85rem', maxWidth:'26rem', lineHeight:1.6 }}>Pin videos or shorts as your active focus from the Content Pipeline (adjust how many under &ldquo;Focus slots&rdquo; on the Pipeline board), or add an idea to get started.</p>
         </>
       )}
       <button onClick={() => router.push('/content')} style={{ padding:'0.75rem 1.5rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.875rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
@@ -468,7 +516,7 @@ function ContentFocusPageInner() {
             <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 0.875rem', background:'rgba(0,255,136,0.05)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'0.875rem', marginBottom:'0.75rem', flexWrap:'wrap' }}>
               <span style={{ fontSize:'0.72rem', fontWeight:800, color:C.green }}>&#127919; Goal:</span>
               <span style={{ fontSize:'0.72rem', color:C.sec }}>
-                complete 1 stage on {videos.length > 1 ? 'each of your 2 active videos' : 'your active video'}
+                complete 1 stage on {videos.length > 1 ? `each of your ${videos.length} active videos` : 'your active video'}
               </span>
               <div style={{ display:'flex', gap:'0.4rem', marginLeft:'auto' }}>
                 {videos.map((v, i) => (
@@ -609,14 +657,35 @@ function ContentFocusPageInner() {
                       Stage draft {stageNote ? '· ready' : '· empty'}
                     </button>
                     {showStageNote && (
-                      <textarea
-                        value={stageNote}
-                        onChange={e => setStageNote(e.target.value)}
-                        onBlur={saveCurrentStageNote}
-                        placeholder="No draft yet — hit Produce on this video's card in the Content Pipeline, or write here directly. Edits save back to the pipeline."
-                        rows={stageNote ? 10 : 3}
-                        style={{ width:'100%', padding:'0.7rem 0.875rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+(stageNote ? 'rgba(0,255,136,0.2)' : C.border), borderRadius:'0.75rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', lineHeight:1.6, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}
-                      />
+                      <>
+                        <div style={{ display:'flex', gap:'0.4rem', marginBottom:'0.5rem', flexWrap:'wrap' as const }}>
+                          <button onClick={consultClaude} disabled={consulting}
+                            style={{ flex:'1 1 9rem', padding:'0.5rem', background: consulting ? C.surface : 'rgba(0,212,255,0.1)', border:'1px solid '+(consulting ? C.border : 'rgba(0,212,255,0.3)'), borderRadius:'0.625rem', color: consulting ? C.muted : C.cyan, fontWeight:700, cursor: consulting ? 'default' : 'pointer', fontFamily:'inherit', fontSize:'0.72rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.35rem' }}>
+                            <Sparkles size={12}/>{consulting ? 'Consulting Claude…' : 'Consult Claude'}
+                          </button>
+                          {sop.id === '04' && (
+                            <>
+                              <button onClick={() => setShowYap(true)}
+                                style={{ flex:'1 1 9rem', padding:'0.5rem', background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.625rem', color:'#8b5cf6', fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.35rem' }}>
+                                <Sparkles size={12}/>Yap Session
+                              </button>
+                              <button onClick={() => setShowStoryboard(true)}
+                                style={{ flex:'1 1 9rem', padding:'0.5rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.625rem', color:C.cyan, fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.35rem' }}>
+                                <Clapperboard size={12}/>Storyboard
+                              </button>
+                            </>
+                          )}
+                        </div>
+                        {consultMsg && <p style={{ fontSize:'0.66rem', color:C.amber, margin:'0 0 0.5rem', lineHeight:1.4 }}>{consultMsg}</p>}
+                        <textarea
+                          value={stageNote}
+                          onChange={e => setStageNote(e.target.value)}
+                          onBlur={saveCurrentStageNote}
+                          placeholder="No draft yet — hit Consult Claude above, Produce on this video's card in the Content Pipeline, or write here directly."
+                          rows={stageNote ? 10 : 3}
+                          style={{ width:'100%', padding:'0.7rem 0.875rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+(stageNote ? 'rgba(0,255,136,0.2)' : C.border), borderRadius:'0.75rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', lineHeight:1.6, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}
+                        />
+                      </>
                     )}
                   </div>
 
@@ -668,12 +737,16 @@ function ContentFocusPageInner() {
               {nextStage ? `Advance to ${nextStage}` : 'Nothing further to advance'}
             </button>
 
-            {videos.length > 1 && (
-              <button onClick={() => setVideoIdx(videoIdx === 0 ? 1 : 0)}
-                style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.4rem', padding:'0.6rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:600 }}>
-                Switch to {videos[videoIdx===0?1:0].title.length>28 ? videos[videoIdx===0?1:0].title.slice(0,28)+'…' : videos[videoIdx===0?1:0].title} <ChevronRight size={13}/>
-              </button>
-            )}
+            {videos.length > 1 && (() => {
+              const nextIdx = (videoIdx + 1) % videos.length
+              const nextTitle = videos[nextIdx].title
+              return (
+                <button onClick={() => setVideoIdx(nextIdx)}
+                  style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.4rem', padding:'0.6rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:600 }}>
+                  Switch to {nextTitle.length>28 ? nextTitle.slice(0,28)+'…' : nextTitle} <ChevronRight size={13}/>
+                </button>
+              )
+            })()}
 
           </div>
         ) : null}
@@ -696,6 +769,19 @@ function ContentFocusPageInner() {
       )}
 
       {showDetail && item && <ContentItemDetail itemId={item.id} onClose={() => setShowDetail(false)}/>}
+
+      {showYap && item && (
+        <YapSession
+          itemId={item.id}
+          itemTitle={item.title}
+          itemContext={item.unique_angle ?? item.notes ?? undefined}
+          onClose={() => setShowYap(false)}
+          onSaved={outline => { setStageNote(outline); setShowStageNote(true); setShowYap(false) }}
+        />
+      )}
+      {showStoryboard && item && (
+        <Storyboard itemId={item.id} itemTitle={item.title} onClose={() => setShowStoryboard(false)}/>
+      )}
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }

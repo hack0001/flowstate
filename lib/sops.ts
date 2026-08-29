@@ -147,7 +147,7 @@ export const SOPS: SOP[] = [
   },
   {
     id:'03', icon:'&#127919;', title:'Holy Trifecta (Concept)', group:'production',
-    tagline:'Decide the click before you write a word of script. Title, thumbnail concept and hook must all pull in the same direction. Pipeline stage: 🎯 Holy Trifecta.',
+    tagline:'Long-form / Both / Podcast clip only — pure Shorts skip this stage entirely and go straight from Research into Scripting (no separate thumbnail/title packaging decision — the hook is covered by Scripting instead). Decide the click before you write a word of script. Title, thumbnail concept and hook must all pull in the same direction. Pipeline stage: 🎯 Holy Trifecta.',
     steps:[
       '<strong>Title formula (Hummus &mdash; SEO + Keyword + Viral Element):</strong> every title stacks a searchable SEO keyword phrase (what someone would actually type into YouTube search) with a viral hook element (curiosity, stakes, a number, urgency) on top &mdash; neither alone is enough. e.g. &ldquo;Steal this Lazy YouTube Strategy to Get to 6 Figures a Month&rdquo; (keyword: lazy YouTube strategy / viral: steal this&hellip;6 figures) or &ldquo;Top 10 High Paying Online Jobs With the Most Demand Right Now&rdquo; (keyword: high paying online jobs / viral: top 10&hellip;right now). Write 3 options this way and pick the strongest &mdash; discard any option that&apos;s pure curiosity with no real search term in it.',
       '<strong>Thumbnail + title create a journey together:</strong> They are not two separate tasks. Someone sees the thumbnail first, the title completes the thought. Both must pull in the same direction toward curiosity.',
@@ -359,8 +359,35 @@ export function isShortsOnly(format: string | null | undefined): boolean {
   return format === 'Short'
 }
 
-const STAGE_TO_SOP_SHORTS: Record<string, string> = { ...STAGE_TO_SOP, '✂️ Editing': '09' }
-const STAGE_ADVANCE_SHORTS: Record<string, string> = { ...STAGE_ADVANCE, '✂️ Editing': '☁️ Scheduled' }
+// A pure Short also skips the Holy Trifecta (Concept) stage — that stage is
+// a title-formula + thumbnail-type + accent-colour decision built for
+// long-form click-through, and Shorts don't have a deliberate thumbnail
+// decision the way long-form does (no custom thumbnail, discovered via the
+// feed rather than a search/browse click). The hook still matters hugely
+// for a Short — but that's covered by Scripting (SOP 04, "write the hook
+// first"), so Research goes straight into Scripting instead of pausing on
+// a packaging step Shorts don't need.
+export const SHORTS_SKIPPED_STAGES = ['🎯 Holy Trifecta', '🖼️ Thumbnail & SEO'] as const
+
+export function isStageSkippedForShorts(stage: string | null | undefined, format?: string | null): boolean {
+  if (!stage) return false
+  return isShortsOnly(format) && (SHORTS_SKIPPED_STAGES as readonly string[]).includes(stage)
+}
+
+// The SOP ids that back the two skipped stages above (Holy Trifecta = '03',
+// Thumbnail & SEO = '08') — used anywhere that lists/loops over production
+// SOPs by id rather than by stage label (full-history view, auto-draft
+// chain) so those two stay excluded for Shorts everywhere, not just on the
+// Kanban board.
+export const SHORTS_SKIPPED_SOP_IDS = ['03', '08'] as const
+
+export function productionSopIdsFor(format: string | null | undefined, allIds: string[]): string[] {
+  if (!isShortsOnly(format)) return allIds
+  return allIds.filter(id => !(SHORTS_SKIPPED_SOP_IDS as readonly string[]).includes(id))
+}
+
+const STAGE_TO_SOP_SHORTS: Record<string, string> = { ...STAGE_TO_SOP, '📚 Research': '04', '✂️ Editing': '09' }
+const STAGE_ADVANCE_SHORTS: Record<string, string> = { ...STAGE_ADVANCE, '📚 Research': '✍️ Script', '✂️ Editing': '☁️ Scheduled' }
 
 export function sopForStage(stage: string | null, format?: string | null): SOP | null {
   if (!stage) return null

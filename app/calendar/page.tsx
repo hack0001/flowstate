@@ -360,7 +360,7 @@ function TimelineBlock({
       }}
     >
       <p style={{ margin:0, fontSize:'0.6rem', fontWeight:700, color:block.color, lineHeight:1.25, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{block.title}</p>
-      {height > 28 && <p style={{ margin:0, fontSize:'0.53rem', color:C.muted }}>{fmtHour12(liveStart)} – {fmtHour12(liveStart + liveDuration)}</p>}
+      {height > 28 && <p style={{ margin:0, fontSize:'0.53rem', color:C.muted, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fmtHour12(liveStart)} – {fmtHour12(liveStart + liveDuration)}</p>}
       {draggable && (
         <>
           <div
@@ -415,8 +415,16 @@ function TimelineDay({
   const habitBlocks: TLBlock[] = timedHabits.map(({ h, min }) => ({ id:'h-'+h.id, kind:'habit', title:(h.emoji?h.emoji+' ':'')+h.title, color:h.color, start:min, duration:30, timed:true }))
 
   const laidOut = layoutTimelineBlocks([...taskBlocks, ...reminderBlocks, ...habitBlocks])
-  const hours = Array.from({ length: Math.ceil((TL_END_MIN - TL_START_MIN) / 60) + 1 }, (_, i) => TL_START_MIN + i * 60)
-  const gridHeight = (TL_END_MIN - TL_START_MIN) * pxPerMin
+  // Auto-placed (unscheduled) tasks stack sequentially from their type's
+  // anchor time and can run past TL_END_MIN on a busy day (e.g. several
+  // Personal/Admin tasks all anchored at 19:00). Grow the grid to fit
+  // whatever actually got placed instead of clipping it at a fixed 23:00 —
+  // that fixed-height grid used to let overflowing blocks render past the
+  // bordered box and visually spill into whatever was below it on the page.
+  const latestBlockEnd = laidOut.reduce((max, b) => Math.max(max, b.start + b.duration), TL_START_MIN)
+  const effectiveEndMin = Math.max(TL_END_MIN, latestBlockEnd)
+  const hours = Array.from({ length: Math.ceil((effectiveEndMin - TL_START_MIN) / 60) + 1 }, (_, i) => TL_START_MIN + i * 60)
+  const gridHeight = (effectiveEndMin - TL_START_MIN) * pxPerMin
   const anytimeItems = [...anytimeReminders.map(r => ({ kind:'reminder' as const, r })), ...anytimeHabits.map(h => ({ kind:'habit' as const, h }))]
 
   const dow = new Date(date+'T12:00:00').getDay()
@@ -448,11 +456,15 @@ function TimelineDay({
           ))}
         </div>
       )}
-      <div style={{ position:'relative', flexShrink:0 }}>
-        <div style={{ position:'relative', height:gridHeight }}>
+      <div style={{ position:'relative', flexShrink:0, overflow:'hidden' }}>
+        <div style={{ position:'relative', height:gridHeight, overflow:'hidden' }}>
           {hours.map(h => (
-            <div key={h} style={{ position:'absolute', top:(h-TL_START_MIN)*pxPerMin, left:0, right:0, borderTop:'1px solid '+C.border+'88', display:'flex' }}>
-              <span style={{ fontSize:'0.53rem', color:C.muted, transform:'translateY(-6px)', paddingLeft:'2px', background:C.bg }}>{fmtHour12(h)}</span>
+            <div key={h} style={{ position:'absolute', top:(h-TL_START_MIN)*pxPerMin, left:0, right:0, display:'flex', alignItems:'flex-start' }}>
+              {/* Fixed-width gutter matching the grid's left:'26px' offset below,
+                  so a wide hour label (e.g. "12:00pm") can never spill into the
+                  task-block area and get visually cut by a block drawn on top. */}
+              <span style={{ width:'26px', flexShrink:0, boxSizing:'border-box', fontSize:'0.53rem', color:C.muted, transform:'translateY(-6px)', paddingLeft:'2px', overflow:'hidden', whiteSpace:'nowrap' }}>{fmtHour12(h)}</span>
+              <div style={{ flex:1, borderTop:'1px solid '+C.border+'88' }} />
             </div>
           ))}
           <div
@@ -1331,17 +1343,17 @@ function CalendarPageInner() {
         {/* Week grid */}
         {calTab === 'calendar' && <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
           <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.75rem 1rem', borderBottom:'1px solid '+C.border, flexShrink:0, flexWrap:'wrap' }}>
-            <button onClick={() => setWeekStart(w => addDays(w, -viewDays))} title={`Back ${viewDays} day${viewDays===1?'':'s'}`} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronsLeft size={16} /></button>
-            <button onClick={() => setWeekStart(w => addDays(w, -1))} title="Back 1 day" style={{ width:'26px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'none', color:C.muted, cursor:'pointer' }}><ChevronLeft size={14} /></button>
-            <span style={{ fontWeight:700, fontSize:'0.9rem', color:C.text, flex:1, textAlign:'center' }}>{fmtWeekRange(weekStart, viewDays)}</span>
-            <button onClick={() => setWeekStart(w => addDays(w, 1))} title="Forward 1 day" style={{ width:'26px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'none', color:C.muted, cursor:'pointer' }}><ChevronRight size={14} /></button>
-            <button onClick={() => setWeekStart(w => addDays(w, viewDays))} title={`Forward ${viewDays} day${viewDays===1?'':'s'}`} style={{ width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronsRight size={16} /></button>
-            <div style={{ display:'flex', gap:'2px', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'2px' }}>
+            <button onClick={() => setWeekStart(w => addDays(w, -viewDays))} title={`Back ${viewDays} day${viewDays===1?'':'s'}`} style={{ flexShrink:0, width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronsLeft size={16} /></button>
+            <button onClick={() => setWeekStart(w => addDays(w, -1))} title="Back 1 day" style={{ flexShrink:0, width:'26px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'none', color:C.muted, cursor:'pointer' }}><ChevronLeft size={14} /></button>
+            <span style={{ fontWeight:700, fontSize:'0.9rem', color:C.text, flex:'1 1 auto', minWidth:'8rem', textAlign:'center', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fmtWeekRange(weekStart, viewDays)}</span>
+            <button onClick={() => setWeekStart(w => addDays(w, 1))} title="Forward 1 day" style={{ flexShrink:0, width:'26px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:'transparent', border:'none', color:C.muted, cursor:'pointer' }}><ChevronRight size={14} /></button>
+            <button onClick={() => setWeekStart(w => addDays(w, viewDays))} title={`Forward ${viewDays} day${viewDays===1?'':'s'}`} style={{ flexShrink:0, width:'32px', height:'32px', display:'flex', alignItems:'center', justifyContent:'center', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer' }}><ChevronsRight size={16} /></button>
+            <div style={{ flexShrink:0, display:'flex', gap:'2px', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'2px' }}>
               {[1,2,3,4,5,6,7].map(n => (
                 <button key={n} onClick={() => setViewDays(n)} title={n + ' day' + (n===1?'':'s')} style={{ width:'22px', height:'24px', display:'flex', alignItems:'center', justifyContent:'center', background:viewDays===n?C.cyan:'transparent', border:'none', borderRadius:'0.35rem', color:viewDays===n?'#000':C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:700 }}>{n}</button>
               ))}
             </div>
-            <div style={{ display:'flex', gap:'2px', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'2px' }}>
+            <div style={{ flexShrink:0, display:'flex', gap:'2px', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', padding:'2px' }}>
               {(['list','timeline'] as const).map(m => (
                 <button key={m} onClick={() => setDayViewMode(m)} style={{ padding:'0.3rem 0.6rem', background:dayViewMode===m?C.cyan:'transparent', border:'none', borderRadius:'0.35rem', color:dayViewMode===m?'#000':C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:700, textTransform:'capitalize' }}>{m}</button>
               ))}
