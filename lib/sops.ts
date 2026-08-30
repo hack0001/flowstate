@@ -17,6 +17,13 @@ export type SOP = { id: string; icon: string; title: string; tagline: string; st
 // updating its estimates).
 export const DEFAULT_STEP_MINS = 10
 
+// ── Retention pacing rule (Scripting SOP + Storyboard tool) ────────────────
+// Shared constants so the Scripting checklist's "3-second" instruction and
+// the Storyboard's automatic per-block pacing flag always agree with each
+// other. Speaking rate assumes a natural ~150 words/min delivery.
+export const SCRIPT_PACING_TARGET_SECONDS = 3
+export const SPEAKING_WORDS_PER_SECOND = 2.5
+
 export const SOPS: SOP[] = [
   {
     id:'00a', icon:'&#129517;', title:'Niche Selector', group:'setup',
@@ -172,17 +179,18 @@ export const SOPS: SOP[] = [
       '<strong>The Trojan Horse rule:</strong> Nobody wants pure knowledge. The economics insight must be delivered inside a story. The script, editing, and animations are all the horse &mdash; the information is hidden inside. Without the horse, nobody watches to the end.',
       '<strong>Story arc (use as a lens, not a formula):</strong> Every video benefits from a journey: a character with a problem &rarr; a discovery or turning point &rarr; barriers and tension &rarr; resolution. For SoundMoney: the viewer is the character, the financial system is the world, the discovery is the insight mainstream media missed, and the resolution is clarity. Not a rigid structure &mdash; just ask yourself whether each video has a journey or just information.',
       '<strong>The format rhythm (Fireship-style):</strong> Intense info &rarr; brief absurd joke &rarr; back to info. Vary constantly. Never let the viewer predict the next beat.',
+      '<strong>Pacing rule &mdash; hard cuts, constant visual change:</strong> plan for a new visual, cut, or on-screen change roughly every <strong>3 seconds</strong>. Nothing sits static on screen longer than that &mdash; retention lives or dies on this. As you outline, mentally (or literally) mark where the visual changes every ~3 seconds of spoken line; if a section would hold the same shot for 6&ndash;8+ seconds of VO, split it into two beats with a cut between them. This is the same rule the Storyboard tool below flags automatically once the script is broken into blocks.',
       'Write the hook first &mdash; first 15 seconds for long form, first 3 for Short. Open with the wildest stat, a bold claim, or a question that makes stopping feel impossible.',
       'Build a 5&ndash;8 section outline. Each section = one idea + one beat + one joke or moment.',
       'Write full script word-for-word &mdash; write how you <em>speak</em>, not how you write. Set a timer and write fast on the first draft &mdash; fix grammar later. Read every line aloud as you go.',
-      '<strong>Script colour-coding:</strong> Once drafted, highlight in 4 types throughout the doc: spoken VO (default/white), <strong style="color:#00d4ff">[B-ROLL: description]</strong> in blue, <strong style="color:#00ff88">[MEME: description]</strong> in green, <strong style="color:#ffb800">[SFX: sound cue]</strong> in amber. This removes guesswork on the timeline and makes the edit significantly faster.',
+      '<strong>Script colour-coding:</strong> Once drafted, highlight in 4 types throughout the doc: spoken VO (default/white), <strong style="color:#00d4ff">[B-ROLL: description]</strong> in blue, <strong style="color:#00ff88">[MEME: description]</strong> in green, <strong style="color:#ffb800">[SFX: sound cue]</strong> in amber. This removes guesswork on the timeline and makes the edit significantly faster. While tagging, apply the 3-second pacing rule directly &mdash; a colour tag every ~3 seconds of VO (roughly every 7&ndash;8 words), so no stretch of script implies a static shot longer than that. This tagged version is what you break into blocks in the Storyboard tool next &mdash; it will flag any block that still runs long.',
       '<strong>Specificity audit:</strong> go back through the draft and swap every vague line for a specific one &mdash; &ldquo;it worked well&rdquo; becomes &ldquo;237% increase in 14 days&rdquo;, &ldquo;recently&rdquo; becomes &ldquo;in the first 7 days&rdquo;. Specific numbers are what get screenshotted.',
       '<strong>CTA spacing:</strong> keep any CTAs or asks (lead magnet mention, like button, subscribe) at least 140 words apart. Clustering them reads as desperate and trains viewers to tune out.',
       'For Shorts: 60&ndash;80 words max, built on the one emotional trigger (pain, prize, or desire) picked above. One topic, one punchline, one twist. No padding, no process explanation.',
       'Write the CTA conversationally &mdash; not like an ad. <em>&ldquo;If that surprised you, wait for the next one.&rdquo;</em>',
       'Read the full script aloud and time it. If you&apos;re bored reading it, the viewer is bored watching it. Cut.',
     ],
-    stepMins:[20,3,5,5,5,20,2,3,2,15,15,45,15,15,5,10,5,15],
+    stepMins:[20,3,5,5,5,20,2,3,2,3,15,15,45,15,15,5,10,5,15],
   },
   {
     id:'05', icon:'&#127912;', title:'Asset Gathering', group:'production',

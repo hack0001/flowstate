@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { X, Plus, Trash2, GripVertical, Wand2, Loader2 } from 'lucide-react'
+import { X, Plus, Trash2, GripVertical, Wand2, Loader2, AlertTriangle } from 'lucide-react'
 import { supabase, getStageNote } from '@/lib/supabase'
+import { SCRIPT_PACING_TARGET_SECONDS, SPEAKING_WORDS_PER_SECOND } from '@/lib/sops'
 
 // ============================================================
 // Storyboard — turns a finished script into a shot-by-shot, color-coded
@@ -11,6 +12,14 @@ import { supabase, getStageNote } from '@/lib/supabase'
 // checklist at the bottom answers "what do I need to go collect/build
 // before I sit down to edit" — screenshots to grab, b-roll to find, memes
 // to source, animations to build.
+//
+// Retention pacing check: each block IS a visual/cut, so its estimated
+// speaking time (word count / SPEAKING_WORDS_PER_SECOND) doubles as "how
+// long this shot holds before the next cut." Any block estimated to run
+// past SCRIPT_PACING_TARGET_SECONDS (shared with the Scripting SOP's
+// pacing rule, lib/sops.ts) gets flagged — that's a stretch of script that
+// implies a static shot longer than the retention target, and should be
+// split into two blocks with a cut between them.
 //
 // Persisted to content_storyboard_blocks (many rows per item, ordered by
 // sort_order). Saves use a delete-then-reinsert-full-list pattern rather
@@ -42,6 +51,16 @@ const ASSET_TYPES: { key: AssetType; label: string; color: string }[] = [
 
 function assetMeta(t: AssetType) { return ASSET_TYPES.find(a => a.key === t) ?? ASSET_TYPES[0] }
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36) }
+
+// Estimated speaking time for a block's text, at the same natural-delivery
+// rate assumed by the Scripting SOP's pacing rule (lib/sops.ts). This is
+// what gets compared against SCRIPT_PACING_TARGET_SECONDS to flag a block
+// that would hold the same shot too long without a cut.
+function estimateSeconds(text: string): number {
+  const words = text.trim().split(/\s+/).filter(Boolean).length
+  if (words === 0) return 0
+  return words / SPEAKING_WORDS_PER_SECOND
+}
 
 // Naive script-to-blocks splitter: one block per line/sentence-ish chunk,
 // defaulting everything to 'vo' — the point isn't a perfect first pass,
@@ -158,6 +177,8 @@ export default function Storyboard({ itemId, itemTitle, onClose }: {
   const counts = ASSET_TYPES.map(a => ({ ...a, count: blocks.filter(b => b.asset_type === a.key && b.text.trim()).length }))
     .filter(a => a.key !== 'vo' && a.count > 0)
 
+  const longBlockCount = blocks.filter(b => b.text.trim() && estimateSeconds(b.text) > SCRIPT_PACING_TARGET_SECONDS).length
+
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:75, padding:'1rem' }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -184,6 +205,15 @@ export default function Storyboard({ itemId, itemTitle, onClose }: {
           </div>
         )}
 
+        {longBlockCount > 0 && (
+          <div style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1.25rem', borderBottom:'1px solid '+C.border, flexShrink:0, background:C.amber+'0d' }}>
+            <AlertTriangle size={12} color={C.amber}/>
+            <span style={{ fontSize:'0.68rem', fontWeight:700, color:C.amber }}>
+              {longBlockCount} block{longBlockCount === 1 ? '' : 's'} run{longBlockCount === 1 ? 's' : ''} past ~{SCRIPT_PACING_TARGET_SECONDS}s — split for a cut (flagged below)
+            </span>
+          </div>
+        )}
+
         {error && <p style={{ fontSize:'0.7rem', color:C.red, margin:'0.6rem 1.25rem 0', lineHeight:1.4 }}>{error}</p>}
 
         <div style={{ flex:1, overflowY:'auto' as const, padding:'1rem 1.25rem', display:'flex', flexDirection:'column', gap:'0.5rem' }}>
@@ -196,6 +226,8 @@ export default function Storyboard({ itemId, itemTitle, onClose }: {
           ) : (
             blocks.map(b => {
               const meta = assetMeta(b.asset_type)
+              const seconds = estimateSeconds(b.text)
+              const isLong = b.text.trim().length > 0 && seconds > SCRIPT_PACING_TARGET_SECONDS
               return (
                 <div key={b.id}
                   draggable
@@ -205,7 +237,7 @@ export default function Storyboard({ itemId, itemTitle, onClose }: {
                   style={{
                     display:'flex', gap:'0.5rem', alignItems:'flex-start',
                     padding:'0.6rem', borderRadius:'0.75rem',
-                    background: meta.color+'0d', border:'1px solid '+meta.color+'35',
+                    background: meta.color+'0d', border:'1px solid '+(isLong ? C.amber+'80' : meta.color+'35'),
                     opacity: dragId === b.id ? 0.4 : 1,
                   }}>
                   <div style={{ cursor:'grab', color:C.muted, paddingTop:'0.35rem', flexShrink:0 }}><GripVertical size={14}/></div>
@@ -215,8 +247,13 @@ export default function Storyboard({ itemId, itemTitle, onClose }: {
                       onChange={e => updateBlock(b.id, { text: e.target.value })}
                       placeholder="Line from the script…"
                       rows={Math.min(4, Math.max(1, Math.ceil(b.text.length / 60)))}
-                      style={{ width:'100%', boxSizing:'border-box' as const, padding:'0.4rem 0.5rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', lineHeight:1.5, outline:'none', resize:'vertical' as const }}
+                      style={{ width:'100%', boxSizing:'border-box' as const, padding:'0.4rem 0.5rem', background:C.card, border:'1px solid '+(isLong ? C.amber+'60' : C.border), borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', lineHeight:1.5, outline:'none', resize:'vertical' as const }}
                     />
+                    {isLong && (
+                      <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', alignSelf:'flex-start', padding:'0.15rem 0.5rem', borderRadius:'9999px', background:C.amber+'18', border:'1px solid '+C.amber+'50', fontSize:'0.62rem', fontWeight:700, color:C.amber }}>
+                        <AlertTriangle size={10}/> ~{Math.round(seconds)}s — split for a cut (target: new visual every ~{SCRIPT_PACING_TARGET_SECONDS}s)
+                      </span>
+                    )}
                     <div style={{ display:'flex', flexWrap:'wrap' as const, gap:'0.3rem', alignItems:'center' }}>
                       {ASSET_TYPES.map(a => (
                         <button key={a.key} onClick={() => updateBlock(b.id, { asset_type: a.key })}
