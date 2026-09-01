@@ -229,7 +229,14 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
         />
       )}
       {showStoryboard && item && (
-        <Storyboard itemId={itemId} itemTitle={item.title} onClose={() => setShowStoryboard(false)} />
+        <Storyboard
+          itemId={itemId}
+          itemTitle={item.title}
+          itemFormat={item.format}
+          driveFolderUrl={driveUrl}
+          onFolderCreated={setDriveUrl}
+          onClose={() => setShowStoryboard(false)}
+        />
       )}
     </div>
   )

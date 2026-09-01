@@ -1,8 +1,9 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { X, Plus, Trash2, GripVertical, Wand2, Loader2, AlertTriangle } from 'lucide-react'
+import { X, Plus, Trash2, GripVertical, Wand2, Loader2, AlertTriangle, FolderOpen } from 'lucide-react'
 import { supabase, getStageNote } from '@/lib/supabase'
 import { SCRIPT_PACING_TARGET_SECONDS, SPEAKING_WORDS_PER_SECOND } from '@/lib/sops'
+import BrandAssets from './BrandAssets'
 
 // ============================================================
 // Storyboard — turns a finished script into a shot-by-shot, color-coded
@@ -74,9 +75,12 @@ function splitScriptToBlocks(script: string): Block[] {
   return lines.map(text => ({ id: uid(), text, asset_type: 'vo' as AssetType, note: '' }))
 }
 
-export default function Storyboard({ itemId, itemTitle, onClose }: {
+export default function Storyboard({ itemId, itemTitle, itemFormat, driveFolderUrl, onFolderCreated, onClose }: {
   itemId: string
   itemTitle: string
+  itemFormat?: string | null
+  driveFolderUrl?: string | null
+  onFolderCreated?: (url: string) => void
   onClose: () => void
 }) {
   const [blocks, setBlocks] = useState<Block[]>([])
@@ -86,6 +90,7 @@ export default function Storyboard({ itemId, itemTitle, onClose }: {
   const [error, setError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [dragId, setDragId] = useState<string | null>(null)
+  const [showBrandAssets, setShowBrandAssets] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -190,6 +195,10 @@ export default function Storyboard({ itemId, itemTitle, onClose }: {
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
             {dirty && <span style={{ fontSize:'0.65rem', color:C.amber, fontWeight:700 }}>Unsaved</span>}
+            <button onClick={() => setShowBrandAssets(true)} title="Brand Assets"
+              style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.6rem', background:C.amber+'18', border:'1px solid '+C.amber+'40', borderRadius:'0.5rem', color:C.amber, cursor:'pointer', fontFamily:'inherit', fontSize:'0.68rem', fontWeight:700 }}>
+              <FolderOpen size={12}/> Brand Assets
+            </button>
             <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex' }}><X size={18}/></button>
           </div>
         </div>
@@ -298,6 +307,16 @@ export default function Storyboard({ itemId, itemTitle, onClose }: {
           </button>
         </div>
       </div>
+      {showBrandAssets && (
+        <BrandAssets
+          itemId={itemId}
+          itemTitle={itemTitle}
+          itemFormat={itemFormat}
+          driveFolderUrl={driveFolderUrl}
+          onFolderCreated={onFolderCreated}
+          onClose={() => setShowBrandAssets(false)}
+        />
+      )}
       <style>{`.spin { animation: spin 0.8s linear infinite } @keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
   )

@@ -24,6 +24,13 @@ export type ActiveFocusVideo = {
   video_type?: string | null
   unique_angle?: string | null
   notes?: string | null
+  // Per-video Drive project folder — drive_url already existed
+  // (022_video_links_and_stats.sql, "the video's asset folder in Google
+  // Drive") and is what the "Create Drive project folder" action in the
+  // Focus Session writes into; drive_folder_id (040_drive_integration.sql)
+  // is the raw Drive id alongside it, for future API calls.
+  drive_folder_id?: string | null
+  drive_url?: string | null
 }
 
 export type ActiveFocusResult = { videos: ActiveFocusVideo[]; error: string | null }
@@ -62,7 +69,7 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
   const maxItems = await getMaxFocusItems()
   const { data: pinnedData, error: pinnedErr } = await supabase
     .from('content_items')
-    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes')
+    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url')
     .eq('is_active_focus', true)
     .neq('archived', true)
 
@@ -73,7 +80,7 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
   if (combined.length < maxItems) {
     const { data: fallbackData, error: fallbackErr } = await supabase
       .from('content_items')
-      .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes')
+      .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url')
       .eq('is_active_focus', false)
       .neq('archived', true)
       .not('pipeline_stage', 'is', null)
@@ -93,7 +100,7 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
 export async function getContentItemById(id: string): Promise<{ video: ActiveFocusVideo | null; error: string | null }> {
   const { data, error } = await supabase
     .from('content_items')
-    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes')
+    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url')
     .eq('id', id)
     .maybeSingle()
   if (error) return { video: null, error: explainFocusError(error.message) }
@@ -517,5 +524,53 @@ export async function recordPageVisit(route: string): Promise<{ error: string | 
     .from('page_visits')
     .upsert({ route, last_visited_at: new Date().toISOString() }, { onConflict: 'route' })
   if (error) return { error: explainPageVisitsError(error.message) }
+  return { error: null }
+}
+
+// ---- Google Drive integration (SOUND MONEY HQ) ----
+// drive_folder_map is a single-row config pointing at the key subfolders in
+// Tom's Drive brand-assets/templates/projects folder, pre-filled with the
+// real IDs when 040_drive_integration.sql was written. The actual Drive API
+// calls happen server-side (app/api/drive/*, lib/googleDrive.ts) via a
+// service account — this file only ever reads/writes folder IDs and links,
+// never touches Drive directly.
+// Requires 040_drive_integration.sql.
+export type DriveFolderMap = {
+  root_folder_id: string | null
+  brand_folder_id: string | null
+  asset_library_folder_id: string | null
+  premiere_templates_folder_id: string | null
+  projects_longform_folder_id: string | null
+  projects_shorts_folder_id: string | null
+  project_template_folder_id: string | null
+}
+
+function explainDriveError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('drive_folder_map')) {
+    return 'Setup needed: run supabase/migrations/040_drive_integration.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading Drive settings.'
+}
+
+export async function getDriveFolderMap(): Promise<{ map: DriveFolderMap | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('drive_folder_map')
+    .select('root_folder_id,brand_folder_id,asset_library_folder_id,premiere_templates_folder_id,projects_longform_folder_id,projects_shorts_folder_id,project_template_folder_id')
+    .eq('id', 1)
+    .maybeSingle()
+  if (error) return { map: null, error: explainDriveError(error.message) }
+  return { map: (data as DriveFolderMap | null) ?? null, error: null }
+}
+
+// Persists the result of creating a per-video Drive project folder onto the
+// content item (into the existing drive_url column — see ActiveFocusVideo
+// above — so the link survives without re-hitting the Drive API, and shows
+// up in the same Assets chip the Pipeline card and Full History already use).
+export async function setContentItemDriveFolder(id: string, folderId: string, folderUrl: string): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from('content_items')
+    .update({ drive_folder_id: folderId, drive_url: folderUrl })
+    .eq('id', id)
+  if (error) return { error: explainDriveError(error.message) }
   return { error: null }
 }

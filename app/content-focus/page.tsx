@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, Circle, Play, Pause, RefreshCw, SkipForward, Wind, Waves, VolumeX, Zap, Music2, ChevronRight, Sparkles, Clapperboard } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Circle, Play, Pause, RefreshCw, SkipForward, Wind, Waves, VolumeX, Zap, Music2, ChevronRight, Sparkles, Clapperboard, FolderOpen } from 'lucide-react'
 import { supabase, getActiveFocusVideos, getContentItemById, getStageNote, saveStageNote, type ActiveFocusVideo } from '@/lib/supabase'
 import { stageAdvance, sopForStage, nextSessionChunk } from '@/lib/sops'
 import { buildStageDraftPrompt } from '@/lib/stageDraftPrompt'
@@ -13,6 +13,7 @@ import MemeSuggestions from '@/components/MemeSuggestions'
 import ContentItemDetail from '@/components/ContentItemDetail'
 import YapSession from '@/components/YapSession'
 import Storyboard from '@/components/Storyboard'
+import BrandAssets from '@/components/BrandAssets'
 
 // ============================================================
 // YouTube-Pipeline-driven Focus Session
@@ -308,6 +309,7 @@ function ContentFocusPageInner() {
   const [consultMsg, setConsultMsg] = useState<string | null>(null)
   const [showYap, setShowYap] = useState(false)
   const [showStoryboard, setShowStoryboard] = useState(false)
+  const [showBrandAssets, setShowBrandAssets] = useState(false)
   const itemId = item?.id ?? null
   const sopId = sop?.id ?? null
   useEffect(() => {
@@ -673,6 +675,10 @@ function ContentFocusPageInner() {
                                 style={{ flex:'1 1 9rem', padding:'0.5rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.625rem', color:C.cyan, fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.35rem' }}>
                                 <Clapperboard size={12}/>Storyboard
                               </button>
+                              <button onClick={() => setShowBrandAssets(true)}
+                                style={{ flex:'1 1 9rem', padding:'0.5rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.3)', borderRadius:'0.625rem', color:C.amber, fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.35rem' }}>
+                                <FolderOpen size={12}/>Brand Assets
+                              </button>
                             </>
                           )}
                         </div>
@@ -780,7 +786,24 @@ function ContentFocusPageInner() {
         />
       )}
       {showStoryboard && item && (
-        <Storyboard itemId={item.id} itemTitle={item.title} onClose={() => setShowStoryboard(false)}/>
+        <Storyboard
+          itemId={item.id}
+          itemTitle={item.title}
+          itemFormat={item.format}
+          driveFolderUrl={item.drive_url}
+          onFolderCreated={url => setVideos(prev => prev.map((v, i) => i === videoIdx ? { ...v, drive_url: url } : v))}
+          onClose={() => setShowStoryboard(false)}
+        />
+      )}
+      {showBrandAssets && item && (
+        <BrandAssets
+          itemId={item.id}
+          itemTitle={item.title}
+          itemFormat={item.format}
+          driveFolderUrl={item.drive_url}
+          onFolderCreated={url => setVideos(prev => prev.map((v, i) => i === videoIdx ? { ...v, drive_url: url } : v))}
+          onClose={() => setShowBrandAssets(false)}
+        />
       )}
 
       <style>{`
