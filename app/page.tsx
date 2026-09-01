@@ -146,14 +146,21 @@ function FocusSessionsToday() {
   )
 }
 
-// ---- Today / Tomorrow adjustable lists ----
+// ---- Next-5-days adjustable board ----
 // Pulls straight from master_tasks the same way Calendar does (due_date +
 // start_time/duration_min), and orders each day by start_time first --
-// Calendar is where that time actually gets set, so this list reflects
-// whatever's been organised there rather than keeping its own order.
+// Calendar is where that time traditionally gets set, but this board can now
+// set it directly too, and can move a task to a different day by dragging it
+// across columns (same due_date-update Calendar's week view drag does).
 // Tasks with no time yet fall back to the shared 'tasks_priority' order
 // (same list /tasks drag-reorders) so reordering here still syncs. Complete
-// / add / reschedule all write straight to Supabase -- cross-device.
+// / add / reschedule / retime / move-day all write straight to Supabase --
+// cross-device.
+const HOME_DAYS_COUNT = 5
+// Same duration options as Calendar's own time editor (app/calendar/page.tsx)
+// -- kept as a small local literal rather than a shared import since it's a
+// one-line constant, not shared logic.
+const HOME_DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180]
 type HomeTask = { id: string; title: string; status: string; due_date: string | null; is_frog: boolean; start_time: string | null; duration_min: number | null }
 
 // Recurring weekly commitments from the Calendar tab's habit_blocks table
@@ -187,11 +194,10 @@ function fmtTimeLabel(hhmm: string | null): string | null {
   return h12 + ':' + String(m).padStart(2, '0') + ' ' + period
 }
 
-function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
+function HomeDaysBoard({ refreshKey }: { refreshKey?: number }) {
   const router = useRouter()
   const { celebrate } = useCelebration()
   const todayStr = toDateStr(new Date())
-  const tomorrowStr = toDateStr(new Date(Date.now() + 86400000))
   const [tasks, setTasks] = useState<HomeTask[]>([])
   const [order, setOrder] = useState<string[]>([])
   const [reminders, setReminders] = useState<Reminder[]>([])
@@ -199,7 +205,11 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
   const [ready, setReady] = useState(false)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
+  const [dragOverDay, setDragOverDay] = useState<string | null>(null)
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
+  const [editingTimeId, setEditingTimeId] = useState<string | null>(null)
+  const [timeDraft, setTimeDraft] = useState('')
+  const [durationDraft, setDurationDraft] = useState(30)
 
   const load = useCallback(async () => {
     // Each source is fetched independently -- if reminders or habit_blocks
@@ -246,7 +256,7 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
     }
 
     setReady(true)
-  }, [todayStr, tomorrowStr])
+  }, [todayStr])
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [load, refreshKey])
@@ -269,14 +279,24 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
     })
   }
 
-  // Tasks actually due that day, calendar-sorted as before.
-  const dueTodayTasks = sortByCalendar(tasks.filter(t => t.due_date === todayStr))
-  const dueTomorrowTasks = sortByCalendar(tasks.filter(t => t.due_date === tomorrowStr))
+  // The next HOME_DAYS_COUNT days (today first), each with its date string,
+  // day-of-week (for habit_blocks matching), and a display label.
+  const dayInfo = Array.from({ length: HOME_DAYS_COUNT }, (_, i) => {
+    const d = new Date(Date.now() + i * 86400000)
+    const dateStr = toDateStr(d)
+    return {
+      dateStr,
+      dow: d.getDay(),
+      label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+    }
+  })
 
   // Fallback fill: when a day has few/no dated tasks, pull in undated
   // top-priority tasks (same order as the "Tasks" card in This week's
   // overview) so the column shows real work, not just reminders. Each
-  // undated task is only used once across the two columns.
+  // undated task is only used once across all the columns -- days are
+  // filled in order (today first), so today still gets first pick exactly
+  // as it did back when there were only two columns.
   const undatedByPriority = [...tasks.filter(t => !t.due_date)].sort((a, b) => {
     const ai = order.indexOf(a.id), bi = order.indexOf(b.id)
     if (ai === -1 && bi === -1) return 0
@@ -285,21 +305,22 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
     return ai - bi
   })
   const FILL_TARGET = 5
-  const todayFill = dueTodayTasks.length < FILL_TARGET ? undatedByPriority.slice(0, FILL_TARGET - dueTodayTasks.length) : []
-  const usedFillIds = new Set(todayFill.map(t => t.id))
-  const tomorrowFill = dueTomorrowTasks.length < FILL_TARGET
-    ? undatedByPriority.filter(t => !usedFillIds.has(t.id)).slice(0, FILL_TARGET - dueTomorrowTasks.length)
-    : []
-  const fillIds = new Set([...todayFill, ...tomorrowFill].map(t => t.id))
-
-  const todayTasks = [...dueTodayTasks, ...todayFill]
-  const tomorrowTasks = [...dueTomorrowTasks, ...tomorrowFill]
-  const todayReminders = reminders.filter(r => reminderOccursOn(r, todayStr))
-  const tomorrowReminders = reminders.filter(r => reminderOccursOn(r, tomorrowStr))
-  const todayDow = new Date(todayStr + 'T12:00:00').getDay()
-  const tomorrowDow = new Date(tomorrowStr + 'T12:00:00').getDay()
-  const todayHabits = habitBlocks.filter(h => h.days.includes(todayDow))
-  const tomorrowHabits = habitBlocks.filter(h => h.days.includes(tomorrowDow))
+  const usedFillIds = new Set<string>()
+  const days = dayInfo.map(d => {
+    const due = sortByCalendar(tasks.filter(t => t.due_date === d.dateStr))
+    let fill: HomeTask[] = []
+    if (due.length < FILL_TARGET) {
+      fill = undatedByPriority.filter(t => !usedFillIds.has(t.id)).slice(0, FILL_TARGET - due.length)
+      fill.forEach(t => usedFillIds.add(t.id))
+    }
+    return {
+      ...d,
+      list: [...due, ...fill],
+      reminderList: reminders.filter(r => reminderOccursOn(r, d.dateStr)),
+      habitList: habitBlocks.filter(h => h.days.includes(d.dow)),
+    }
+  })
+  const fillIds = usedFillIds
 
   async function toggleDone(task: HomeTask) {
     const next = task.status === 'Done' ? 'Not started' : 'Done'
@@ -332,9 +353,70 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
     await supabase.from('master_tasks').update({ due_date: dateStr, start_time: null }).eq('id', task.id)
   }
 
-  function Column({ label, list, reminderList, habitList, fillIds }: { label: string; dayKey: 'today' | 'tomorrow'; dueDate: string; list: HomeTask[]; reminderList: Reminder[]; habitList: HomeHabitBlock[]; fillIds: Set<string> }) {
+  // Drag a task card onto a different day column -- reassigns due_date,
+  // same as Calendar's own week-view drag-to-move (app/calendar/page.tsx
+  // handleDrop). Keeps start_time as-is (a 9am task dragged a day later is
+  // still probably a 9am task); dropping back onto its own day column with
+  // no specific target task is a no-op, dropping onto a specific task in its
+  // own column reorders instead (see reorderWithin above).
+  async function moveToDay(taskId: string, fromDate: string, toDate: string) {
+    if (fromDate === toDate) return
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, due_date: toDate } : t))
+    await supabase.from('master_tasks').update({ due_date: toDate }).eq('id', taskId)
+  }
+
+  function handleTaskDragStart(e: React.DragEvent, taskId: string, columnDate: string) {
+    e.dataTransfer.setData('application/json', JSON.stringify({ id: taskId, fromDate: columnDate }))
+    e.dataTransfer.effectAllowed = 'move'
+    setDragId(taskId)
+  }
+
+  function handleColumnDrop(e: React.DragEvent, columnDate: string, list: HomeTask[], dropOnTaskId?: string) {
+    e.preventDefault()
+    setDragOverDay(null)
+    setDragOver(null)
+    let payload: { id: string; fromDate: string } | null = null
+    try { payload = JSON.parse(e.dataTransfer.getData('application/json')) } catch { payload = null }
+    setDragId(null)
+    if (!payload) return
+    if (payload.fromDate === columnDate) {
+      if (dropOnTaskId) reorderWithin(list, payload.id, dropOnTaskId)
+    } else {
+      moveToDay(payload.id, payload.fromDate, columnDate)
+    }
+  }
+
+  // Inline time editor -- Clock icon opens an <input type="time"> + duration
+  // picker right on the card, same duration options as Calendar's own time
+  // editor. Editing the time on an undated "Priority" filler task (due_date
+  // is null) also assigns it to whichever day column it was edited from --
+  // setting a time is itself a decision to do it that day.
+  function startEditTime(task: HomeTask) {
+    setEditingTimeId(task.id)
+    setTimeDraft(task.start_time ?? '')
+    setDurationDraft(task.duration_min ?? 30)
+    setRescheduleId(null)
+  }
+
+  async function saveTime(task: HomeTask, columnDate: string) {
+    const start_time = timeDraft || null
+    const duration_min = start_time ? durationDraft : null
+    const needsDueDate = !task.due_date
+    setEditingTimeId(null)
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, start_time, duration_min, due_date: needsDueDate ? columnDate : t.due_date } : t))
+    const patch: Record<string, unknown> = { start_time, duration_min }
+    if (needsDueDate) patch.due_date = columnDate
+    await supabase.from('master_tasks').update(patch).eq('id', task.id)
+  }
+
+  function Column({ label, dueDate, list, reminderList, habitList, fillIds }: { label: string; dueDate: string; list: HomeTask[]; reminderList: Reminder[]; habitList: HomeHabitBlock[]; fillIds: Set<string> }) {
+    const isColumnOver = dragOverDay === dueDate
     return (
-      <div style={{ flex:1, minWidth:'240px' }}>
+      <div
+        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverDay(dueDate) }}
+        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && dragOverDay === dueDate) setDragOverDay(null) }}
+        onDrop={e => handleColumnDrop(e, dueDate, list)}
+        style={{ flex:'1 1 240px', minWidth:'240px', borderRadius:'0.75rem', padding:'0.4rem', background: isColumnOver ? C.cyan+'0c' : 'transparent', border:'1px dashed '+(isColumnOver ? C.cyan+'60' : 'transparent'), transition:'background 0.1s,border-color 0.1s' }}>
         <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>{label}</p>
         <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
           {list.length === 0 && reminderList.length === 0 && habitList.length === 0 && (
@@ -376,16 +458,17 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
             const timeLabel = fmtTimeLabel(task.start_time)
             const isFill = fillIds.has(task.id)
             const rescheduling = rescheduleId === task.id
+            const editingTime = editingTimeId === task.id
             const opts = rescheduling ? rescheduleOptions(task.due_date ? new Date(task.due_date + 'T12:00:00') : new Date()) : []
             return (
               <div key={task.id}>
                 <div
                   draggable
-                  onDragStart={() => setDragId(task.id)}
+                  onDragStart={e => handleTaskDragStart(e, task.id, dueDate)}
                   onDragEnd={() => { setDragId(null); setDragOver(null) }}
-                  onDragOver={e => { e.preventDefault(); setDragOver(task.id) }}
+                  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(task.id) }}
                   onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && dragOver === task.id) setDragOver(null) }}
-                  onDrop={e => { e.preventDefault(); if (dragId) reorderWithin(list, dragId, task.id); setDragId(null); setDragOver(null) }}
+                  onDrop={e => { e.stopPropagation(); handleColumnDrop(e, dueDate, list, task.id) }}
                   style={{
                     display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
                     background: C.surface, border:'1px solid '+(dragOver===task.id?C.cyan+'80':isFill?C.amber+'35':C.border),
@@ -403,12 +486,40 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
                   {timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:C.cyan, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{timeLabel}</span>}
                   {!timeLabel && isFill && <span style={{ fontSize:'0.58rem', fontWeight:700, color:C.amber, flexShrink:0, textTransform:'uppercase', letterSpacing:'0.04em' }}>Priority</span>}
                   <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color: done?C.muted:C.text, textDecoration: done?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.title}</span>
-                  <button type="button" draggable={false} onClick={() => setRescheduleId(rescheduling ? null : task.id)} title={isFill ? 'Set due date' : 'Reschedule'} style={{
+                  <button type="button" draggable={false} onClick={() => { startEditTime(task); setRescheduleId(null) }} title={timeLabel ? 'Change time' : 'Set time'} style={{
+                    background:'none', border:'none', color: editingTime ? C.cyan : C.muted, cursor:'pointer', padding:'0.2rem', flexShrink:0, display:'flex', alignItems:'center',
+                  }}>
+                    <Zap size={13} />
+                  </button>
+                  <button type="button" draggable={false} onClick={() => { setRescheduleId(rescheduling ? null : task.id); setEditingTimeId(null) }} title={isFill ? 'Set due date' : 'Reschedule'} style={{
                     background:'none', border:'none', color: rescheduling ? C.cyan : C.muted, cursor:'pointer', padding:'0.2rem', flexShrink:0, display:'flex', alignItems:'center',
                   }}>
                     <CalendarDays size={13} />
                   </button>
                 </div>
+                {editingTime && (
+                  <div style={{ display:'flex', gap:'0.4rem', alignItems:'center', flexWrap:'wrap', padding:'0.4rem 0.65rem 0.15rem' }}>
+                    <input type="time" value={timeDraft} onChange={e => setTimeDraft(e.target.value)}
+                      style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.text, fontFamily:'inherit', fontSize:'0.72rem', padding:'0.3rem 0.5rem', outline:'none', colorScheme:'dark' }} />
+                    <select value={durationDraft} onChange={e => setDurationDraft(Number(e.target.value))} disabled={!timeDraft}
+                      style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.4rem', color:timeDraft?C.text:C.muted, fontFamily:'inherit', fontSize:'0.72rem', padding:'0.3rem 0.5rem', outline:'none', cursor:timeDraft?'pointer':'not-allowed' }}>
+                      {HOME_DURATION_OPTIONS.map(m => <option key={m} value={m}>{m < 60 ? m+' min' : (m/60)+'h'+(m%60?' '+(m%60)+'m':'')}</option>)}
+                    </select>
+                    <button type="button" onClick={() => saveTime(task, dueDate)} style={{
+                      padding:'0.3rem 0.6rem', background:'rgba(0,255,136,0.12)', border:'1px solid rgba(0,255,136,0.35)', borderRadius:'0.4rem',
+                      color:C.green, fontSize:'0.68rem', fontWeight:700, cursor:'pointer', fontFamily:'inherit',
+                    }}>Save</button>
+                    {timeDraft && (
+                      <button type="button" onClick={() => setTimeDraft('')} style={{
+                        padding:'0.3rem 0.55rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.4rem',
+                        color:C.muted, fontSize:'0.68rem', fontWeight:600, cursor:'pointer', fontFamily:'inherit',
+                      }}>Clear</button>
+                    )}
+                    <button type="button" onClick={() => setEditingTimeId(null)} style={{
+                      padding:'0.3rem 0.55rem', background:'transparent', border:'none', color:C.muted, fontSize:'0.68rem', cursor:'pointer', fontFamily:'inherit',
+                    }}>Cancel</button>
+                  </div>
+                )}
                 {rescheduling && (
                   <div style={{ display:'flex', gap:'0.35rem', flexWrap:'wrap', padding:'0.4rem 0.65rem 0.15rem' }}>
                     {opts.map(o => (
@@ -436,19 +547,21 @@ function TodayTomorrowLists({ refreshKey }: { refreshKey?: number }) {
           filling open Timeline slots -- same engine as Calendar's own
           "Recommend & Organise", opened here with today pre-selected so this
           list updates the moment you confirm. */}
-      <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:'0.65rem' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.65rem', gap:'0.75rem', flexWrap:'wrap' }}>
+        <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>Drag a card to a different day to move it, or use <Zap size={10} style={{ verticalAlign:'-1px' }}/> to set its time.</p>
         <button onClick={() => router.push('/calendar?openRecommend=today')} style={{
           display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.4rem 0.75rem',
           background:'linear-gradient(135deg,rgba(0,212,255,0.15),rgba(0,255,136,0.12))',
           border:'1px solid rgba(0,212,255,0.35)', borderRadius:'0.75rem', color:C.cyan,
-          cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700,
+          cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, flexShrink:0,
         }}>
           <Sparkles size={12} />Organise Today
         </button>
       </div>
-      <div style={{ display:'flex', gap:'1.5rem', flexWrap:'wrap' }}>
-        <Column label="Today" dayKey="today" dueDate={todayStr} list={todayTasks} reminderList={todayReminders} habitList={todayHabits} fillIds={fillIds} />
-        <Column label="Tomorrow" dayKey="tomorrow" dueDate={tomorrowStr} list={tomorrowTasks} reminderList={tomorrowReminders} habitList={tomorrowHabits} fillIds={fillIds} />
+      <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap' }}>
+        {days.map(d => (
+          <Column key={d.dateStr} label={d.label} dueDate={d.dateStr} list={d.list} reminderList={d.reminderList} habitList={d.habitList} fillIds={fillIds} />
+        ))}
       </div>
     </div>
   )
@@ -1416,14 +1529,16 @@ export default function Home() {
 
       {!loading && <FocusSessionsToday />}
 
-      {/* Today / Tomorrow — full calendar-day view: tasks, reminders, and
+      {/* Next 5 days — full calendar-day view: tasks, reminders, and
           recurring habit blocks, same content and functionality as the
-          Calendar tab for these two days. Directly under the streak bar so
-          it's the first thing seen after the morning/evening status. */}
+          Calendar tab for these days, plus drag-to-move-day and inline time
+          editing right here. Directly under the streak bar so it's the first
+          thing seen after the morning/evening status. Wider max-width than
+          the rest of the page's sections -- five columns need the room. */}
       {!loading && (
         <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
-          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
-            <TodayTomorrowLists refreshKey={taskRefresh} />
+          <div style={{ maxWidth:'1500px', margin:'0 auto', padding:'1.25rem 2rem' }}>
+            <HomeDaysBoard refreshKey={taskRefresh} />
           </div>
         </div>
       )}

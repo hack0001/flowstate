@@ -16,6 +16,9 @@ export type ReminderRecurrence =
 export type Reminder = {
   id: string; title: string; emoji: string; color: string
   startDate: string; recurrence: ReminderRecurrence; timeLabel: string
+  // Calendar Timeline block length in minutes (041_reminder_habit_duration.sql)
+  // — defaults to 30 for rows written before this column existed.
+  durationMin: number
 }
 
 export function reminderOccursOn(r: Reminder, dateStr: string): boolean {
@@ -66,6 +69,6 @@ export function describeRecurrence(rec: ReminderRecurrence): string {
   }
 }
 
-export function fetchRemindersRow(row: { id: string; title: string; emoji: string; color: string; start_date: string; recurrence: unknown; time_label: string }): Reminder {
-  return { id: row.id, title: row.title, emoji: row.emoji, color: row.color, startDate: row.start_date, recurrence: row.recurrence as ReminderRecurrence, timeLabel: row.time_label }
+export function fetchRemindersRow(row: { id: string; title: string; emoji: string; color: string; start_date: string; recurrence: unknown; time_label: string; duration_min?: number | null }): Reminder {
+  return { id: row.id, title: row.title, emoji: row.emoji, color: row.color, startDate: row.start_date, recurrence: row.recurrence as ReminderRecurrence, timeLabel: row.time_label, durationMin: row.duration_min ?? 30 }
 }

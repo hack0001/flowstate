@@ -27,7 +27,7 @@ type HoverTip = { x: number; y: number; color: string; title: string; lines: str
 
 type OrgMove = { id: string; from: string; to: string; title: string }
 type OverdueMove = { id: string; title: string; task_type: string | null; fromDate: string; toDate: string; selected: boolean }
-type HabitBlock = { id: string; title: string; emoji: string; color: string; days: number[]; timeLabel: string }
+type HabitBlock = { id: string; title: string; emoji: string; color: string; days: number[]; timeLabel: string; durationMin: number }
 
 const TYPE_LIMITS: Record<string, number> = { Flow: 2, Personal: 2, Admin: 2, 'Quick Task': 2 }
 
@@ -136,7 +136,7 @@ function anchorForTask(t: Task): number {
   return TL_ANCHOR_MIDDAY
 }
 
-type TLBlock = { id: string; kind: 'task' | 'reminder' | 'habit'; title: string; color: string; start: number; duration: number; timed: boolean; task?: Task }
+type TLBlock = { id: string; kind: 'task' | 'reminder' | 'habit'; title: string; color: string; start: number; duration: number; timed: boolean; task?: Task; reminder?: Reminder; habit?: HabitBlock }
 
 // Any task without an explicit start_time gets stacked sequentially from its
 // type's default anchor, in is_frog-first order, purely for display.
@@ -289,7 +289,9 @@ function TimelineBlock({
   // put) — the three together cover "move it", "change when it ends" and
   // "change when it starts" with just the cursor.
   const [drag, setDrag] = useState<{ mode: 'move' | 'resize' | 'resize-top'; startY: number; deltaMin: number } | null>(null)
-  const draggable = block.kind === 'task' && !!onCommit
+  // Tasks, reminders, and habit blocks are all draggable now — whichever
+  // kind's onCommit the parent wired up (see TimelineDay's render loop).
+  const draggable = !!onCommit
 
   useEffect(() => {
     if (!drag) return
@@ -366,13 +368,17 @@ function TimelineBlock({
           <div
             onMouseDown={e => { e.stopPropagation(); setDrag({ mode:'resize-top', startY:e.clientY, deltaMin:0 }) }}
             title="Drag to change the start time"
-            style={{ position:'absolute', left:0, right:0, top:0, height:'6px', cursor:'ns-resize' }}
-          />
+            style={{ position:'absolute', left:0, right:0, top:0, height:'9px', cursor:'ns-resize', display:'flex', alignItems:'flex-start', justifyContent:'center' }}
+          >
+            <div style={{ width:'22px', height:'3px', borderRadius:'9999px', marginTop:'2px', background:block.color, opacity:0.55 }} />
+          </div>
           <div
             onMouseDown={e => { e.stopPropagation(); setDrag({ mode:'resize', startY:e.clientY, deltaMin:0 }) }}
             title="Drag to change the finish time"
-            style={{ position:'absolute', left:0, right:0, bottom:0, height:'6px', cursor:'ns-resize' }}
-          />
+            style={{ position:'absolute', left:0, right:0, bottom:0, height:'9px', cursor:'ns-resize', display:'flex', alignItems:'flex-end', justifyContent:'center' }}
+          >
+            <div style={{ width:'22px', height:'3px', borderRadius:'9999px', marginBottom:'2px', background:block.color, opacity:0.55 }} />
+          </div>
         </>
       )}
     </div>
@@ -384,7 +390,7 @@ function TimelineBlock({
 // above the grid for reminders/habits with no parseable time.
 function TimelineDay({
   date, tasks, reminders, habits, isToday, pxPerMin,
-  onCommitTask, onOpenTask, onOpenReminder, onOpenHabit, onHoverTask, onHoverGeneric, onHoverEnd, onCreateAt,
+  onCommitTask, onCommitReminder, onCommitHabit, onOpenTask, onOpenReminder, onOpenHabit, onHoverTask, onHoverGeneric, onHoverEnd, onCreateAt,
 }: {
   date: string
   tasks: Task[]
@@ -393,6 +399,8 @@ function TimelineDay({
   isToday: boolean
   pxPerMin: number
   onCommitTask: (task: Task, startMin: number, durationMin: number) => void
+  onCommitReminder: (r: Reminder, startMin: number, durationMin: number) => void
+  onCommitHabit: (h: HabitBlock, startMin: number, durationMin: number) => void
   onOpenTask: (task: Task) => void
   onOpenReminder: (r: Reminder) => void
   onOpenHabit: (h: HabitBlock) => void
@@ -409,10 +417,10 @@ function TimelineDay({
   })
   const timedReminders = reminders.map(r => ({ r, min: parseTimeLabel(r.timeLabel) })).filter(x => x.min !== null) as { r: Reminder; min: number }[]
   const anytimeReminders = reminders.filter(r => parseTimeLabel(r.timeLabel) === null)
-  const reminderBlocks: TLBlock[] = timedReminders.map(({ r, min }) => ({ id:'r-'+r.id, kind:'reminder', title:(r.emoji?r.emoji+' ':'')+r.title, color:r.color, start:min, duration:30, timed:true }))
+  const reminderBlocks: TLBlock[] = timedReminders.map(({ r, min }) => ({ id:'r-'+r.id, kind:'reminder', title:(r.emoji?r.emoji+' ':'')+r.title, color:r.color, start:min, duration:r.durationMin ?? 30, timed:true, reminder:r }))
   const timedHabits = habits.map(h => ({ h, min: parseTimeLabel(h.timeLabel) })).filter(x => x.min !== null) as { h: HabitBlock; min: number }[]
   const anytimeHabits = habits.filter(h => parseTimeLabel(h.timeLabel) === null)
-  const habitBlocks: TLBlock[] = timedHabits.map(({ h, min }) => ({ id:'h-'+h.id, kind:'habit', title:(h.emoji?h.emoji+' ':'')+h.title, color:h.color, start:min, duration:30, timed:true }))
+  const habitBlocks: TLBlock[] = timedHabits.map(({ h, min }) => ({ id:'h-'+h.id, kind:'habit', title:(h.emoji?h.emoji+' ':'')+h.title, color:h.color, start:min, duration:h.durationMin ?? 30, timed:true, habit:h }))
 
   const laidOut = layoutTimelineBlocks([...taskBlocks, ...reminderBlocks, ...habitBlocks])
   // Auto-placed (unscheduled) tasks stack sequentially from their type's
@@ -481,8 +489,17 @@ function TimelineDay({
                 key={b.id}
                 block={b}
                 pxPerMin={pxPerMin}
-                onCommit={b.kind === 'task' && b.task ? (start, duration) => onCommitTask(b.task!, start, duration) : undefined}
-                onOpen={() => b.kind === 'task' && b.task ? onOpenTask(b.task) : undefined}
+                onCommit={
+                  b.kind === 'task' && b.task ? (start, duration) => onCommitTask(b.task!, start, duration)
+                  : b.kind === 'reminder' && b.reminder ? (start, duration) => onCommitReminder(b.reminder!, start, duration)
+                  : b.kind === 'habit' && b.habit ? (start, duration) => onCommitHabit(b.habit!, start, duration)
+                  : undefined
+                }
+                onOpen={() => {
+                  if (b.kind === 'task' && b.task) onOpenTask(b.task)
+                  else if (b.kind === 'reminder' && b.reminder) onOpenReminder(b.reminder)
+                  else if (b.kind === 'habit' && b.habit) onOpenHabit(b.habit)
+                }}
                 onHover={e => b.kind === 'task' && b.task ? onHoverTask(e, b.task) : onHoverGeneric(e, b.color, b.title, [fmtHour12(b.start) + ' · ' + b.duration + 'min'])}
                 onHoverEnd={onHoverEnd}
               />
@@ -583,13 +600,13 @@ function CalendarPageInner() {
   const [habits, setHabits] = useState<HabitBlock[]>([])
   const [showHabitModal, setShowHabitModal] = useState(false)
   const [editingHabit, setEditingHabit] = useState<HabitBlock | null>(null)
-  const [habitDraft, setHabitDraft] = useState<{ title:string; emoji:string; color:string; days:number[]; timeLabel:string }>({ title:'', emoji:'', color:C.cyan, days:[], timeLabel:'' })
+  const [habitDraft, setHabitDraft] = useState<{ title:string; emoji:string; color:string; days:number[]; timeLabel:string; durationMin:number }>({ title:'', emoji:'', color:C.cyan, days:[], timeLabel:'', durationMin:30 })
   // Reminders
   const [calTab, setCalTab] = useState<'calendar' | 'reminders'>('calendar')
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [showReminderModal, setShowReminderModal] = useState(false)
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null)
-  const [reminderDraft, setReminderDraft] = useState<{ title:string; emoji:string; color:string; startDate:string; recurrence:ReminderRecurrence; timeLabel:string }>({ title:'', emoji:'', color:C.green, startDate:todayStr, recurrence:{ type:'daily' }, timeLabel:'' })
+  const [reminderDraft, setReminderDraft] = useState<{ title:string; emoji:string; color:string; startDate:string; recurrence:ReminderRecurrence; timeLabel:string; durationMin:number }>({ title:'', emoji:'', color:C.green, startDate:todayStr, recurrence:{ type:'daily' }, timeLabel:'', durationMin:30 })
 
   // Hover tooltip — schedule items (task cards, reminder chips, habit chips)
   // truncate their title in the compact day column, so hovering shows the
@@ -661,7 +678,7 @@ function CalendarPageInner() {
     } catch {}
     supabase.from('habit_blocks').select('*').then(({ data }) => {
       if (!data || data.length === 0) return
-      const h = data.map(r => ({ id: r.id, title: r.title, emoji: r.emoji, color: r.color, days: r.days as number[], timeLabel: r.time_label as string }))
+      const h = data.map(r => ({ id: r.id, title: r.title, emoji: r.emoji, color: r.color, days: r.days as number[], timeLabel: r.time_label as string, durationMin: (r.duration_min as number | null) ?? 30 }))
       setHabits(h)
       try { localStorage.setItem('flowstate_cal_habits', JSON.stringify(h)) } catch {}
     })
@@ -674,7 +691,7 @@ function CalendarPageInner() {
     } catch {}
     supabase.from('reminders').select('*').order('start_date').then(({ data }) => {
       if (!data || data.length === 0) return
-      const r = data.map(row => ({ id: row.id, title: row.title, emoji: row.emoji, color: row.color, startDate: row.start_date as string, recurrence: row.recurrence as ReminderRecurrence, timeLabel: row.time_label as string }))
+      const r = data.map(row => ({ id: row.id, title: row.title, emoji: row.emoji, color: row.color, startDate: row.start_date as string, recurrence: row.recurrence as ReminderRecurrence, timeLabel: row.time_label as string, durationMin: (row.duration_min as number | null) ?? 30 }))
       setReminders(r)
       try { localStorage.setItem('flowstate_reminders', JSON.stringify(r)) } catch {}
     })
@@ -859,6 +876,31 @@ function CalendarPageInner() {
     try { await supabase.from('master_tasks').update({ start_time, duration_min: durationMin }).eq('id', task.id) } catch {}
   }
 
+  // Same drag-move / drag-resize commit for reminders and habit blocks —
+  // these are recurring (one row covers every occurrence), so dragging any
+  // one occurrence on the Timeline changes the time for all of them, same as
+  // editing it in the Reminder/Habit modal. duration_min added in
+  // 041_reminder_habit_duration.sql; falls back to 30 for older rows.
+  async function commitReminderTime(r: Reminder, startMin: number, durationMin: number) {
+    const timeLabel = minutesToHHMM(startMin)
+    setReminders(prev => {
+      const next = prev.map(x => x.id === r.id ? { ...x, timeLabel, durationMin } : x)
+      try { localStorage.setItem('flowstate_reminders', JSON.stringify(next)) } catch {}
+      return next
+    })
+    try { await supabase.from('reminders').update({ time_label: timeLabel, duration_min: durationMin }).eq('id', r.id) } catch {}
+  }
+
+  async function commitHabitTime(h: HabitBlock, startMin: number, durationMin: number) {
+    const timeLabel = minutesToHHMM(startMin)
+    setHabits(prev => {
+      const next = prev.map(x => x.id === h.id ? { ...x, timeLabel, durationMin } : x)
+      try { localStorage.setItem('flowstate_cal_habits', JSON.stringify(next)) } catch {}
+      return next
+    })
+    try { await supabase.from('habit_blocks').update({ time_label: timeLabel, duration_min: durationMin }).eq('id', h.id) } catch {}
+  }
+
   function jumpToWeek(day: number) {
     const clicked = new Date(calYear, calMonth, day)
     setWeekStart(viewDays === 7 ? getMondayOfWeek(clicked) : clicked)
@@ -1027,7 +1069,7 @@ function CalendarPageInner() {
 
   function openHabitForm(h: HabitBlock | null) {
     setEditingHabit(h)
-    setHabitDraft(h ? { title:h.title, emoji:h.emoji, color:h.color, days:[...h.days], timeLabel:h.timeLabel } : { title:'', emoji:'', color:C.cyan, days:[], timeLabel:'' })
+    setHabitDraft(h ? { title:h.title, emoji:h.emoji, color:h.color, days:[...h.days], timeLabel:h.timeLabel, durationMin:h.durationMin ?? 30 } : { title:'', emoji:'', color:C.cyan, days:[], timeLabel:'', durationMin:30 })
     setShowHabitModal(true)
   }
 
@@ -1037,13 +1079,14 @@ function CalendarPageInner() {
       id: editingHabit?.id ?? Date.now().toString(),
       title: habitDraft.title.trim(), emoji: habitDraft.emoji,
       color: habitDraft.color, days: habitDraft.days, timeLabel: habitDraft.timeLabel,
+      durationMin: habitDraft.durationMin,
     }
     setHabits(prev => {
       const next = editingHabit ? prev.map(x => x.id === h.id ? h : x) : [...prev, h]
       try { localStorage.setItem('flowstate_cal_habits', JSON.stringify(next)) } catch {}
       return next
     })
-    supabase.from('habit_blocks').upsert({ id: h.id, title: h.title, emoji: h.emoji, color: h.color, days: h.days, time_label: h.timeLabel }, { onConflict: 'id' }).then()
+    supabase.from('habit_blocks').upsert({ id: h.id, title: h.title, emoji: h.emoji, color: h.color, days: h.days, time_label: h.timeLabel, duration_min: h.durationMin }, { onConflict: 'id' }).then()
     setShowHabitModal(false)
     setEditingHabit(null)
   }
@@ -1060,8 +1103,8 @@ function CalendarPageInner() {
   function openReminderForm(r: Reminder | null) {
     setEditingReminder(r)
     setReminderDraft(r
-      ? { title:r.title, emoji:r.emoji, color:r.color, startDate:r.startDate, recurrence:{ ...r.recurrence } as ReminderRecurrence, timeLabel:r.timeLabel }
-      : { title:'', emoji:'', color:C.green, startDate:todayStr, recurrence:{ type:'daily' }, timeLabel:'' }
+      ? { title:r.title, emoji:r.emoji, color:r.color, startDate:r.startDate, recurrence:{ ...r.recurrence } as ReminderRecurrence, timeLabel:r.timeLabel, durationMin:r.durationMin ?? 30 }
+      : { title:'', emoji:'', color:C.green, startDate:todayStr, recurrence:{ type:'daily' }, timeLabel:'', durationMin:30 }
     )
     setShowReminderModal(true)
   }
@@ -1073,6 +1116,7 @@ function CalendarPageInner() {
       title: reminderDraft.title.trim(), emoji: reminderDraft.emoji,
       color: reminderDraft.color, startDate: reminderDraft.startDate,
       recurrence: reminderDraft.recurrence, timeLabel: reminderDraft.timeLabel,
+      durationMin: reminderDraft.durationMin,
     }
     setReminders(prev => {
       const next = editingReminder ? prev.map(x => x.id === r.id ? r : x) : [...prev, r]
@@ -1080,7 +1124,7 @@ function CalendarPageInner() {
       return next
     })
     supabase.from('reminders')
-      .upsert({ id: r.id, title: r.title, emoji: r.emoji, color: r.color, start_date: r.startDate, recurrence: r.recurrence, time_label: r.timeLabel }, { onConflict: 'id' })
+      .upsert({ id: r.id, title: r.title, emoji: r.emoji, color: r.color, start_date: r.startDate, recurrence: r.recurrence, time_label: r.timeLabel, duration_min: r.durationMin }, { onConflict: 'id' })
       .then(({ error }) => { if (error) console.error('[reminders] upsert failed:', error.message, error) })
     setShowReminderModal(false)
     setEditingReminder(null)
@@ -1491,6 +1535,8 @@ function CalendarPageInner() {
                   isToday={date === todayStr}
                   pxPerMin={tlPxPerMin}
                   onCommitTask={commitTaskTime}
+                  onCommitReminder={commitReminderTime}
+                  onCommitHabit={commitHabitTime}
                   onOpenTask={openEdit}
                   onOpenReminder={openReminderForm}
                   onOpenHabit={openHabitForm}
@@ -1775,9 +1821,27 @@ function CalendarPageInner() {
               <div>
                 <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Time (optional — leave blank to auto-place)</label>
                 <div style={{ display:'flex', gap:'0.5rem', alignItems:'center', flexWrap:'wrap' }}>
-                  <input type="time" value={editStartTime} onChange={e => setEditStartTime(e.target.value)}
-                    style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', colorScheme:'dark' }} />
-                  <select value={editDurationMin} onChange={e => setEditDurationMin(Number(e.target.value))} disabled={!editStartTime}
+                  <div style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                    <span style={{ fontSize:'0.62rem', color:C.muted, fontWeight:600 }}>Start</span>
+                    <input type="time" value={editStartTime} onChange={e => setEditStartTime(e.target.value)}
+                      style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', colorScheme:'dark' }} />
+                  </div>
+                  <span style={{ color:C.muted, fontSize:'0.8rem' }}>&rarr;</span>
+                  <div style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                    <span style={{ fontSize:'0.62rem', color:editStartTime?C.muted:C.muted+'80', fontWeight:600 }}>End</span>
+                    <input type="time" disabled={!editStartTime}
+                      value={editStartTime && hhmmToMinutes(editStartTime) !== null ? minutesToHHMM(hhmmToMinutes(editStartTime)! + editDurationMin) : ''}
+                      onChange={e => {
+                        const startMin = hhmmToMinutes(editStartTime)
+                        const endMin = hhmmToMinutes(e.target.value)
+                        if (startMin === null || endMin === null) return
+                        let duration = endMin - startMin
+                        if (duration <= 0) duration += 24 * 60 // end past midnight
+                        setEditDurationMin(Math.max(TL_SNAP_MIN, duration))
+                      }}
+                      style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:editStartTime?C.text:C.muted, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', colorScheme:'dark', cursor:editStartTime?'text':'not-allowed' }} />
+                  </div>
+                  <select value={editDurationMin} onChange={e => setEditDurationMin(Number(e.target.value))} disabled={!editStartTime} title="Quick duration — sets End from Start"
                     style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:editStartTime?C.text:C.muted, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', cursor:editStartTime?'pointer':'not-allowed' }}>
                     {[15,30,45,60,90,120,180].map(m => <option key={m} value={m}>{m < 60 ? m+' min' : (m/60)+'h'+(m%60?' '+(m%60)+'m':'')}</option>)}
                   </select>
@@ -1860,9 +1924,44 @@ function CalendarPageInner() {
                 </div>
               </div>
               <div>
-                <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Time (optional)</label>
-                <input value={habitDraft.timeLabel} onChange={e => setHabitDraft(d => ({ ...d, timeLabel: e.target.value }))} placeholder="e.g. 7-8am"
-                  style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', width:'100%', boxSizing:'border-box' }} />
+                <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Time (optional — leave blank for "Anytime")</label>
+                {(() => {
+                  const startMin = parseTimeLabel(habitDraft.timeLabel)
+                  const startDisplay = startMin !== null ? minutesToHHMM(startMin) : ''
+                  return (
+                    <div style={{ display:'flex', gap:'0.5rem', alignItems:'center', flexWrap:'wrap' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                        <span style={{ fontSize:'0.62rem', color:C.muted, fontWeight:600 }}>Start</span>
+                        <input type="time" value={startDisplay} onChange={e => setHabitDraft(d => ({ ...d, timeLabel: e.target.value }))}
+                          style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', colorScheme:'dark' }} />
+                      </div>
+                      <span style={{ color:C.muted, fontSize:'0.8rem' }}>&rarr;</span>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                        <span style={{ fontSize:'0.62rem', color:C.muted, fontWeight:600 }}>End</span>
+                        <input type="time" disabled={startMin === null}
+                          value={startMin !== null ? minutesToHHMM(startMin + habitDraft.durationMin) : ''}
+                          onChange={e => {
+                            const endMin = hhmmToMinutes(e.target.value)
+                            if (startMin === null || endMin === null) return
+                            let duration = endMin - startMin
+                            if (duration <= 0) duration += 24 * 60
+                            setHabitDraft(d => ({ ...d, durationMin: Math.max(TL_SNAP_MIN, duration) }))
+                          }}
+                          style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:startMin!==null?C.text:C.muted, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', colorScheme:'dark', cursor:startMin!==null?'text':'not-allowed' }} />
+                      </div>
+                      <select value={habitDraft.durationMin} onChange={e => setHabitDraft(d => ({ ...d, durationMin: Number(e.target.value) }))} disabled={startMin === null} title="Quick duration"
+                        style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:startMin!==null?C.text:C.muted, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', cursor:startMin!==null?'pointer':'not-allowed' }}>
+                        {[15,30,45,60,90,120,180].map(m => <option key={m} value={m}>{m < 60 ? m+' min' : (m/60)+'h'+(m%60?' '+(m%60)+'m':'')}</option>)}
+                      </select>
+                      {habitDraft.timeLabel && (
+                        <button onClick={() => setHabitDraft(d => ({ ...d, timeLabel: '' }))} title="Clear — goes back to Anytime"
+                          style={{ fontSize:'0.68rem', padding:'0.3rem 0.55rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.muted, cursor:'pointer', fontFamily:'inherit' }}>
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
             <div style={{ display:'flex', gap:'0.5rem', justifyContent:'space-between', marginTop:'1.5rem' }}>
@@ -1972,18 +2071,52 @@ function CalendarPageInner() {
                   </div>
                 )}
               </div>
-              {/* Start date + Time */}
-              <div style={{ display:'flex', gap:'0.75rem' }}>
-                <div style={{ flex:1 }}>
-                  <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Start date</label>
-                  <input type="date" value={reminderDraft.startDate} onChange={e => setReminderDraft(d => ({ ...d, startDate: e.target.value }))}
-                    style={{ width:'100%', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', colorScheme:'dark', boxSizing:'border-box' }} />
-                </div>
-                <div style={{ width:'110px' }}>
-                  <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Time (optional)</label>
-                  <input value={reminderDraft.timeLabel} onChange={e => setReminderDraft(d => ({ ...d, timeLabel: e.target.value }))} placeholder="e.g. 9am"
-                    style={{ width:'100%', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', boxSizing:'border-box' }} />
-                </div>
+              {/* Start date */}
+              <div>
+                <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Start date</label>
+                <input type="date" value={reminderDraft.startDate} onChange={e => setReminderDraft(d => ({ ...d, startDate: e.target.value }))}
+                  style={{ width:'100%', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', colorScheme:'dark', boxSizing:'border-box' }} />
+              </div>
+              {/* Time */}
+              <div>
+                <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Time (optional — leave blank for "Anytime")</label>
+                {(() => {
+                  const startMin = parseTimeLabel(reminderDraft.timeLabel)
+                  const startDisplay = startMin !== null ? minutesToHHMM(startMin) : ''
+                  return (
+                    <div style={{ display:'flex', gap:'0.5rem', alignItems:'center', flexWrap:'wrap' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                        <span style={{ fontSize:'0.62rem', color:C.muted, fontWeight:600 }}>Start</span>
+                        <input type="time" value={startDisplay} onChange={e => setReminderDraft(d => ({ ...d, timeLabel: e.target.value }))}
+                          style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', colorScheme:'dark' }} />
+                      </div>
+                      <span style={{ color:C.muted, fontSize:'0.8rem' }}>&rarr;</span>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                        <span style={{ fontSize:'0.62rem', color:C.muted, fontWeight:600 }}>End</span>
+                        <input type="time" disabled={startMin === null}
+                          value={startMin !== null ? minutesToHHMM(startMin + reminderDraft.durationMin) : ''}
+                          onChange={e => {
+                            const endMin = hhmmToMinutes(e.target.value)
+                            if (startMin === null || endMin === null) return
+                            let duration = endMin - startMin
+                            if (duration <= 0) duration += 24 * 60
+                            setReminderDraft(d => ({ ...d, durationMin: Math.max(TL_SNAP_MIN, duration) }))
+                          }}
+                          style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:startMin!==null?C.text:C.muted, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', colorScheme:'dark', cursor:startMin!==null?'text':'not-allowed' }} />
+                      </div>
+                      <select value={reminderDraft.durationMin} onChange={e => setReminderDraft(d => ({ ...d, durationMin: Number(e.target.value) }))} disabled={startMin === null} title="Quick duration"
+                        style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'0.5rem', color:startMin!==null?C.text:C.muted, fontFamily:'inherit', fontSize:'0.825rem', padding:'0.5rem 0.75rem', outline:'none', cursor:startMin!==null?'pointer':'not-allowed' }}>
+                        {[15,30,45,60,90,120,180].map(m => <option key={m} value={m}>{m < 60 ? m+' min' : (m/60)+'h'+(m%60?' '+(m%60)+'m':'')}</option>)}
+                      </select>
+                      {reminderDraft.timeLabel && (
+                        <button onClick={() => setReminderDraft(d => ({ ...d, timeLabel: '' }))} title="Clear — goes back to Anytime"
+                          style={{ fontSize:'0.68rem', padding:'0.3rem 0.55rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.muted, cursor:'pointer', fontFamily:'inherit' }}>
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
               {/* Preview */}
               {reminderDraft.title.trim() && (
