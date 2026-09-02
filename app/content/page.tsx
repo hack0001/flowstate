@@ -1609,7 +1609,12 @@ export default function ContentPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { getMaxFocusItems().then(setMaxFocusItemsLocal) }, [])
+  useEffect(() => {
+    getMaxFocusItems().then(({ maxItems, error }) => {
+      setMaxFocusItemsLocal(maxItems)
+      if (error) setMaxFocusMsg(error) // surfaced on load now, not just when you try to change it
+    })
+  }, [])
 
   async function updateMaxFocusItems(n: number) {
     setMaxFocusItemsLocal(n) // optimistic — feels instant on the +/- buttons

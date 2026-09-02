@@ -1,9 +1,9 @@
 'use client'
-import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Circle, Play, Pause, RefreshCw, SkipForward, Wind, Waves, VolumeX, Zap, Music2, ChevronRight, Sparkles, Clapperboard, FolderOpen } from 'lucide-react'
 import { supabase, getActiveFocusVideos, getContentItemById, getStageNote, saveStageNote, type ActiveFocusVideo } from '@/lib/supabase'
-import { stageAdvance, sopForStage, nextSessionChunk } from '@/lib/sops'
+import { stageAdvance, sopForStage, nextSessionChunk, allSessionChunks } from '@/lib/sops'
 import { buildStageDraftPrompt } from '@/lib/stageDraftPrompt'
 import { sounds } from '@/lib/sounds'
 import { usePomodoro } from '@/hooks/usePomodoro'
@@ -79,15 +79,29 @@ function ContentFocusPageInner() {
   // stage checklist, auto-starts a countdown sized to those steps'
   // estimated minutes, and logs the sitting to content_focus_sessions so
   // Home can show "N focus sessions today". The default (no ?item=) flow
-  // above is left completely alone — still the 2-pinned-video, full-stage
+  // above is left completely alone — still the pinned-videos, full-stage
   // checklist, manual-pomodoro experience.
+  //
+  // Chunk-to-chunk transitions are seamless by design: finishing a chunk's
+  // tasks rolls straight into the next one (new steps, fresh timer, no
+  // modal, no reload) so the session never breaks focus. The one place that
+  // DOES stop and wait for you is the end of the whole stage — advancing a
+  // video to its next pipeline stage is a real decision, so that gets an
+  // explicit "Move to next stage" button instead of happening automatically.
+  // The countdown is a soft pacing target, not a hard cutoff: running past
+  // zero doesn't interrupt anything, it just turns red.
   const chunkItemParam = searchParams.get('item')
   const [chunkMode, setChunkMode] = useState(false)
   const [chunkStepIndices, setChunkStepIndices] = useState<number[]>([])
   const [chunkTotalMins, setChunkTotalMins] = useState(0)
   const [chunkSecondsLeft, setChunkSecondsLeft] = useState(0)
   const [chunkSessionId, setChunkSessionId] = useState<string | null>(null)
-  const [chunkEnded, setChunkEnded] = useState<'done' | 'timeup' | null>(null)
+  const advancingChunkRef = useRef(false)
+  // True once every step in the whole stage (not just this chunk) is
+  // checked — the one deliberate stop in an otherwise seamless session, so
+  // advancing the video to its next pipeline stage is always a conscious
+  // click (see advanceStageSeamless below), never automatic.
+  const [stageReadyToAdvance, setStageReadyToAdvance] = useState(false)
 
   const [ambient, setAmbient] = useState<AmbientMode>('off')
   const [showPomodoro, setShowPomodoro] = useState(false)
@@ -138,7 +152,7 @@ function ContentFocusPageInner() {
   // ── Chunked session load ────────────────────────────────────────────
   const loadChunkItem = useCallback(async (id: string, keepSessionId?: boolean) => {
     setLoading(true)
-    setChunkEnded(null)
+    setStageReadyToAdvance(false)
     const { video, error } = await getContentItemById(id)
     if (!video) {
       setLoadError(error)
@@ -186,52 +200,78 @@ function ContentFocusPageInner() {
 
   useEffect(() => { if (chunkItemParam) loadChunkItem(chunkItemParam) }, [chunkItemParam, loadChunkItem])
 
-  // Countdown ticks once a second while a chunk session is active.
+  // Countdown ticks once a second while a chunk session is active. Allowed
+  // to run past zero into negative territory (rendered as a red "+overrun"
+  // readout) instead of stopping anything -- it's a soft pacing target, not
+  // a hard cutoff that would interrupt the session.
   useEffect(() => {
-    if (!chunkMode || chunkEnded || chunkSecondsLeft <= 0) return
-    const id = setInterval(() => setChunkSecondsLeft(s => Math.max(0, s - 1)), 1000)
+    if (!chunkMode || stageReadyToAdvance) return
+    const id = setInterval(() => setChunkSecondsLeft(s => s - 1), 1000)
     return () => clearInterval(id)
-  }, [chunkMode, chunkEnded, chunkSecondsLeft > 0])
+  }, [chunkMode, stageReadyToAdvance])
 
-  // Timer hit zero before all chunk tasks were checked -- end the session.
-  useEffect(() => {
-    if (chunkMode && !chunkEnded && chunkTotalMins > 0 && chunkSecondsLeft === 0) {
-      finishChunkSession('timeup')
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chunkSecondsLeft])
-
-  async function finishChunkSession(reason: 'done' | 'timeup') {
-    if (chunkEnded) return
-    setChunkEnded(reason)
+  // Called when a chunk's own steps are all checked but the wider stage
+  // still has steps left for next time -- closes out this chunk's session
+  // row and rolls straight into the next chunk. No modal, no reload: the
+  // checklist card just swaps its contents under the user.
+  async function advanceToNextChunk() {
+    if (!item || !sop) return
+    const curDone = stepDone[item.id] ?? new Set<number>()
     if (chunkSessionId) {
-      const curDone = item ? (stepDone[item.id] ?? new Set<number>()) : new Set<number>()
-      const tasksCompleted = chunkStepIndices.filter(i => curDone.has(i)).length
       await supabase.from('content_focus_sessions').update({
         ended_at: new Date().toISOString(),
         actual_mins: focusMins,
-        tasks_completed: tasksCompleted,
-        status: reason === 'done' ? 'completed' : 'abandoned',
+        tasks_completed: chunkStepIndices.filter(i => curDone.has(i)).length,
+        status: 'completed',
       }).eq('id', chunkSessionId)
     }
-    if (reason === 'done' && allStepsDone) {
-      // The chunk happened to cover the last remaining steps in the stage --
-      // hand off to the existing advance flow (its own overlay/sound/confetti
-      // takes it from here) instead of showing the chunk wrap-up screen.
-      await advanceStage()
-    } else {
-      sounds.playStageComplete()
-      celebrate('stage')
-    }
+    sounds.playTaskComplete()
+    celebrate('task')
+    const chunk = nextSessionChunk(sop, curDone)
+    if (!chunk) return // allStepsDone should have caught this -- guards against a race
+    setChunkStepIndices(chunk.stepIndices)
+    setChunkTotalMins(chunk.totalMins)
+    setChunkSecondsLeft(chunk.totalMins * 60)
+    const { data: sess } = await supabase.from('content_focus_sessions')
+      .insert({ content_item_id: item.id, sop_id: sop.id, step_indices: chunk.stepIndices, estimated_mins: chunk.totalMins, status: 'in_progress' })
+      .select('id').single()
+    setChunkSessionId((sess as { id: string } | null)?.id ?? null)
+    // focusMins/distractedMins deliberately NOT reset here -- the whole
+    // stage is one continuous sitting; chunks just pace out the checklist.
   }
 
-  // A chunk-mode session ends the moment every task in this chunk is
-  // checked -- even if the wider stage still has steps left for next time.
-  useEffect(() => {
-    if (chunkMode && !chunkEnded && chunkStepIndices.length > 0) {
+  // Called once every step in the WHOLE stage (not just this chunk) is
+  // checked -- closes out the session row and surfaces the explicit "Move
+  // to next stage" button (see advanceStageSeamless) instead of advancing
+  // automatically, since that's a real decision worth a deliberate click.
+  async function completeStageSession() {
+    if (chunkSessionId) {
       const curDone = item ? (stepDone[item.id] ?? new Set<number>()) : new Set<number>()
-      if (chunkStepIndices.every(i => curDone.has(i))) finishChunkSession('done')
+      await supabase.from('content_focus_sessions').update({
+        ended_at: new Date().toISOString(),
+        actual_mins: focusMins,
+        tasks_completed: chunkStepIndices.filter(i => curDone.has(i)).length,
+        status: 'completed',
+      }).eq('id', chunkSessionId)
     }
+    sounds.playStageComplete()
+    celebrate('stage')
+    setStageReadyToAdvance(true)
+  }
+
+  // Watches for a chunk's steps all being ticked and reacts seamlessly --
+  // either the whole stage is done (stop and wait for the explicit advance
+  // button) or there's more of the stage left (roll into the next chunk).
+  useEffect(() => {
+    if (!chunkMode || stageReadyToAdvance || chunkStepIndices.length === 0 || advancingChunkRef.current) return
+    const curDone = item ? (stepDone[item.id] ?? new Set<number>()) : new Set<number>()
+    if (!chunkStepIndices.every(i => curDone.has(i))) return
+    advancingChunkRef.current = true
+    ;(async () => {
+      if (allStepsDone) await completeStageSession()
+      else await advanceToNextChunk()
+      advancingChunkRef.current = false
+    })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stepDone])
 
@@ -295,6 +335,16 @@ function ContentFocusPageInner() {
   const steps = sop?.steps ?? []
   const doneSet = item ? (stepDone[item.id] ?? new Set<number>()) : new Set<number>()
   const allStepsDone = steps.length > 0 && doneSet.size === steps.length
+
+  // Full deterministic chunk sequence for this stage, purely to answer
+  // "chunk N of how many" for the progress indicator -- recomputed from the
+  // SOP each render rather than persisted, so it can never drift from what
+  // steps actually got ticked.
+  const allChunks = useMemo(() => (chunkMode && sop) ? allSessionChunks(sop) : [], [chunkMode, sop])
+  const currentChunkNumber = allChunks.findIndex(c =>
+    c.stepIndices.length === chunkStepIndices.length && c.stepIndices.every((v, i) => v === chunkStepIndices[i])
+  ) + 1
+  const totalChunks = allChunks.length
 
   // ── Stage draft (content_stage_notes) ─────────────────────────────────────
   // The same note the Pipeline card's Produce / Consult Claude writes — shown
@@ -405,6 +455,30 @@ function ContentFocusPageInner() {
     })
   }
 
+  // Chunk-mode's own stage-advance. Unlike advanceStage() (used by the
+  // default multi-video flow, with its switch-video/overlay/session-complete
+  // chain) this stays inline and rolls straight into the new stage's first
+  // chunk -- the one deliberate stop in a chunk session is a single click,
+  // not a chain of screens to click through.
+  async function advanceStageSeamless() {
+    if (!item) return
+    const fromStage = item.pipeline_stage ?? ''
+    const toStage = stageAdvance(fromStage, item.format)
+    sounds.playStageComplete()
+    celebrate('stage')
+    if (!toStage) {
+      // Nothing further in the pipeline for this video -- end the session.
+      setStageReadyToAdvance(false)
+      setSessionComplete(true)
+      return
+    }
+    await supabase.from('content_items').update({ pipeline_stage: toStage }).eq('id', item.id)
+    setVideos(prev => prev.map((v, i) => i === videoIdx ? { ...v, pipeline_stage: toStage } : v))
+    setStepDone(prev => ({ ...prev, [item.id]: new Set() }))
+    setStageReadyToAdvance(false)
+    await loadChunkItem(item.id)
+  }
+
   function continueAfterOverlay() {
     if (!stageOverlay) return
     if (stageOverlay.action === 'switch') { setVideoIdx(stageOverlay.nextIdx); setStageOverlay(null) }
@@ -506,11 +580,11 @@ function ContentFocusPageInner() {
             <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 0.875rem', background:'rgba(0,212,255,0.05)', border:'1px solid rgba(0,212,255,0.2)', borderRadius:'0.875rem', marginBottom:'0.75rem', flexWrap:'wrap' }}>
               <span style={{ fontSize:'0.72rem', fontWeight:800, color:C.cyan }}>&#9203; Focus chunk:</span>
               <span style={{ fontSize:'0.72rem', color:C.sec }}>
-                {chunkStepIndices.length} task{chunkStepIndices.length === 1 ? '' : 's'} this session
+                {totalChunks > 0 ? `Chunk ${currentChunkNumber} of ${totalChunks}` : `${chunkStepIndices.length} task${chunkStepIndices.length === 1 ? '' : 's'} this session`}
               </span>
-              {!chunkEnded && chunkTotalMins > 0 && (
+              {!stageReadyToAdvance && chunkTotalMins > 0 && (
                 <span style={{ marginLeft:'auto', fontSize:'0.85rem', fontWeight:800, fontFamily:'ui-monospace,monospace', color: chunkSecondsLeft < 60 ? '#ff4466' : C.cyan }}>
-                  {String(Math.floor(chunkSecondsLeft / 60)).padStart(2, '0')}:{String(chunkSecondsLeft % 60).padStart(2, '0')}
+                  {chunkSecondsLeft < 0 ? '+' : ''}{String(Math.floor(Math.abs(chunkSecondsLeft) / 60)).padStart(2, '0')}:{String(Math.abs(chunkSecondsLeft) % 60).padStart(2, '0')}
                 </span>
               )}
             </div>
@@ -568,28 +642,7 @@ function ContentFocusPageInner() {
       {/* -- Main content -- */}
       <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem 1.5rem 2.5rem' }}>
 
-        {chunkMode && chunkEnded && !stageOverlay ? (
-          <div style={{ textAlign:'center', maxWidth:'480px', animation:'fadeUp 0.6s ease' }}>
-            <div style={{ fontSize:'2.75rem', marginBottom:'1rem' }}>{chunkEnded === 'done' ? <>&#9989;</> : <>&#9203;</>}</div>
-            <h1 style={{ fontSize:'1.85rem', fontWeight:900, color: chunkEnded === 'done' ? C.green : C.amber, marginBottom:'0.625rem' }}>
-              {chunkEnded === 'done' ? 'Chunk complete!' : "Time's up"}
-            </h1>
-            <p style={{ fontSize:'0.85rem', color:C.sec, lineHeight:1.6, marginBottom:'2rem' }}>
-              {chunkStepIndices.filter(i => doneSet.has(i)).length}/{chunkStepIndices.length} task{chunkStepIndices.length === 1 ? '' : 's'} checked off on <strong style={{ color:C.text }}>{item?.title}</strong>
-            </p>
-            <div style={{ display:'flex', gap:'0.75rem', justifyContent:'center', flexWrap:'wrap' }}>
-              <button onClick={() => item && loadChunkItem(item.id)}
-                style={{ padding:'0.875rem 2rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.875rem', color:C.cyan, fontWeight:700, fontSize:'0.9rem', cursor:'pointer', fontFamily:'inherit' }}>
-                Start next chunk
-              </button>
-              <button onClick={() => { sounds.stopAmbient(); router.push('/') }}
-                style={{ padding:'0.875rem 2.5rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.875rem', color:'#000', fontWeight:700, fontSize:'1rem', cursor:'pointer', fontFamily:'inherit' }}>
-                Back to Home
-              </button>
-            </div>
-          </div>
-
-        ) : sessionComplete ? (
+        {sessionComplete ? (
           <div style={{ textAlign:'center', maxWidth:'480px', animation:'fadeUp 0.6s ease' }}>
             <div style={{ fontSize:'3.5rem', marginBottom:'1rem' }}>[done]</div>
             <h1 style={{ fontSize:'2.25rem', fontWeight:900, color:C.green, marginBottom:'0.75rem' }}>Session Complete!</h1>
@@ -598,7 +651,7 @@ function ContentFocusPageInner() {
             </p>
             <p style={{ fontSize:'0.7rem', color:C.muted, marginBottom:'2rem' }}>&mdash; Jim Rohn</p>
             <div style={{ display:'flex', gap:'0.75rem', justifyContent:'center', flexWrap:'wrap' }}>
-              <button onClick={() => { setSessionComplete(false); setStageGoalMet(new Set()); load() }}
+              <button onClick={() => { setSessionComplete(false); if (chunkMode && item) { loadChunkItem(item.id) } else { setStageGoalMet(new Set()); load() } }}
                 style={{ padding:'0.875rem 2rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.875rem', color:C.cyan, fontWeight:700, fontSize:'0.9rem', cursor:'pointer', fontFamily:'inherit' }}>
                 Keep going
               </button>
@@ -729,18 +782,24 @@ function ContentFocusPageInner() {
             </div>
 
             {/* -- Action buttons -- */}
-            <button onClick={advanceStage} disabled={!allStepsDone && !!sop}
+            <button onClick={chunkMode ? advanceStageSeamless : advanceStage}
+              disabled={chunkMode ? !stageReadyToAdvance : (!allStepsDone && !!sop)}
               style={{
                 width:'100%', padding:'1.0625rem', border:'none', borderRadius:'0.875rem',
-                fontWeight:800, fontSize:'1.0625rem', cursor: (allStepsDone || !sop) ? 'pointer' : 'default',
+                fontWeight:800, fontSize:'1.0625rem',
+                cursor: (chunkMode ? stageReadyToAdvance : (allStepsDone || !sop)) ? 'pointer' : 'default',
                 fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:'0.5rem',
-                background: (allStepsDone || (!sop && !!nextStage)) ? 'linear-gradient(135deg,'+C.green+',#00cc6a)' : C.surface,
-                color: (allStepsDone || (!sop && !!nextStage)) ? '#000' : C.muted,
+                background: (chunkMode ? stageReadyToAdvance : (allStepsDone || (!sop && !!nextStage))) ? 'linear-gradient(135deg,'+C.green+',#00cc6a)' : C.surface,
+                color: (chunkMode ? stageReadyToAdvance : (allStepsDone || (!sop && !!nextStage))) ? '#000' : C.muted,
                 opacity: (!sop && !nextStage) ? 0.4 : 1,
                 letterSpacing:'-0.01em',
               }}>
               <CheckCircle2 size={18}/>
-              {nextStage ? `Advance to ${nextStage}` : 'Nothing further to advance'}
+              {chunkMode
+                ? (stageReadyToAdvance
+                    ? (nextStage ? `Move to ${nextStage} →` : 'Finish session →')
+                    : `${chunkStepIndices.filter(i => doneSet.has(i)).length}/${chunkStepIndices.length} this chunk checked`)
+                : (nextStage ? `Advance to ${nextStage}` : 'Nothing further to advance')}
             </button>
 
             {videos.length > 1 && (() => {

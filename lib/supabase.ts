@@ -52,9 +52,15 @@ function explainFocusError(message: string | undefined): string {
 // hasn't been run yet, so nothing breaks on an older database.
 export const DEFAULT_MAX_FOCUS_ITEMS = 2
 
-export async function getMaxFocusItems(): Promise<number> {
-  const { data } = await supabase.from('content_focus_settings').select('max_focus_items').eq('id', 1).maybeSingle()
-  return data?.max_focus_items ?? DEFAULT_MAX_FOCUS_ITEMS
+// Was silently swallowing the error and just returning the default (2) --
+// meant a missing 039_content_focus_settings.sql table looked identical to
+// "you've deliberately capped it at 2", with zero indication anything needed
+// fixing. Now returns the error too so callers can actually surface it.
+export async function getMaxFocusItems(): Promise<{ maxItems: number; error: string | null }> {
+  const { data, error } = await supabase.from('content_focus_settings').select('max_focus_items').eq('id', 1).maybeSingle()
+  const maxItems = data?.max_focus_items ?? DEFAULT_MAX_FOCUS_ITEMS
+  if (error) return { maxItems, error: "Setup needed: run supabase/migrations/039_content_focus_settings.sql against your database first — until then the focus-slot limit is stuck at the default of " + DEFAULT_MAX_FOCUS_ITEMS + "." }
+  return { maxItems, error: null }
 }
 
 export async function setMaxFocusItems(n: number): Promise<{ error: string | null }> {
@@ -66,7 +72,7 @@ export async function setMaxFocusItems(n: number): Promise<{ error: string | nul
 }
 
 export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
-  const maxItems = await getMaxFocusItems()
+  const { maxItems, error: maxErr } = await getMaxFocusItems()
   const { data: pinnedData, error: pinnedErr } = await supabase
     .from('content_items')
     .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url')
@@ -90,7 +96,9 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
     if (fallbackErr) return { videos: combined, error: explainFocusError(fallbackErr.message) }
     combined = [...combined, ...((fallbackData ?? []) as ActiveFocusVideo[])]
   }
-  return { videos: combined, error: null }
+  // Surface the max-focus-settings error too (e.g. 039 never run) so it's
+  // visible wherever this list renders, not just when Tom tries the stepper.
+  return { videos: combined, error: maxErr }
 }
 
 // Single-item lookup for the chunked focus session entry point (Content

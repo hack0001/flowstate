@@ -443,6 +443,22 @@ export function nextSessionChunk(sop: SOP, completedIndices: Set<number>): Sessi
   return indices.length > 0 ? { stepIndices: indices, totalMins: total } : null
 }
 
+// The full, deterministic sequence of chunks nextSessionChunk would hand out
+// for this SOP from a clean slate — used purely to answer "chunk N of how
+// many" for the Focus Session's progress indicator. Recomputed fresh (not
+// stored), so it stays correct regardless of when steps actually got ticked.
+export function allSessionChunks(sop: SOP): SessionChunk[] {
+  const chunks: SessionChunk[] = []
+  const completed = new Set<number>()
+  let chunk = nextSessionChunk(sop, completed)
+  while (chunk) {
+    chunks.push(chunk)
+    chunk.stepIndices.forEach(i => completed.add(i))
+    chunk = nextSessionChunk(sop, completed)
+  }
+  return chunks
+}
+
 // ── Idea "Validate" checklist (Content Pipeline Ideas Bank) ────────────────
 // The concrete, checkable version of Hummus's idea-validation method (see
 // SOP 01 above). Fed to Claude as the exact list of things to check when
