@@ -416,7 +416,7 @@ function TimelineBlock({
 // out by time with lane-splitting for overlaps, plus an "Anytime" strip
 // above the grid for reminders/habits with no parseable time.
 function TimelineDay({
-  date, tasks, reminders, habits, isToday, pxPerMin,
+  date, tasks, reminders, habits, isToday, isPast, pxPerMin,
   onCommitTask, onCommitReminder, onCommitHabit, onMoveItemDay, onOpenTask, onOpenReminder, onOpenHabit, onHoverTask, onHoverGeneric, onHoverEnd, onCreateAt,
 }: {
   date: string
@@ -424,6 +424,7 @@ function TimelineDay({
   reminders: Reminder[]
   habits: HabitBlock[]
   isToday: boolean
+  isPast: boolean
   pxPerMin: number
   onCommitTask: (task: Task, startMin: number, durationMin: number) => void
   onCommitReminder: (r: Reminder, startMin: number, durationMin: number) => void
@@ -468,7 +469,7 @@ function TimelineDay({
   const dayNum = parseInt(date.split('-')[2])
 
   return (
-    <div data-tl-day={date} style={{ flex:'1 1 160px', minWidth:'160px', maxWidth:'260px', display:'flex', flexDirection:'column', border:'1px solid '+(isToday?'rgba(0,212,255,0.25)':C.border), borderRadius:'0.75rem' }}>
+    <div data-tl-day={date} style={{ flex:'1 1 160px', minWidth:'160px', maxWidth:'260px', display:'flex', flexDirection:'column', border:'1px solid '+(isToday?'rgba(0,212,255,0.25)':C.border), borderRadius:'0.75rem', opacity:isPast?0.6:1, transition:'opacity 0.15s' }}>
       <div style={{ textAlign:'center', padding:'0.4rem 0', borderBottom:'1px solid '+C.border, flexShrink:0 }}>
         <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 0.1rem', color:isToday?C.cyan:C.sec }}>{dayName}</p>
         <p style={{ fontSize:'1.1rem', fontWeight:900, margin:0, color:isToday?C.cyan:C.text }}>{dayNum}</p>
@@ -619,6 +620,7 @@ function CalendarPageInner() {
   const [editDueDate, setEditDueDate] = useState('')
   const [editUrgency, setEditUrgency] = useState('')
   const [editIsFrog, setEditIsFrog] = useState(false)
+  const [editStatus, setEditStatus] = useState('Not started')
   const [editStartTime, setEditStartTime] = useState('')
   const [editDurationMin, setEditDurationMin] = useState(TL_DEFAULT_DURATION)
   const [savingEdit, setSavingEdit] = useState(false)
@@ -1067,6 +1069,7 @@ function CalendarPageInner() {
     setEditDueDate(task.due_date ?? todayStr)
     setEditUrgency(task.urgency ?? '')
     setEditIsFrog(task.is_frog)
+    setEditStatus(task.status ?? 'Not started')
     setEditStartTime(task.start_time ?? '')
     setEditDurationMin(task.duration_min ?? TL_DEFAULT_DURATION)
   }
@@ -1090,6 +1093,7 @@ function CalendarPageInner() {
     setEditDueDate(date)
     setEditUrgency('')
     setEditIsFrog(false)
+    setEditStatus('Not started')
     setEditStartTime(startTime)
     setEditDurationMin(TL_DEFAULT_DURATION)
   }
@@ -1120,17 +1124,29 @@ function CalendarPageInner() {
       } else {
         await supabase.from('master_tasks').update({
           title: editTitle, task_type: editType, due_date: editDueDate,
-          urgency: editUrgency || null, is_frog: editIsFrog,
+          urgency: editUrgency || null, is_frog: editIsFrog, status: editStatus,
           ...timeFields,
         }).eq('id', editingTask.id)
         const oldDate = editingTask.due_date ?? todayStr
-        const updated = { ...editingTask, title: editTitle, task_type: editType, due_date: editDueDate, urgency: editUrgency || null, is_frog: editIsFrog, ...timeFields }
-        setWeekTasks(prev => {
-          const next = { ...prev }
-          if (next[oldDate]) next[oldDate] = next[oldDate].filter(t => t.id !== editingTask.id)
-          if (next[editDueDate] !== undefined) next[editDueDate] = [...(next[editDueDate] ?? []), updated]
-          return next
-        })
+        if (editStatus === 'Done') {
+          // Same fetch (.neq('status','Done')) that keeps completed tasks out
+          // of the calendar on load also means this one won't come back on
+          // refresh -- drop it from local state now so it disappears
+          // immediately instead of waiting for a reload.
+          setWeekTasks(prev => {
+            const next = { ...prev }
+            if (next[oldDate]) next[oldDate] = next[oldDate].filter(t => t.id !== editingTask.id)
+            return next
+          })
+        } else {
+          const updated = { ...editingTask, title: editTitle, task_type: editType, due_date: editDueDate, urgency: editUrgency || null, is_frog: editIsFrog, status: editStatus, ...timeFields }
+          setWeekTasks(prev => {
+            const next = { ...prev }
+            if (next[oldDate]) next[oldDate] = next[oldDate].filter(t => t.id !== editingTask.id)
+            if (next[editDueDate] !== undefined) next[editDueDate] = [...(next[editDueDate] ?? []), updated]
+            return next
+          })
+        }
       }
       closeEditModal()
     } catch {}
@@ -1498,6 +1514,7 @@ function CalendarPageInner() {
               const dayName = DAY_ABBR[dow]
               const dayNum = parseInt(date.split('-')[2])
               const isToday = date === todayStr
+              const isPast = date < todayStr
               const isWeekend = dow === 0 || dow === 6
               const hasOverflow = flowTasks.length > 2
               const isDragOver = dragOverDate === date
@@ -1506,7 +1523,7 @@ function CalendarPageInner() {
                   onDragOver={e => handleDragOver(e, date)}
                   onDragLeave={() => setDragOverDate(null)}
                   onDrop={e => handleDrop(e, date)}
-                  style={{ flex:'1 1 140px', minWidth:'140px', maxWidth:'220px', display:'flex', flexDirection:'column', borderRadius:'0.75rem', border:'1px solid '+(isDragOver?C.cyan:isToday?'rgba(0,212,255,0.25)':C.border), padding:'0.625rem', background:isDragOver?'rgba(0,212,255,0.04)':isWeekend?'rgba(255,255,255,0.01)':'transparent', transition:'border-color 0.15s, background 0.15s' }}>
+                  style={{ flex:'1 1 140px', minWidth:'140px', maxWidth:'220px', display:'flex', flexDirection:'column', borderRadius:'0.75rem', border:'1px solid '+(isDragOver?C.cyan:isToday?'rgba(0,212,255,0.25)':C.border), padding:'0.625rem', background:isDragOver?'rgba(0,212,255,0.04)':isWeekend?'rgba(255,255,255,0.01)':'transparent', opacity:isPast && !isDragOver?0.6:1, transition:'border-color 0.15s, background 0.15s, opacity 0.15s' }}>
                   <div
                     style={{ textAlign:'center', marginBottom:'0.5rem', paddingBottom:'0.5rem', borderBottom:'1px solid '+C.border, transition:'border-color 0.2s' }}>
                     <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 0.1rem', color:isToday?C.cyan:isWeekend?C.muted:C.sec }}>{dayName}</p>
@@ -1609,6 +1626,7 @@ function CalendarPageInner() {
                   reminders={dateReminders}
                   habits={dateHabits}
                   isToday={date === todayStr}
+                  isPast={date < todayStr}
                   pxPerMin={tlPxPerMin}
                   onCommitTask={commitTaskTime}
                   onCommitReminder={commitReminderTime}
@@ -1930,6 +1948,26 @@ function CalendarPageInner() {
                   )}
                 </div>
               </div>
+              {!isCreatingTask && (
+                <div>
+                  <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Status</label>
+                  <div style={{ display:'flex', gap:'0.3rem', flexWrap:'wrap' }}>
+                    {(['Not started', 'In progress', 'Done'] as const).map(s => {
+                      const meta = s === 'Done' ? { color:C.green, bg:'rgba(0,255,136,0.1)' } : s === 'In progress' ? { color:C.cyan, bg:'rgba(0,212,255,0.1)' } : { color:C.muted, bg:'rgba(74,74,106,0.15)' }
+                      const active = editStatus === s
+                      return (
+                        <button key={s} onClick={() => setEditStatus(s)}
+                          style={{ fontSize:'0.7rem', padding:'0.25rem 0.55rem', borderRadius:'0.375rem', border:'1px solid '+(active?meta.color:C.border), background:active?meta.bg:'transparent', color:active?meta.color:C.sec, cursor:'pointer', fontFamily:'inherit', fontWeight:active?700:400 }}>
+                          {s}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {editStatus === 'Done' && (
+                    <p style={{ fontSize:'0.66rem', color:C.muted, margin:'0.35rem 0 0', lineHeight:1.4 }}>Saving as Done removes it from the calendar.</p>
+                  )}
+                </div>
+              )}
               <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap' }}>
                 <div>
                   <label style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em', display:'block', marginBottom:'0.3rem' }}>Urgency</label>
