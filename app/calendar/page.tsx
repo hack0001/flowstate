@@ -274,21 +274,24 @@ function TaskCard({
 // TL_SNAP_MIN and commit via onCommit on mouse-up; while dragging the block
 // shows a live preview computed from the in-progress delta.
 function TimelineBlock({
-  block, pxPerMin, onCommit, onOpen, onHover, onHoverEnd,
+  block, date, pxPerMin, onCommit, onMoveDay, onOpen, onHover, onHoverEnd,
 }: {
   block: TLBlock & { lane: number; lanes: number }
+  date: string
   pxPerMin: number
   onCommit?: (startMin: number, durationMin: number) => void
+  onMoveDay?: (newDate: string) => void
   onOpen?: () => void
   onHover?: (e: React.MouseEvent) => void
   onHoverEnd?: () => void
 }) {
-  // 'move' drags the whole block (shifts start+end together). 'resize'
-  // drags the bottom handle (adjusts the finish time, start stays put).
-  // 'resize-top' drags the top handle (adjusts the start time, finish stays
-  // put) — the three together cover "move it", "change when it ends" and
-  // "change when it starts" with just the cursor.
-  const [drag, setDrag] = useState<{ mode: 'move' | 'resize' | 'resize-top'; startY: number; deltaMin: number } | null>(null)
+  // 'move' drags the whole block (shifts start+end together, and — if
+  // released over a different day column — moves it to that day instead).
+  // 'resize' drags the bottom handle (adjusts the finish time, start stays
+  // put). 'resize-top' drags the top handle (adjusts the start time, finish
+  // stays put) — the three together cover "move it", "change when it ends"
+  // and "change when it starts" with just the cursor.
+  const [drag, setDrag] = useState<{ mode: 'move' | 'resize' | 'resize-top'; startY: number; deltaMin: number; clientX: number; clientY: number } | null>(null)
   // Tasks, reminders, and habit blocks are all draggable now — whichever
   // kind's onCommit the parent wired up (see TimelineDay's render loop).
   const draggable = !!onCommit
@@ -299,31 +302,55 @@ function TimelineBlock({
     function onMove(e: MouseEvent) {
       const rawDelta = (e.clientY - startY) / pxPerMin
       const snapped = Math.round(rawDelta / TL_SNAP_MIN) * TL_SNAP_MIN
-      setDrag(d => (d ? { ...d, deltaMin: snapped } : d))
+      setDrag(d => (d ? { ...d, deltaMin: snapped, clientX: e.clientX, clientY: e.clientY } : d))
     }
     function onUp() {
       setDrag(d => {
-        if (d && onCommit) {
-          if (d.mode === 'move') {
-            const newStart = Math.min(TL_END_MIN - 10, Math.max(TL_START_MIN, block.start + d.deltaMin))
-            onCommit(newStart, block.duration)
-          } else if (d.mode === 'resize') {
-            const newDuration = Math.max(TL_SNAP_MIN, block.duration + d.deltaMin)
-            onCommit(block.start, newDuration)
-          } else {
-            // resize-top: end time (start+duration) stays fixed, start moves
-            const end = block.start + block.duration
-            const newStart = Math.min(end - TL_SNAP_MIN, Math.max(TL_START_MIN, block.start + d.deltaMin))
-            onCommit(newStart, end - newStart)
+        if (!d || !onCommit) return null
+
+        // Whole-block drag released over a different day's column? Move it
+        // there instead of adjusting its time-of-day — same time slot, new
+        // date, mirroring how the List view and Home board move items
+        // across days by dropping them on a different day.
+        if (d.mode === 'move' && onMoveDay) {
+          const under = document.elementFromPoint(d.clientX, d.clientY)?.closest('[data-tl-day]') as HTMLElement | null
+          const targetDate = under?.dataset.tlDay
+          if (targetDate && targetDate !== date) {
+            onMoveDay(targetDate)
+            return null
           }
         }
+
+        let newStart = block.start
+        let newDuration = block.duration
+        if (d.mode === 'move') {
+          newStart = Math.min(TL_END_MIN - 10, Math.max(TL_START_MIN, block.start + d.deltaMin))
+        } else if (d.mode === 'resize') {
+          newDuration = Math.max(TL_SNAP_MIN, block.duration + d.deltaMin)
+        } else {
+          // resize-top: end time (start+duration) stays fixed, start moves
+          const end = block.start + block.duration
+          newStart = Math.min(end - TL_SNAP_MIN, Math.max(TL_START_MIN, block.start + d.deltaMin))
+          newDuration = end - newStart
+        }
+        if (newStart === block.start && newDuration === block.duration) return null // no-op drag (e.g. a plain click)
+
+        // Reminders/habits are recurring — one row covers every occurrence,
+        // so changing its time here changes it everywhere. Confirm before
+        // committing a reminder (habits stay silent, same as tasks, since
+        // Tom only asked for the extra check on reminders).
+        if (block.kind === 'reminder') {
+          const ok = window.confirm(`Move "${block.title}" to ${fmtHour12(newStart)}–${fmtHour12(newStart + newDuration)}? This changes every occurrence of this reminder.`)
+          if (!ok) return null
+        }
+        onCommit(newStart, newDuration)
         return null
       })
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-  }, [drag, onCommit, block.start, block.duration, pxPerMin])
+  }, [drag, onCommit, onMoveDay, block.start, block.duration, block.kind, block.title, date, pxPerMin])
 
   const blockEnd = block.start + block.duration
   const liveStart = drag?.mode === 'move'
@@ -343,7 +370,7 @@ function TimelineBlock({
 
   return (
     <div
-      onMouseDown={e => { if (draggable) { e.stopPropagation(); setDrag({ mode:'move', startY:e.clientY, deltaMin:0 }) } }}
+      onMouseDown={e => { if (draggable) { e.stopPropagation(); setDrag({ mode:'move', startY:e.clientY, deltaMin:0, clientX:e.clientX, clientY:e.clientY }) } }}
       onClick={e => { e.stopPropagation(); if (!drag) onOpen?.() }}
       onDoubleClick={e => e.stopPropagation()}
       onMouseEnter={onHover}
@@ -366,14 +393,14 @@ function TimelineBlock({
       {draggable && (
         <>
           <div
-            onMouseDown={e => { e.stopPropagation(); setDrag({ mode:'resize-top', startY:e.clientY, deltaMin:0 }) }}
+            onMouseDown={e => { e.stopPropagation(); setDrag({ mode:'resize-top', startY:e.clientY, deltaMin:0, clientX:e.clientX, clientY:e.clientY }) }}
             title="Drag to change the start time"
             style={{ position:'absolute', left:0, right:0, top:0, height:'9px', cursor:'ns-resize', display:'flex', alignItems:'flex-start', justifyContent:'center' }}
           >
             <div style={{ width:'22px', height:'3px', borderRadius:'9999px', marginTop:'2px', background:block.color, opacity:0.55 }} />
           </div>
           <div
-            onMouseDown={e => { e.stopPropagation(); setDrag({ mode:'resize', startY:e.clientY, deltaMin:0 }) }}
+            onMouseDown={e => { e.stopPropagation(); setDrag({ mode:'resize', startY:e.clientY, deltaMin:0, clientX:e.clientX, clientY:e.clientY }) }}
             title="Drag to change the finish time"
             style={{ position:'absolute', left:0, right:0, bottom:0, height:'9px', cursor:'ns-resize', display:'flex', alignItems:'flex-end', justifyContent:'center' }}
           >
@@ -390,7 +417,7 @@ function TimelineBlock({
 // above the grid for reminders/habits with no parseable time.
 function TimelineDay({
   date, tasks, reminders, habits, isToday, pxPerMin,
-  onCommitTask, onCommitReminder, onCommitHabit, onOpenTask, onOpenReminder, onOpenHabit, onHoverTask, onHoverGeneric, onHoverEnd, onCreateAt,
+  onCommitTask, onCommitReminder, onCommitHabit, onMoveItemDay, onOpenTask, onOpenReminder, onOpenHabit, onHoverTask, onHoverGeneric, onHoverEnd, onCreateAt,
 }: {
   date: string
   tasks: Task[]
@@ -401,6 +428,7 @@ function TimelineDay({
   onCommitTask: (task: Task, startMin: number, durationMin: number) => void
   onCommitReminder: (r: Reminder, startMin: number, durationMin: number) => void
   onCommitHabit: (h: HabitBlock, startMin: number, durationMin: number) => void
+  onMoveItemDay: (block: TLBlock, fromDate: string, newDate: string) => void
   onOpenTask: (task: Task) => void
   onOpenReminder: (r: Reminder) => void
   onOpenHabit: (h: HabitBlock) => void
@@ -440,7 +468,7 @@ function TimelineDay({
   const dayNum = parseInt(date.split('-')[2])
 
   return (
-    <div style={{ flex:'1 1 160px', minWidth:'160px', maxWidth:'260px', display:'flex', flexDirection:'column', border:'1px solid '+(isToday?'rgba(0,212,255,0.25)':C.border), borderRadius:'0.75rem' }}>
+    <div data-tl-day={date} style={{ flex:'1 1 160px', minWidth:'160px', maxWidth:'260px', display:'flex', flexDirection:'column', border:'1px solid '+(isToday?'rgba(0,212,255,0.25)':C.border), borderRadius:'0.75rem' }}>
       <div style={{ textAlign:'center', padding:'0.4rem 0', borderBottom:'1px solid '+C.border, flexShrink:0 }}>
         <p style={{ fontSize:'0.58rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', margin:'0 0 0.1rem', color:isToday?C.cyan:C.sec }}>{dayName}</p>
         <p style={{ fontSize:'1.1rem', fontWeight:900, margin:0, color:isToday?C.cyan:C.text }}>{dayNum}</p>
@@ -488,6 +516,7 @@ function TimelineDay({
               <TimelineBlock
                 key={b.id}
                 block={b}
+                date={date}
                 pxPerMin={pxPerMin}
                 onCommit={
                   b.kind === 'task' && b.task ? (start, duration) => onCommitTask(b.task!, start, duration)
@@ -495,6 +524,7 @@ function TimelineDay({
                   : b.kind === 'habit' && b.habit ? (start, duration) => onCommitHabit(b.habit!, start, duration)
                   : undefined
                 }
+                onMoveDay={newDate => onMoveItemDay(b, date, newDate)}
                 onOpen={() => {
                   if (b.kind === 'task' && b.task) onOpenTask(b.task)
                   else if (b.kind === 'reminder' && b.reminder) onOpenReminder(b.reminder)
@@ -548,7 +578,7 @@ function CalendarPageInner() {
   const [viewDays, setViewDays] = useState(7)
   // 'list' = existing section-grouped cards. 'timeline' = hourly grid where
   // items are placed by time-of-day and can be dragged to reschedule.
-  const [dayViewMode, setDayViewMode] = useState<'list' | 'timeline'>('list')
+  const [dayViewMode, setDayViewMode] = useState<'list' | 'timeline'>('timeline')
   // Timeline zoom — index into TL_ZOOM_LEVELS. Zoom out to see the whole
   // day's tasks at a glance, zoom in to space out the next hour or so.
   const [tlZoomIdx, setTlZoomIdx] = useState(TL_DEFAULT_ZOOM_IDX)
@@ -899,6 +929,52 @@ function CalendarPageInner() {
       return next
     })
     try { await supabase.from('habit_blocks').update({ time_label: timeLabel, duration_min: durationMin }).eq('id', h.id) } catch {}
+  }
+
+  // Cross-day drag on the Timeline -- dropping a block on a different day's
+  // column (TimelineBlock's onMoveDay, resolved via elementFromPoint against
+  // each day's data-tl-day). Tasks reassign due_date, same as the List
+  // view's own day-to-day drag-drop. Habits swap which day-of-week they're
+  // pinned to (drop the day dragged from, add the day dropped on) -- a
+  // natural read of "drag this habit block to another day". Reminders shift
+  // their whole recurrence anchor (start_date) by the same number of days --
+  // like the time-drag above, this changes every occurrence, so it confirms
+  // first rather than silently rewriting the recurrence.
+  async function onMoveItemDay(block: TLBlock, fromDate: string, newDate: string) {
+    if (fromDate === newDate) return
+    if (block.kind === 'task' && block.task) {
+      const task = block.task
+      setWeekTasks(prev => {
+        const next = { ...prev }
+        next[fromDate] = (next[fromDate] ?? []).filter(t => t.id !== task.id)
+        next[newDate] = [...(next[newDate] ?? []), { ...task, due_date: newDate }]
+        return next
+      })
+      await supabase.from('master_tasks').update({ due_date: newDate }).eq('id', task.id)
+    } else if (block.kind === 'reminder' && block.reminder) {
+      const r = block.reminder
+      const ok = window.confirm(`Move "${r.title}" to ${newDate}? This changes every occurrence of this reminder.`)
+      if (!ok) return
+      const diffDays = Math.round((new Date(newDate + 'T12:00:00').getTime() - new Date(fromDate + 'T12:00:00').getTime()) / 86400000)
+      const newStartDate = toDateStr(addDays(new Date(r.startDate + 'T12:00:00'), diffDays))
+      setReminders(prev => {
+        const next = prev.map(x => x.id === r.id ? { ...x, startDate: newStartDate } : x)
+        try { localStorage.setItem('flowstate_reminders', JSON.stringify(next)) } catch {}
+        return next
+      })
+      await supabase.from('reminders').update({ start_date: newStartDate }).eq('id', r.id)
+    } else if (block.kind === 'habit' && block.habit) {
+      const h = block.habit
+      const fromDow = new Date(fromDate + 'T12:00:00').getDay()
+      const toDow = new Date(newDate + 'T12:00:00').getDay()
+      const newDays = Array.from(new Set([...h.days.filter(d => d !== fromDow), toDow]))
+      setHabits(prev => {
+        const next = prev.map(x => x.id === h.id ? { ...x, days: newDays } : x)
+        try { localStorage.setItem('flowstate_cal_habits', JSON.stringify(next)) } catch {}
+        return next
+      })
+      await supabase.from('habit_blocks').update({ days: newDays }).eq('id', h.id)
+    }
   }
 
   function jumpToWeek(day: number) {
@@ -1537,6 +1613,7 @@ function CalendarPageInner() {
                   onCommitTask={commitTaskTime}
                   onCommitReminder={commitReminderTime}
                   onCommitHabit={commitHabitTime}
+                  onMoveItemDay={onMoveItemDay}
                   onOpenTask={openEdit}
                   onOpenReminder={openReminderForm}
                   onOpenHabit={openHabitForm}
