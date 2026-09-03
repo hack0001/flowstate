@@ -37,7 +37,14 @@ async function getAccessToken(): Promise<string> {
   if (!clientEmail || !rawKey) {
     throw new Error('Google Drive not configured — missing GOOGLE_DRIVE_CLIENT_EMAIL / GOOGLE_DRIVE_PRIVATE_KEY in .env.local')
   }
-  const privateKey = rawKey.replace(/\\n/g, '\n')
+  // Defensive cleanup: .env.local wraps this value in double quotes (the
+  // dotenv/Next.js loader strips them automatically), but hosting dashboards
+  // like Vercel's env var UI don't -- if the quotes get copy-pasted in along
+  // with the key, OpenSSL fails to parse the PEM with a cryptic "DECODER
+  // routines::unsupported" error. Strip a leading/trailing quote and any
+  // stray whitespace before un-escaping the \n sequences, so it works either
+  // way the value was pasted in.
+  const privateKey = rawKey.trim().replace(/^"|"$/g, '').replace(/\\n/g, '\n')
 
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'RS256', typ: 'JWT' }
