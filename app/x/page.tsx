@@ -163,6 +163,12 @@ const WORKFLOW: {
         format:'quote-tweet',
         tip:'Use the Quote Tweet generator. Pick a topic close to the trending post, generate 5 options, pick the sharpest one.',
       },
+      {
+        id:'m3', must:false,
+        label:'Pull 1-2 proven memes for SoundMoney',
+        detail:'A new habit worth building — filter proven, high-engagement accounts down to just their best posts and drop anything usable straight into the meme library, so Asset Gathering never starts from zero. Two to start with: alifarhat79 and naiivememe.',
+        tip:'Search format: from:USERNAME min_faves:1000 (add filter:media to only show posts with an image or video). Direct links — alifarhat79: https://x.com/search?q=from%3Aalifarhat79%20min_faves%3A1000&src=typed_query&f=top — naiivememe: https://x.com/search?q=from%3Anaiivememe%20min_faves%3A1000&src=typed_query',
+      },
     ],
   },
   {
