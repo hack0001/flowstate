@@ -1,12 +1,12 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase, getStageNote, saveStageNote, getMaxFocusItems, setMaxFocusItems, DEFAULT_MAX_FOCUS_ITEMS } from '@/lib/supabase'
+import { supabase, getStageNote, saveStageNote, getMaxFocusItems, setMaxFocusItems, DEFAULT_MAX_FOCUS_ITEMS, getChannelWatchlist, addChannelWatch, deleteChannelWatch, type ChannelWatch } from '@/lib/supabase'
 import { sopForStage, isShortsOnly, isStageSkippedForShorts, productionSopIdsFor, IDEA_VALIDATION_CHECKS, SOPS } from '@/lib/sops'
 import { CHANNEL_BRIEF, SCRIPT_VOICE, OUTLIER_SEED_QUERIES } from '@/lib/channelBrief'
 import { buildStageDraftPrompt } from '@/lib/stageDraftPrompt'
 import ContentItemDetail from '@/components/ContentItemDetail'
-import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check, ArrowUpDown, FileText, MessageSquare } from 'lucide-react'
+import { ChevronLeft, Plus, X, ChevronRight, Lightbulb, LayoutGrid, List, Zap, CheckCircle2, Star, ChevronDown, Sparkles, XCircle, HelpCircle, Copy, Check, ArrowUpDown, FileText, MessageSquare, Tv, ExternalLink, Trash2 } from 'lucide-react'
 
 const IDEA_VALIDATION_SOP_ID = 'idea_validation'
 // Manual log of a Claude-chat consult (copy prompt -> paste into Claude ->
@@ -297,6 +297,12 @@ const C = {
   cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6',
   red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
   orange:'#f97316', pink:'#ec4899', teal:'#14b8a6',
+}
+
+// Shared small-form input style — used by the Channels to Watch add form.
+const CH_INPUT: React.CSSProperties = {
+  padding:'0.5rem 0.7rem', background:C.bg, border:'1px solid '+C.border,
+  borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', outline:'none',
 }
 
 // ── Aligned with Production SOPs + Shane Hummus Holy Trifecta ──────────────
@@ -1598,6 +1604,16 @@ export default function ContentPage() {
   const [maxFocusItems, setMaxFocusItemsLocal] = useState(DEFAULT_MAX_FOCUS_ITEMS)
   const [maxFocusMsg, setMaxFocusMsg] = useState<string | null>(null)
 
+  // Channels to Watch — YouTube channels in Tom's niche or an adjacent one
+  // worth keeping an eye on for formats/angles/outliers. Lives in the Ideas
+  // Bank view, separate from the Ideas Bank itself (his own video ideas).
+  const [channels, setChannels] = useState<ChannelWatch[]>([])
+  const [channelsMsg, setChannelsMsg] = useState<string | null>(null)
+  const [showChannelsPanel, setShowChannelsPanel] = useState(false)
+  const [showChannelForm, setShowChannelForm] = useState(false)
+  const [channelDraft, setChannelDraft] = useState({ name:'', url:'', niche:'', notes:'' })
+  const [savingChannel, setSavingChannel] = useState(false)
+
   const load = useCallback(async () => {
     const { data } = await supabase
       .from('content_items')
@@ -1615,6 +1631,30 @@ export default function ContentPage() {
       if (error) setMaxFocusMsg(error) // surfaced on load now, not just when you try to change it
     })
   }, [])
+  useEffect(() => {
+    getChannelWatchlist().then(({ channels, error }) => {
+      setChannels(channels)
+      if (error) setChannelsMsg(error)
+    })
+  }, [])
+
+  async function submitChannel() {
+    if (!channelDraft.name.trim() || !channelDraft.url.trim()) return
+    setSavingChannel(true)
+    const { channel, error } = await addChannelWatch(channelDraft.name, channelDraft.url, channelDraft.niche, channelDraft.notes)
+    setSavingChannel(false)
+    if (error) { setChannelsMsg(error); return }
+    if (channel) setChannels(prev => [channel, ...prev])
+    setChannelDraft({ name:'', url:'', niche:'', notes:'' })
+    setShowChannelForm(false)
+    setChannelsMsg(null)
+  }
+
+  async function removeChannel(id: string) {
+    setChannels(prev => prev.filter(c => c.id !== id)) // optimistic
+    const { error } = await deleteChannelWatch(id)
+    if (error) setChannelsMsg(error)
+  }
 
   async function updateMaxFocusItems(n: number) {
     setMaxFocusItemsLocal(n) // optimistic — feels instant on the +/- buttons
@@ -2017,6 +2057,73 @@ export default function ContentPage() {
               <p style={{ fontSize:'0.72rem', color:C.sec, margin:0, lineHeight:1.6 }}>
                 <strong style={{ color:C.amber }}>Idea technique:</strong> combine two popular subjects together and ask what the overlap looks like &mdash; e.g. <em>gold standard</em> + <em>money</em> &rarr; &ldquo;What is the gold standard, and how to create money?&rdquo; Two proven topics collide into one angle nobody else has made.
               </p>
+            </div>
+
+            {/* -- Channels to Watch -- */}
+            <div style={{ marginBottom:'1.5rem' }}>
+              <button onClick={() => setShowChannelsPanel(v => !v)} style={{ display:'flex', alignItems:'center', gap:'0.5rem', width:'100%', padding:'0.75rem 1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.text, cursor:'pointer', fontFamily:'inherit', fontSize:'0.82rem', fontWeight:800 }}>
+                <Tv size={14} color={C.cyan}/> Channels to Watch
+                <span style={{ fontSize:'0.68rem', color:C.muted, fontWeight:600 }}>({channels.length})</span>
+                <ChevronDown size={14} style={{ marginLeft:'auto', transform: showChannelsPanel ? 'rotate(180deg)' : 'none', transition:'transform 0.15s' }}/>
+              </button>
+
+              {showChannelsPanel && (
+                <div style={{ marginTop:'0.5rem', padding:'1rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.75rem' }}>
+                  <p style={{ fontSize:'0.72rem', color:C.sec, margin:'0 0 0.875rem', lineHeight:1.5 }}>
+                    YouTube channels in your niche or an adjacent one worth keeping an eye on &mdash; for formats, angles, and outlier ideas.
+                  </p>
+                  {channelsMsg && <p style={{ fontSize:'0.68rem', color:C.amber, margin:'0 0 0.75rem', lineHeight:1.4 }}>{channelsMsg}</p>}
+
+                  {channels.length > 0 && (
+                    <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.5rem', marginBottom:'0.875rem' }}>
+                      {channels.map(c => (
+                        <div key={c.id} style={{ display:'flex', alignItems:'flex-start', gap:'0.6rem', padding:'0.6rem 0.75rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.625rem' }}>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' as const }}>
+                              <span style={{ fontSize:'0.8rem', fontWeight:700, color:C.text }}>{c.name}</span>
+                              {c.niche && (
+                                <span style={{ fontSize:'0.62rem', color:C.cyan, background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', borderRadius:'9999px', padding:'0.1rem 0.5rem', fontWeight:700 }}>{c.niche}</span>
+                              )}
+                            </div>
+                            {c.notes && <p style={{ fontSize:'0.72rem', color:C.sec, margin:'0.25rem 0 0', lineHeight:1.45 }}>{c.notes}</p>}
+                          </div>
+                          <a href={c.url} target="_blank" rel="noopener noreferrer" style={{ color:C.cyan, display:'flex', flexShrink:0, marginTop:'0.15rem' }} title="Open channel">
+                            <ExternalLink size={14}/>
+                          </a>
+                          <button onClick={() => removeChannel(c.id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', flexShrink:0, padding:'0.15rem', marginTop:'0.15rem' }} title="Remove">
+                            <Trash2 size={13}/>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {showChannelForm ? (
+                    <div style={{ padding:'0.875rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.75rem' }}>
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.6rem', marginBottom:'0.6rem' }}>
+                        <input value={channelDraft.name} onChange={e => setChannelDraft(d => ({ ...d, name:e.target.value }))} placeholder="Channel name" style={CH_INPUT} autoFocus/>
+                        <input value={channelDraft.niche} onChange={e => setChannelDraft(d => ({ ...d, niche:e.target.value }))} placeholder="Niche (optional)" style={CH_INPUT}/>
+                      </div>
+                      <input value={channelDraft.url} onChange={e => setChannelDraft(d => ({ ...d, url:e.target.value }))} placeholder="https://youtube.com/@..." style={{ ...CH_INPUT, width:'100%', marginBottom:'0.6rem', boxSizing:'border-box' as const }}/>
+                      <textarea value={channelDraft.notes} onChange={e => setChannelDraft(d => ({ ...d, notes:e.target.value }))} placeholder="Why watch them / what's interesting about their videos..." rows={2} style={{ ...CH_INPUT, width:'100%', marginBottom:'0.75rem', boxSizing:'border-box' as const, resize:'vertical' as const }}/>
+                      <div style={{ display:'flex', gap:'0.5rem' }}>
+                        <button onClick={submitChannel} disabled={savingChannel || !channelDraft.name.trim() || !channelDraft.url.trim()}
+                          style={{ padding:'0.5rem 1rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.5rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', opacity: savingChannel || !channelDraft.name.trim() || !channelDraft.url.trim() ? 0.5 : 1 }}>
+                          {savingChannel ? 'Adding…' : 'Add channel'}
+                        </button>
+                        <button onClick={() => { setShowChannelForm(false); setChannelDraft({ name:'', url:'', niche:'', notes:'' }) }}
+                          style={{ padding:'0.5rem 1rem', background:'none', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem' }}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setShowChannelForm(true)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 0.875rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', borderRadius:'0.625rem', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
+                      <Plus size={13}/> Add channel
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {ideas.length === 0 ? (

@@ -582,3 +582,95 @@ export async function setContentItemDriveFolder(id: string, folderId: string, fo
   if (error) return { error: explainDriveError(error.message) }
   return { error: null }
 }
+
+// ---- Channel watchlist (Content Pipeline > Ideas Bank) ----
+// YouTube channels in Tom's niche or an adjacent one worth keeping an eye on
+// for ideas/formats — separate from the Ideas Bank itself (which is his own
+// video ideas). Requires 042_channel_watchlist_and_adobe_skills.sql.
+export type ChannelWatch = {
+  id: string
+  name: string
+  url: string
+  niche: string | null
+  notes: string | null
+  created_at: string
+}
+
+function explainChannelWatchlistError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('channel_watchlist')) {
+    return 'Setup needed: run supabase/migrations/042_channel_watchlist_and_adobe_skills.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading the channel watchlist.'
+}
+
+export async function getChannelWatchlist(): Promise<{ channels: ChannelWatch[]; error: string | null }> {
+  const { data, error } = await supabase.from('channel_watchlist').select('*').order('created_at', { ascending: false })
+  if (error) return { channels: [], error: explainChannelWatchlistError(error.message) }
+  return { channels: (data as ChannelWatch[]) ?? [], error: null }
+}
+
+export async function addChannelWatch(name: string, url: string, niche: string, notes: string): Promise<{ channel: ChannelWatch | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('channel_watchlist')
+    .insert({ name: name.trim(), url: url.trim(), niche: niche.trim() || null, notes: notes.trim() || null })
+    .select().single()
+  if (error) return { channel: null, error: explainChannelWatchlistError(error.message) }
+  return { channel: data as ChannelWatch, error: null }
+}
+
+export async function deleteChannelWatch(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('channel_watchlist').delete().eq('id', id)
+  if (error) return { error: explainChannelWatchlistError(error.message) }
+  return { error: null }
+}
+
+// ---- Adobe Skills library (Premiere Pro / After Effects / Illustrator) ----
+// A running library of learning resources -- a website or YouTube video Tom
+// names and describes -- with a simple to-learn/learned tracker. Its own
+// dedicated section, app/adobe-skills/page.tsx. Requires
+// 042_channel_watchlist_and_adobe_skills.sql.
+export const ADOBE_TOOLS = ['Premiere Pro', 'After Effects', 'Illustrator', 'General'] as const
+export type AdobeTool = typeof ADOBE_TOOLS[number]
+export type AdobeSkillResource = {
+  id: string
+  tool: AdobeTool
+  title: string
+  url: string
+  description: string | null
+  status: 'To learn' | 'Learned'
+  created_at: string
+}
+
+function explainAdobeSkillsError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('adobe_skill_resources')) {
+    return 'Setup needed: run supabase/migrations/042_channel_watchlist_and_adobe_skills.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading Adobe Skills resources.'
+}
+
+export async function getAdobeSkillResources(): Promise<{ resources: AdobeSkillResource[]; error: string | null }> {
+  const { data, error } = await supabase.from('adobe_skill_resources').select('*').order('created_at', { ascending: false })
+  if (error) return { resources: [], error: explainAdobeSkillsError(error.message) }
+  return { resources: (data as AdobeSkillResource[]) ?? [], error: null }
+}
+
+export async function addAdobeSkillResource(tool: AdobeTool, title: string, url: string, description: string): Promise<{ resource: AdobeSkillResource | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('adobe_skill_resources')
+    .insert({ tool, title: title.trim(), url: url.trim(), description: description.trim() || null, status: 'To learn' })
+    .select().single()
+  if (error) return { resource: null, error: explainAdobeSkillsError(error.message) }
+  return { resource: data as AdobeSkillResource, error: null }
+}
+
+export async function updateAdobeSkillResource(id: string, patch: Partial<Pick<AdobeSkillResource, 'tool' | 'title' | 'url' | 'description' | 'status'>>): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('adobe_skill_resources').update(patch).eq('id', id)
+  if (error) return { error: explainAdobeSkillsError(error.message) }
+  return { error: null }
+}
+
+export async function deleteAdobeSkillResource(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('adobe_skill_resources').delete().eq('id', id)
+  if (error) return { error: explainAdobeSkillsError(error.message) }
+  return { error: null }
+}

@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, Plus, Flame, GripVertical, ShoppingCart, Bell, Sparkles } from 'lucide-react'
+import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, Plus, Flame, GripVertical, ShoppingCart, Bell, Sparkles, Palette } from 'lucide-react'
 import { getActiveFocusVideos } from '@/lib/supabase'
 import { supabase, getPageVisits, recordPageVisit, getEveningReview, getDailyChecklistState, setDailyChecklistItem } from '@/lib/supabase'
 import { SECTION_LABEL, type DailyPlanSection } from '@/lib/dailyPlan'
@@ -985,7 +985,7 @@ export default function Home() {
   const [showAddTask, setShowAddTask] = useState(false)
   const [taskRefresh, setTaskRefresh] = useState(0)
 
-  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas']
+  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas','adobe-skills']
 
   const today = toDateStr(new Date())
   const quote = QUOTES[new Date().getDate() % QUOTES.length]
@@ -1452,6 +1452,7 @@ export default function Home() {
               { route:'instagram', icon:<Camera size={14}/>, label:'Instagram', bg:'rgba(225,48,108,0.07)', border:'rgba(225,48,108,0.22)', color:'#e1306c' },
               { route:'tabs', icon:<Layers size={14}/>, label:'Tab Sheet', bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
               { route:'ideas', icon:<Lightbulb size={14}/>, label:'Ideas', bg:'rgba(139,92,246,0.06)', border:'rgba(139,92,246,0.18)', color:'#8b5cf6' },
+              { route:'adobe-skills', icon:<Palette size={14}/>, label:'Adobe Skills', bg:'rgba(145,97,242,0.07)', border:'rgba(145,97,242,0.22)', color:'#9161f2' },
             ] as { route:string; icon:JSX.Element; label:string; bg:string; border:string; color:string; bold?:boolean }[]).map(({ route, icon, label, bg, border, color, bold }) => {
               const alert = pageAlerts[route]
               const alertBg     = alert === 'red' ? 'rgba(255,68,102,0.15)' : alert === 'orange' ? 'rgba(255,184,0,0.13)' : alert === 'green' ? 'rgba(0,255,136,0.11)' : null

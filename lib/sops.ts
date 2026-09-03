@@ -197,7 +197,7 @@ export const SOPS: SOP[] = [
     tagline:'Have every meme, b-roll clip, and chart ready before you record. Pipeline stage: 🎨 Assets.',
     steps:[
       '<strong>Memes:</strong> imgflip, giphy, Twitter/X, Reddit, Know Your Meme &mdash; save to <code>/assets/memes/</code> with descriptive filenames',
-      '<strong>B-roll (free):</strong> Pexels, Pixabay, Coverr, Archive.org (great for historical footage) &mdash; save to <code>/assets/broll/</code>',
+      '<strong>B-roll (free):</strong> Pexels, Pixabay, Coverr, Canva, Archive.org (great for historical footage) &mdash; save to <code>/assets/broll/</code>. Pixabay links straight into Canva, which is handy for a quick search-and-drop.',
       '<strong>B-roll (paid):</strong> Storyblocks, Envato Elements',
       '<strong>Charts &amp; data visuals:</strong> Datawrapper and Flourish are fast and free &mdash; export as MP4 with build animation, save to <code>/assets/charts/</code>',
       '<strong>Background music:</strong> Epidemic Sound (primary &mdash; royalty-free, YouTube-safe, large catalogue; download stems to isolate drums or bass separately). Artlist as backup.',
