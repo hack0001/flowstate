@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Circle, Play, Pause, RefreshCw, SkipForward, Wind, Waves, VolumeX, Zap, Music2, ChevronRight, Sparkles, Clapperboard, FolderOpen } from 'lucide-react'
-import { supabase, getActiveFocusVideos, getContentItemById, getStageNote, saveStageNote, type ActiveFocusVideo } from '@/lib/supabase'
+import { supabase, getActiveFocusVideos, getContentItemById, getStageNote, saveStageNote, updateContentItemFields, type ActiveFocusVideo } from '@/lib/supabase'
 import { stageAdvance, sopForStage, nextSessionChunk, allSessionChunks } from '@/lib/sops'
 import { buildStageDraftPrompt } from '@/lib/stageDraftPrompt'
 import { sounds } from '@/lib/sounds'
@@ -37,6 +37,9 @@ const C = {
   cyan: '#00d4ff', green: '#00ff88', amber: '#ffb800', purple: '#8b5cf6',
   text: '#f0f0ff', sec: '#8888aa', muted: '#4a4a6a',
 }
+
+// Kept in sync with app/content/page.tsx's own VIDEO_TYPES list.
+const VIDEO_TYPES = ['How-To', 'Listicle', 'Case Study', 'Explainer', 'Testimonial/Interview']
 
 const ROHN = [
   "Either you run the day or the day runs you.",
@@ -374,6 +377,48 @@ function ContentFocusPageInner() {
     if (itemId && sopId) saveStageNote(itemId, sopId, stageNote)
   }
 
+  // ── Video Details (structured, not freeform) ────────────────────────────
+  // Title/type/angle already existed as columns but were only ever set once
+  // at Idea stage and never surfaced again; hook/thumbnail concept/thumbnail
+  // link/SEO description/tags (043_video_detail_fields.sql) are brand new —
+  // before this the only place any of it could go was buried inside a
+  // paragraph of freeform stage notes. Synced from the item once per item id
+  // (not every render) so in-progress typing never gets clobbered.
+  const [videoDetailsKey, setVideoDetailsKey] = useState('')
+  const [showVideoDetails, setShowVideoDetails] = useState(true)
+  const [editTitle, setEditTitle] = useState('')
+  const [editVideoType, setEditVideoType] = useState('')
+  const [editUniqueAngle, setEditUniqueAngle] = useState('')
+  const [editHook, setEditHook] = useState('')
+  const [editThumbConcept, setEditThumbConcept] = useState('')
+  const [editThumbUrl, setEditThumbUrl] = useState('')
+  const [editSeoDescription, setEditSeoDescription] = useState('')
+  const [editSeoTags, setEditSeoTags] = useState('')
+
+  useEffect(() => {
+    if (!itemId || itemId === videoDetailsKey) return
+    setVideoDetailsKey(itemId)
+    setEditTitle(item?.title ?? '')
+    setEditVideoType(item?.video_type ?? '')
+    setEditUniqueAngle(item?.unique_angle ?? '')
+    setEditHook(item?.hook ?? '')
+    setEditThumbConcept(item?.thumbnail_concept ?? '')
+    setEditThumbUrl(item?.thumbnail_url ?? '')
+    setEditSeoDescription(item?.seo_description ?? '')
+    setEditSeoTags(item?.seo_tags ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemId, videoDetailsKey])
+
+  type VideoFieldPatch = Parameters<typeof updateContentItemFields>[1]
+  async function saveVideoField(field: keyof VideoFieldPatch, value: string, allowEmpty = true) {
+    if (!itemId) return
+    const trimmed = value.trim()
+    if (!allowEmpty && !trimmed) { setEditTitle(item?.title ?? ''); return } // never allow blanking the title
+    const patchValue = trimmed || null
+    await updateContentItemFields(itemId, { [field]: patchValue } as VideoFieldPatch)
+    setVideos(prev => prev.map(v => v.id === itemId ? ({ ...v, [field]: patchValue } as ActiveFocusVideo) : v))
+  }
+
   // Consult Claude for the current stage — moved here from the Pipeline
   // card (see app/content/page.tsx PipelineCard) so all per-stage AI work
   // lives in one place: the focus session you're already sitting in.
@@ -684,6 +729,130 @@ function ContentFocusPageInner() {
                   Full history
                 </button>
               </div>
+            </div>
+
+            {/* -- Video Details -- structured fields for what this video actually
+                is, instead of everything living in one freeform Claude note.
+                Title/type/angle always shown; hook/thumbnail concept show up
+                once you reach Holy Trifecta, thumbnail link + SEO once you
+                reach Thumbnail & SEO -- so the fields you need appear exactly
+                when the stage you're on needs them. */}
+            <div style={{ background:C.card, borderRadius:'1.375rem', padding:'1.25rem 1.5rem', border:'1px solid '+C.border }}>
+              <button onClick={() => setShowVideoDetails(v => !v)} style={{ display:'flex', alignItems:'center', gap:'0.35rem', width:'100%', background:'none', border:'none', padding:0, marginBottom: showVideoDetails ? '0.875rem' : 0, color:C.text, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase' }}>
+                <ChevronRight size={12} style={{ transform: showVideoDetails ? 'rotate(90deg)' : 'none', transition:'transform 0.15s' }}/>
+                Video Details
+              </button>
+
+              {showVideoDetails && (
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.875rem' }}>
+                  <div>
+                    <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Title</label>
+                    <input
+                      value={editTitle}
+                      onChange={e => setEditTitle(e.target.value)}
+                      onBlur={() => saveVideoField('title', editTitle, false)}
+                      placeholder="Working title"
+                      style={{ width:'100%', padding:'0.55rem 0.75rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.85rem', fontWeight:700, outline:'none', boxSizing:'border-box' as const }}
+                    />
+                  </div>
+
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
+                    <div>
+                      <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Video type</label>
+                      <select
+                        value={editVideoType}
+                        onChange={e => { setEditVideoType(e.target.value); saveVideoField('video_type', e.target.value) }}
+                        style={{ width:'100%', padding:'0.55rem 0.75rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.625rem', color:editVideoType ? C.text : C.muted, fontFamily:'inherit', fontSize:'0.78rem', outline:'none', cursor:'pointer', boxSizing:'border-box' as const }}>
+                        <option value="">Not set</option>
+                        {VIDEO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Format</label>
+                      <div style={{ padding:'0.55rem 0.75rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.625rem', color: item.format ? C.text : C.muted, fontSize:'0.78rem' }}>
+                        {item.format ?? 'Not set'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Unique angle &mdash; the alpha check</label>
+                    <textarea
+                      value={editUniqueAngle}
+                      onChange={e => setEditUniqueAngle(e.target.value)}
+                      onBlur={() => saveVideoField('unique_angle', editUniqueAngle)}
+                      placeholder="What does this video have that a 5-minute Google search or ChatGPT answer doesn't?"
+                      rows={2}
+                      style={{ width:'100%', padding:'0.55rem 0.75rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', lineHeight:1.55, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}
+                    />
+                  </div>
+
+                  {sopId === '03' && (
+                    <>
+                      <div style={{ borderTop:'1px solid '+C.border, paddingTop:'0.875rem' }}>
+                        <p style={{ fontSize:'0.62rem', fontWeight:800, color:C.amber, textTransform:'uppercase' as const, letterSpacing:'0.08em', margin:'0 0 0.7rem' }}>&#127919; Holy Trifecta &mdash; lock these three</p>
+                        <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Hook</label>
+                        <textarea
+                          value={editHook}
+                          onChange={e => setEditHook(e.target.value)}
+                          onBlur={() => saveVideoField('hook', editHook)}
+                          placeholder="First 15 seconds (long form) or first 3 (Short) — the wildest stat, boldest claim, or question that makes stopping feel impossible"
+                          rows={2}
+                          style={{ width:'100%', padding:'0.55rem 0.75rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editHook ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', lineHeight:1.55, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Thumbnail concept</label>
+                        <textarea
+                          value={editThumbConcept}
+                          onChange={e => setEditThumbConcept(e.target.value)}
+                          onBlur={() => saveVideoField('thumbnail_concept', editThumbConcept)}
+                          placeholder="Which type-combo (scale, comparison, blur/reveal, big number) + what's actually in frame + the brand accent colour"
+                          rows={2}
+                          style={{ width:'100%', padding:'0.55rem 0.75rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editThumbConcept ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', lineHeight:1.55, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {sopId === '08' && (
+                    <>
+                      <div style={{ borderTop:'1px solid '+C.border, paddingTop:'0.875rem' }}>
+                        <p style={{ fontSize:'0.62rem', fontWeight:800, color:C.amber, textTransform:'uppercase' as const, letterSpacing:'0.08em', margin:'0 0 0.7rem' }}>&#128444; Thumbnail & SEO &mdash; finalise these</p>
+                        <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Thumbnail file link</label>
+                        <input
+                          value={editThumbUrl}
+                          onChange={e => setEditThumbUrl(e.target.value)}
+                          onBlur={() => saveVideoField('thumbnail_url', editThumbUrl)}
+                          placeholder="Link to the finished thumbnail image (Drive/Canva/local)"
+                          style={{ width:'100%', padding:'0.55rem 0.75rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editThumbUrl ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', outline:'none', boxSizing:'border-box' as const }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>SEO description</label>
+                        <textarea
+                          value={editSeoDescription}
+                          onChange={e => setEditSeoDescription(e.target.value)}
+                          onBlur={() => saveVideoField('seo_description', editSeoDescription)}
+                          placeholder='First 2 lines matter most — hook sentence + primary keyword before "show more"'
+                          rows={3}
+                          style={{ width:'100%', padding:'0.55rem 0.75rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editSeoDescription ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', lineHeight:1.55, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Tags</label>
+                        <input
+                          value={editSeoTags}
+                          onChange={e => setEditSeoTags(e.target.value)}
+                          onBlur={() => saveVideoField('seo_tags', editSeoTags)}
+                          placeholder="3 broad, 5 niche, 5 long-tail — comma separated"
+                          style={{ width:'100%', padding:'0.55rem 0.75rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editSeoTags ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', outline:'none', boxSizing:'border-box' as const }}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <MemeSuggestions topic={item.title} />

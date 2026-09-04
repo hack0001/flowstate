@@ -1783,3 +1783,23 @@ create table if not exists adobe_skill_resources (
 alter table adobe_skill_resources enable row level security;
 drop policy if exists allow_all_adobe_skill_resources on adobe_skill_resources;
 create policy allow_all_adobe_skill_resources on adobe_skill_resources for all using (true) with check (true);
+-- ---- migrations/043_video_detail_fields.sql ----
+-- =============================================================
+-- FlowState — Structured video-detail fields for the production build
+--
+-- hook              — the opening line/angle locked in Holy Trifecta
+-- thumbnail_concept — the thumbnail type-combo + description locked in
+--                      Holy Trifecta (the real image gets built later)
+-- thumbnail_url      — link to the finished thumbnail image file, once
+--                      built in the Thumbnail & SEO stage
+-- seo_description    — the finalised YouTube description
+-- seo_tags           — the finalised YouTube tags (comma-separated)
+--
+-- RUN IN SUPABASE SQL EDITOR — safe to re-run
+-- =============================================================
+
+alter table content_items add column if not exists hook text;
+alter table content_items add column if not exists thumbnail_concept text;
+alter table content_items add column if not exists thumbnail_url text;
+alter table content_items add column if not exists seo_description text;
+alter table content_items add column if not exists seo_tags text;

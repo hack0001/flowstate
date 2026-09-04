@@ -42,6 +42,11 @@ type DetailItem = {
   script_url: string | null
   drive_url: string | null
   youtube_url: string | null
+  hook: string | null
+  thumbnail_concept: string | null
+  thumbnail_url: string | null
+  seo_description: string | null
+  seo_tags: string | null
 }
 
 export default function ContentItemDetail({ itemId, onClose }: { itemId: string; onClose: () => void }) {
@@ -53,6 +58,11 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
   const [scriptUrl, setScriptUrl] = useState('')
   const [driveUrl, setDriveUrl] = useState('')
   const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [thumbnailUrl, setThumbnailUrl] = useState('')
+  const [hook, setHook] = useState('')
+  const [thumbnailConcept, setThumbnailConcept] = useState('')
+  const [seoDescription, setSeoDescription] = useState('')
+  const [seoTags, setSeoTags] = useState('')
   const [showYap, setShowYap] = useState(false)
   const [showStoryboard, setShowStoryboard] = useState(false)
 
@@ -61,7 +71,7 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
     ;(async () => {
       const [{ data: itemData, error: itemErr }, { data: noteRows }] = await Promise.all([
         supabase.from('content_items')
-          .select('id,title,pipeline_stage,format,video_type,tag,notes,unique_angle,revenue_note,script_url,drive_url,youtube_url')
+          .select('id,title,pipeline_stage,format,video_type,tag,notes,unique_angle,revenue_note,script_url,drive_url,youtube_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags')
           .eq('id', itemId).maybeSingle(),
         supabase.from('content_stage_notes').select('sop_id,output').eq('content_item_id', itemId),
       ])
@@ -73,6 +83,11 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
         setScriptUrl(d.script_url ?? '')
         setDriveUrl(d.drive_url ?? '')
         setYoutubeUrl(d.youtube_url ?? '')
+        setThumbnailUrl(d.thumbnail_url ?? '')
+        setHook(d.hook ?? '')
+        setThumbnailConcept(d.thumbnail_concept ?? '')
+        setSeoDescription(d.seo_description ?? '')
+        setSeoTags(d.seo_tags ?? '')
       }
       const map: Record<string, string> = {}
       ;((noteRows ?? []) as { sop_id: string; output: string }[]).forEach(r => { map[r.sop_id] = r.output })
@@ -88,7 +103,11 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
     return () => { cancelled = true }
   }, [itemId])
 
-  async function saveLink(field: 'script_url' | 'drive_url' | 'youtube_url', value: string) {
+  async function saveLink(field: 'script_url' | 'drive_url' | 'youtube_url' | 'thumbnail_url', value: string) {
+    await supabase.from('content_items').update({ [field]: value.trim() || null }).eq('id', itemId)
+  }
+
+  async function saveField(field: 'hook' | 'thumbnail_concept' | 'seo_description' | 'seo_tags', value: string) {
     await supabase.from('content_items').update({ [field]: value.trim() || null }).eq('id', itemId)
   }
 
@@ -143,15 +162,47 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
               <p style={{ fontSize:'0.78rem', color:C.sec, lineHeight:1.55, margin:'0 0 1rem' }}>{item.notes}</p>
             )}
 
+            {/* Video Details -- structured Holy Trifecta / Thumbnail & SEO
+                fields, editable here too so this modal is a complete picture,
+                not just the Focus Session. */}
+            <div style={{ marginBottom:'1.25rem', display:'flex', flexDirection:'column', gap:'0.6rem' }}>
+              <p style={{ fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' as const, color:C.muted, margin:0 }}>Video Details</p>
+              <div>
+                <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, color:C.muted, marginBottom:'0.25rem' }}>Hook</label>
+                <textarea value={hook} onChange={e => setHook(e.target.value)} onBlur={() => saveField('hook', hook)}
+                  placeholder="Opening line / angle, locked in Holy Trifecta" rows={2}
+                  style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}/>
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, color:C.muted, marginBottom:'0.25rem' }}>Thumbnail concept</label>
+                <textarea value={thumbnailConcept} onChange={e => setThumbnailConcept(e.target.value)} onBlur={() => saveField('thumbnail_concept', thumbnailConcept)}
+                  placeholder="Type-combo + what's in frame + accent colour, locked in Holy Trifecta" rows={2}
+                  style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}/>
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, color:C.muted, marginBottom:'0.25rem' }}>SEO description</label>
+                <textarea value={seoDescription} onChange={e => setSeoDescription(e.target.value)} onBlur={() => saveField('seo_description', seoDescription)}
+                  placeholder="Finalised YouTube description, from Thumbnail & SEO" rows={2}
+                  style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}/>
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, color:C.muted, marginBottom:'0.25rem' }}>SEO tags</label>
+                <input value={seoTags} onChange={e => setSeoTags(e.target.value)} onBlur={() => saveField('seo_tags', seoTags)}
+                  placeholder="Comma-separated"
+                  style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', outline:'none', boxSizing:'border-box' as const }}/>
+              </div>
+            </div>
+
             {/* Links */}
             <div style={{ marginBottom:'1.25rem', display:'flex', flexDirection:'column', gap:'0.5rem' }}>
               {([
                 { label:'Script', icon:<FileText size={12}/>, value:scriptUrl, set:setScriptUrl, field:'script_url' as const, ph:'Google Doc / Drive link to the script' },
                 { label:'Assets', icon:<FolderOpen size={12}/>, value:driveUrl, set:setDriveUrl, field:'drive_url' as const, ph:'Google Drive folder with VO, b-roll, thumbnail' },
+                { label:'Thumbnail', icon:<FileText size={12}/>, value:thumbnailUrl, set:setThumbnailUrl, field:'thumbnail_url' as const, ph:'Link to the finished thumbnail image' },
                 { label:'Video', icon:<Play size={12}/>, value:youtubeUrl, set:setYoutubeUrl, field:'youtube_url' as const, ph:'Published video link' },
               ]).map(l => (
                 <div key={l.field} style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
-                  <span style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase', color:C.muted, width:'4.5rem', flexShrink:0 }}>{l.icon}{l.label}</span>
+                  <span style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase', color:C.muted, width:'5.5rem', flexShrink:0 }}>{l.icon}{l.label}</span>
                   <input
                     value={l.value} onChange={e => l.set(e.target.value)} onBlur={() => saveLink(l.field, l.value)}
                     placeholder={l.ph}
