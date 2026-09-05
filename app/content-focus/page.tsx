@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, Circle, Play, Pause, RefreshCw, SkipForward, Wind, Waves, VolumeX, Zap, Music2, ChevronRight, Sparkles, Clapperboard, FolderOpen } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Circle, Play, Pause, RefreshCw, SkipForward, Wind, Waves, VolumeX, Zap, Music2, ChevronRight, Sparkles, Clapperboard, FolderOpen, FileText } from 'lucide-react'
 import { supabase, getActiveFocusVideos, getContentItemById, getStageNote, saveStageNote, updateContentItemFields, type ActiveFocusVideo } from '@/lib/supabase'
 import { stageAdvance, sopForStage, nextSessionChunk, allSessionChunks } from '@/lib/sops'
 import { buildStageDraftPrompt } from '@/lib/stageDraftPrompt'
@@ -403,6 +403,11 @@ function ContentFocusPageInner() {
   const [editThumbConcept3, setEditThumbConcept3] = useState('')
   const [editThumbUrl2, setEditThumbUrl2] = useState('')
   const [editThumbUrl3, setEditThumbUrl3] = useState('')
+  // Links -- Script / Assets / Thumbnail / Video, shown up front now instead
+  // of only inside Full History (thumbnail reuses editThumbUrl above).
+  const [editScriptUrl, setEditScriptUrl] = useState('')
+  const [editDriveUrl, setEditDriveUrl] = useState('')
+  const [editYoutubeUrl, setEditYoutubeUrl] = useState('')
 
   useEffect(() => {
     if (!itemId || itemId === videoDetailsKey) return
@@ -421,6 +426,9 @@ function ContentFocusPageInner() {
     setEditThumbConcept3(item?.thumbnail_concept_3 ?? '')
     setEditThumbUrl2(item?.thumbnail_url_2 ?? '')
     setEditThumbUrl3(item?.thumbnail_url_3 ?? '')
+    setEditScriptUrl(item?.script_url ?? '')
+    setEditDriveUrl(item?.drive_url ?? '')
+    setEditYoutubeUrl(item?.youtube_url ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId, videoDetailsKey])
 
@@ -739,12 +747,34 @@ function ContentFocusPageInner() {
                       : `${doneSet.size}/${steps.length} steps`}
                   </span>
                 )}
-                <button onClick={() => setShowDetail(true)} title="Full history — attributes, every stage note, links"
-                  style={{ padding:'0.25rem 0.6rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'9999px', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.65rem', display:'flex', alignItems:'center', gap:'0.3rem' }}>
-                  Full history
-                </button>
               </div>
             </div>
+
+            {/* -- Links -- Script / Assets / Thumbnail / Video, right up front
+                so you can grab or drop a link without opening Full history. */}
+            <div style={{ background:C.card, borderRadius:'1.375rem', padding:'1.25rem 1.5rem', border:'1px solid '+C.border, display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+              {([
+                { label:'Script', icon:<FileText size={12}/>, value:editScriptUrl, set:setEditScriptUrl, field:'script_url' as const, ph:'Google Doc / Drive link to the script' },
+                { label:'Assets', icon:<FolderOpen size={12}/>, value:editDriveUrl, set:setEditDriveUrl, field:'drive_url' as const, ph:'Google Drive folder with VO, b-roll, thumbnail' },
+                { label:'Thumbnail', icon:<FileText size={12}/>, value:editThumbUrl, set:setEditThumbUrl, field:'thumbnail_url' as const, ph:'Link to the finished thumbnail image' },
+                { label:'Video', icon:<Play size={12}/>, value:editYoutubeUrl, set:setEditYoutubeUrl, field:'youtube_url' as const, ph:'Published video link' },
+              ]).map(l => (
+                <div key={l.field} style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                  <span style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase' as const, color:C.muted, width:'5.5rem', flexShrink:0 }}>{l.icon}{l.label}</span>
+                  <input
+                    value={l.value} onChange={e => l.set(e.target.value)} onBlur={() => saveVideoField(l.field, l.value)}
+                    placeholder={l.ph}
+                    style={{ flex:1, padding:'0.45rem 0.65rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.75rem', outline:'none', boxSizing:'border-box' as const }}
+                  />
+                  {l.value && <a href={l.value} target="_blank" rel="noopener noreferrer" style={{ flexShrink:0, color:C.cyan, display:'flex' }}><ChevronRight size={14}/></a>}
+                </div>
+              ))}
+            </div>
+
+            <button onClick={() => setShowDetail(true)} title="Full history — attributes, every stage note, links"
+              style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'0.4rem', padding:'0.6rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.75rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:600 }}>
+              Full history
+            </button>
 
             {/* -- Video Details -- structured fields for what this video actually
                 is, instead of everything living in one freeform Claude note.

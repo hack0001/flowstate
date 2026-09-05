@@ -31,6 +31,12 @@ export type ActiveFocusVideo = {
   // is the raw Drive id alongside it, for future API calls.
   drive_folder_id?: string | null
   drive_url?: string | null
+  // script_url/youtube_url (022_video_links_and_stats.sql) — script doc
+  // link and the published video link, surfaced in the Focus Session's own
+  // Links section alongside Assets (drive_url) and Thumbnail (thumbnail_url)
+  // so they're editable right there, not just in the Full History modal.
+  script_url?: string | null
+  youtube_url?: string | null
   // Structured production-build fields (043_video_detail_fields.sql) — what
   // used to only ever get written into a paragraph of freeform stage notes.
   // hook/thumbnail_concept are decided in Holy Trifecta; thumbnail_url/
@@ -58,7 +64,8 @@ export async function updateContentItemFields(
   id: string,
   patch: Partial<Pick<ActiveFocusVideo,
     'title' | 'video_type' | 'unique_angle' | 'hook' | 'thumbnail_concept' | 'thumbnail_url' | 'seo_description' | 'seo_tags' |
-    'title_option_2' | 'title_option_3' | 'thumbnail_concept_2' | 'thumbnail_concept_3' | 'thumbnail_url_2' | 'thumbnail_url_3'
+    'title_option_2' | 'title_option_3' | 'thumbnail_concept_2' | 'thumbnail_concept_3' | 'thumbnail_url_2' | 'thumbnail_url_3' |
+    'script_url' | 'drive_url' | 'youtube_url'
   >>
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from('content_items').update(patch).eq('id', id)
@@ -108,7 +115,7 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
   const { maxItems, error: maxErr } = await getMaxFocusItems()
   const { data: pinnedData, error: pinnedErr } = await supabase
     .from('content_items')
-    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags,title_option_2,title_option_3,thumbnail_concept_2,thumbnail_concept_3,thumbnail_url_2,thumbnail_url_3')
+    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags,title_option_2,title_option_3,thumbnail_concept_2,thumbnail_concept_3,thumbnail_url_2,thumbnail_url_3,script_url,youtube_url')
     .eq('is_active_focus', true)
     .neq('archived', true)
 
@@ -119,7 +126,7 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
   if (combined.length < maxItems) {
     const { data: fallbackData, error: fallbackErr } = await supabase
       .from('content_items')
-      .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags,title_option_2,title_option_3,thumbnail_concept_2,thumbnail_concept_3,thumbnail_url_2,thumbnail_url_3')
+      .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags,title_option_2,title_option_3,thumbnail_concept_2,thumbnail_concept_3,thumbnail_url_2,thumbnail_url_3,script_url,youtube_url')
       .eq('is_active_focus', false)
       .neq('archived', true)
       .not('pipeline_stage', 'is', null)
@@ -141,7 +148,7 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
 export async function getContentItemById(id: string): Promise<{ video: ActiveFocusVideo | null; error: string | null }> {
   const { data, error } = await supabase
     .from('content_items')
-    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags,title_option_2,title_option_3,thumbnail_concept_2,thumbnail_concept_3,thumbnail_url_2,thumbnail_url_3')
+    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags,title_option_2,title_option_3,thumbnail_concept_2,thumbnail_concept_3,thumbnail_url_2,thumbnail_url_3,script_url,youtube_url')
     .eq('id', id)
     .maybeSingle()
   if (error) return { video: null, error: explainFocusError(error.message) }
