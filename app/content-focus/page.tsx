@@ -394,6 +394,15 @@ function ContentFocusPageInner() {
   const [editThumbUrl, setEditThumbUrl] = useState('')
   const [editSeoDescription, setEditSeoDescription] = useState('')
   const [editSeoTags, setEditSeoTags] = useState('')
+  // Slots 2 and 3 alongside title/thumbnail concept/thumbnail link (which
+  // double as slot 1) -- up to 3 of each, ready for YouTube's native
+  // Test & Compare A/B tool (up to 3 variants) at upload time.
+  const [editTitle2, setEditTitle2] = useState('')
+  const [editTitle3, setEditTitle3] = useState('')
+  const [editThumbConcept2, setEditThumbConcept2] = useState('')
+  const [editThumbConcept3, setEditThumbConcept3] = useState('')
+  const [editThumbUrl2, setEditThumbUrl2] = useState('')
+  const [editThumbUrl3, setEditThumbUrl3] = useState('')
 
   useEffect(() => {
     if (!itemId || itemId === videoDetailsKey) return
@@ -406,6 +415,12 @@ function ContentFocusPageInner() {
     setEditThumbUrl(item?.thumbnail_url ?? '')
     setEditSeoDescription(item?.seo_description ?? '')
     setEditSeoTags(item?.seo_tags ?? '')
+    setEditTitle2(item?.title_option_2 ?? '')
+    setEditTitle3(item?.title_option_3 ?? '')
+    setEditThumbConcept2(item?.thumbnail_concept_2 ?? '')
+    setEditThumbConcept3(item?.thumbnail_concept_3 ?? '')
+    setEditThumbUrl2(item?.thumbnail_url_2 ?? '')
+    setEditThumbUrl3(item?.thumbnail_url_3 ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemId, videoDetailsKey])
 
@@ -746,7 +761,7 @@ function ContentFocusPageInner() {
               {showVideoDetails && (
                 <div style={{ display:'flex', flexDirection:'column', gap:'0.875rem' }}>
                   <div>
-                    <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Title</label>
+                    <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Title {sopId === '03' && <span style={{ textTransform:'none' as const, fontWeight:600, opacity:0.7 }}>&mdash; variant 1</span>}</label>
                     <input
                       value={editTitle}
                       onChange={e => setEditTitle(e.target.value)}
@@ -791,6 +806,19 @@ function ContentFocusPageInner() {
                     <>
                       <div style={{ borderTop:'1px solid '+C.border, paddingTop:'0.875rem' }}>
                         <p style={{ fontSize:'0.62rem', fontWeight:800, color:C.amber, textTransform:'uppercase' as const, letterSpacing:'0.08em', margin:'0 0 0.7rem' }}>&#127919; Holy Trifecta &mdash; lock these three</p>
+
+                        <p style={{ fontSize:'0.66rem', color:C.sec, margin:'0 0 0.5rem', lineHeight:1.5 }}>
+                          Write up to 3 titles &mdash; YouTube&apos;s Test &amp; Compare tool A/B tests up to 3 variants by watch time. Title above is variant 1.
+                        </p>
+                        <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', marginBottom:'0.875rem' }}>
+                          <input value={editTitle2} onChange={e => setEditTitle2(e.target.value)} onBlur={() => saveVideoField('title_option_2', editTitle2)}
+                            placeholder="Title — variant 2"
+                            style={{ width:'100%', padding:'0.5rem 0.7rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editTitle2 ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.55rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', outline:'none', boxSizing:'border-box' as const }}/>
+                          <input value={editTitle3} onChange={e => setEditTitle3(e.target.value)} onBlur={() => saveVideoField('title_option_3', editTitle3)}
+                            placeholder="Title — variant 3"
+                            style={{ width:'100%', padding:'0.5rem 0.7rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editTitle3 ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.55rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', outline:'none', boxSizing:'border-box' as const }}/>
+                        </div>
+
                         <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Hook</label>
                         <textarea
                           value={editHook}
@@ -802,7 +830,7 @@ function ContentFocusPageInner() {
                         />
                       </div>
                       <div>
-                        <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Thumbnail concept</label>
+                        <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Thumbnail concept &mdash; variant 1</label>
                         <textarea
                           value={editThumbConcept}
                           onChange={e => setEditThumbConcept(e.target.value)}
@@ -811,6 +839,14 @@ function ContentFocusPageInner() {
                           rows={2}
                           style={{ width:'100%', padding:'0.55rem 0.75rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editThumbConcept ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', lineHeight:1.55, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}
                         />
+                        <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', marginTop:'0.5rem' }}>
+                          <textarea value={editThumbConcept2} onChange={e => setEditThumbConcept2(e.target.value)} onBlur={() => saveVideoField('thumbnail_concept_2', editThumbConcept2)}
+                            placeholder="Thumbnail concept — variant 2" rows={2}
+                            style={{ width:'100%', padding:'0.5rem 0.7rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editThumbConcept2 ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.55rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}/>
+                          <textarea value={editThumbConcept3} onChange={e => setEditThumbConcept3(e.target.value)} onBlur={() => saveVideoField('thumbnail_concept_3', editThumbConcept3)}
+                            placeholder="Thumbnail concept — variant 3" rows={2}
+                            style={{ width:'100%', padding:'0.5rem 0.7rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editThumbConcept3 ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.55rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}/>
+                        </div>
                       </div>
                     </>
                   )}
@@ -819,7 +855,10 @@ function ContentFocusPageInner() {
                     <>
                       <div style={{ borderTop:'1px solid '+C.border, paddingTop:'0.875rem' }}>
                         <p style={{ fontSize:'0.62rem', fontWeight:800, color:C.amber, textTransform:'uppercase' as const, letterSpacing:'0.08em', margin:'0 0 0.7rem' }}>&#128444; Thumbnail & SEO &mdash; finalise these</p>
-                        <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Thumbnail file link</label>
+                        <p style={{ fontSize:'0.66rem', color:C.sec, margin:'0 0 0.5rem', lineHeight:1.5 }}>
+                          Build up to 3 real thumbnails from the concepts you locked in Holy Trifecta &mdash; ready to drop straight into YouTube&apos;s Test &amp; Compare tool at upload.
+                        </p>
+                        <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>Thumbnail file link &mdash; variant 1</label>
                         <input
                           value={editThumbUrl}
                           onChange={e => setEditThumbUrl(e.target.value)}
@@ -827,6 +866,14 @@ function ContentFocusPageInner() {
                           placeholder="Link to the finished thumbnail image (Drive/Canva/local)"
                           style={{ width:'100%', padding:'0.55rem 0.75rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editThumbUrl ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', outline:'none', boxSizing:'border-box' as const }}
                         />
+                        <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', marginTop:'0.5rem' }}>
+                          <input value={editThumbUrl2} onChange={e => setEditThumbUrl2(e.target.value)} onBlur={() => saveVideoField('thumbnail_url_2', editThumbUrl2)}
+                            placeholder="Thumbnail file link — variant 2"
+                            style={{ width:'100%', padding:'0.5rem 0.7rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editThumbUrl2 ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.55rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', outline:'none', boxSizing:'border-box' as const }}/>
+                          <input value={editThumbUrl3} onChange={e => setEditThumbUrl3(e.target.value)} onBlur={() => saveVideoField('thumbnail_url_3', editThumbUrl3)}
+                            placeholder="Thumbnail file link — variant 3"
+                            style={{ width:'100%', padding:'0.5rem 0.7rem', background:'rgba(255,184,0,0.03)', border:'1px solid '+(editThumbUrl3 ? 'rgba(255,184,0,0.3)' : C.border), borderRadius:'0.55rem', color:C.text, fontFamily:'inherit', fontSize:'0.78rem', outline:'none', boxSizing:'border-box' as const }}/>
+                        </div>
                       </div>
                       <div>
                         <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>SEO description</label>

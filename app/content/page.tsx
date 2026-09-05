@@ -1578,7 +1578,7 @@ export default function ContentPage() {
   const router = useRouter()
   const [items,      setItems]      = useState<ContentItem[]>([])
   const [loading,    setLoading]    = useState(true)
-  const [view,       setView]       = useState<View>('ideas')
+  const [view,       setView]       = useState<View>('pipeline')
   // Two boards, one kanban component — Shorts drops the Thumbnail & SEO
   // column entirely (see isShortsOnly in lib/sops.ts) since a pure Short
   // never needs a custom thumbnail or real SEO metadata. Everything else

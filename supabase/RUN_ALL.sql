@@ -1803,3 +1803,21 @@ alter table content_items add column if not exists thumbnail_concept text;
 alter table content_items add column if not exists thumbnail_url text;
 alter table content_items add column if not exists seo_description text;
 alter table content_items add column if not exists seo_tags text;
+-- ---- migrations/044_title_thumbnail_variants.sql ----
+-- =============================================================
+-- FlowState — Title/thumbnail variants for YouTube's A/B test tool
+--
+-- title (existing) and thumbnail_concept/thumbnail_url (043) now double as
+-- "variant 1" -- these two add slots 2 and 3 alongside them, ready to drop
+-- straight into YouTube Studio's Test & Compare tool (up to 3 variants) at
+-- upload time.
+--
+-- RUN IN SUPABASE SQL EDITOR — safe to re-run
+-- =============================================================
+
+alter table content_items add column if not exists title_option_2 text;
+alter table content_items add column if not exists title_option_3 text;
+alter table content_items add column if not exists thumbnail_concept_2 text;
+alter table content_items add column if not exists thumbnail_concept_3 text;
+alter table content_items add column if not exists thumbnail_url_2 text;
+alter table content_items add column if not exists thumbnail_url_3 text;

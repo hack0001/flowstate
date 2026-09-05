@@ -40,6 +40,15 @@ export type ActiveFocusVideo = {
   thumbnail_url?: string | null
   seo_description?: string | null
   seo_tags?: string | null
+  // Slots 2 and 3 alongside title/thumbnail_concept/thumbnail_url (which
+  // double as slot 1), so there are up to 3 of each ready for YouTube
+  // Studio's native Test & Compare A/B tool (044_title_thumbnail_variants.sql).
+  title_option_2?: string | null
+  title_option_3?: string | null
+  thumbnail_concept_2?: string | null
+  thumbnail_concept_3?: string | null
+  thumbnail_url_2?: string | null
+  thumbnail_url_3?: string | null
 }
 
 // Fields the Focus Session lets Tom edit directly as he works through a
@@ -47,7 +56,10 @@ export type ActiveFocusVideo = {
 // update so the page doesn't need one function per field.
 export async function updateContentItemFields(
   id: string,
-  patch: Partial<Pick<ActiveFocusVideo, 'title' | 'video_type' | 'unique_angle' | 'hook' | 'thumbnail_concept' | 'thumbnail_url' | 'seo_description' | 'seo_tags'>>
+  patch: Partial<Pick<ActiveFocusVideo,
+    'title' | 'video_type' | 'unique_angle' | 'hook' | 'thumbnail_concept' | 'thumbnail_url' | 'seo_description' | 'seo_tags' |
+    'title_option_2' | 'title_option_3' | 'thumbnail_concept_2' | 'thumbnail_concept_3' | 'thumbnail_url_2' | 'thumbnail_url_3'
+  >>
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from('content_items').update(patch).eq('id', id)
   if (error) return { error: explainFocusError(error.message) }
@@ -96,7 +108,7 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
   const { maxItems, error: maxErr } = await getMaxFocusItems()
   const { data: pinnedData, error: pinnedErr } = await supabase
     .from('content_items')
-    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags')
+    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags,title_option_2,title_option_3,thumbnail_concept_2,thumbnail_concept_3,thumbnail_url_2,thumbnail_url_3')
     .eq('is_active_focus', true)
     .neq('archived', true)
 
@@ -107,7 +119,7 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
   if (combined.length < maxItems) {
     const { data: fallbackData, error: fallbackErr } = await supabase
       .from('content_items')
-      .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags')
+      .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags,title_option_2,title_option_3,thumbnail_concept_2,thumbnail_concept_3,thumbnail_url_2,thumbnail_url_3')
       .eq('is_active_focus', false)
       .neq('archived', true)
       .not('pipeline_stage', 'is', null)
@@ -129,7 +141,7 @@ export async function getActiveFocusVideos(): Promise<ActiveFocusResult> {
 export async function getContentItemById(id: string): Promise<{ video: ActiveFocusVideo | null; error: string | null }> {
   const { data, error } = await supabase
     .from('content_items')
-    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags')
+    .select('id,title,pipeline_stage,format,is_active_focus,updated_at,video_type,unique_angle,notes,drive_folder_id,drive_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags,title_option_2,title_option_3,thumbnail_concept_2,thumbnail_concept_3,thumbnail_url_2,thumbnail_url_3')
     .eq('id', id)
     .maybeSingle()
   if (error) return { video: null, error: explainFocusError(error.message) }

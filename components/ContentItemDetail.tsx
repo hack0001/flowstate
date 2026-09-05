@@ -47,6 +47,12 @@ type DetailItem = {
   thumbnail_url: string | null
   seo_description: string | null
   seo_tags: string | null
+  title_option_2: string | null
+  title_option_3: string | null
+  thumbnail_concept_2: string | null
+  thumbnail_concept_3: string | null
+  thumbnail_url_2: string | null
+  thumbnail_url_3: string | null
 }
 
 export default function ContentItemDetail({ itemId, onClose }: { itemId: string; onClose: () => void }) {
@@ -63,6 +69,12 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
   const [thumbnailConcept, setThumbnailConcept] = useState('')
   const [seoDescription, setSeoDescription] = useState('')
   const [seoTags, setSeoTags] = useState('')
+  const [titleOption2, setTitleOption2] = useState('')
+  const [titleOption3, setTitleOption3] = useState('')
+  const [thumbnailConcept2, setThumbnailConcept2] = useState('')
+  const [thumbnailConcept3, setThumbnailConcept3] = useState('')
+  const [thumbnailUrl2, setThumbnailUrl2] = useState('')
+  const [thumbnailUrl3, setThumbnailUrl3] = useState('')
   const [showYap, setShowYap] = useState(false)
   const [showStoryboard, setShowStoryboard] = useState(false)
 
@@ -71,7 +83,7 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
     ;(async () => {
       const [{ data: itemData, error: itemErr }, { data: noteRows }] = await Promise.all([
         supabase.from('content_items')
-          .select('id,title,pipeline_stage,format,video_type,tag,notes,unique_angle,revenue_note,script_url,drive_url,youtube_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags')
+          .select('id,title,pipeline_stage,format,video_type,tag,notes,unique_angle,revenue_note,script_url,drive_url,youtube_url,hook,thumbnail_concept,thumbnail_url,seo_description,seo_tags,title_option_2,title_option_3,thumbnail_concept_2,thumbnail_concept_3,thumbnail_url_2,thumbnail_url_3')
           .eq('id', itemId).maybeSingle(),
         supabase.from('content_stage_notes').select('sop_id,output').eq('content_item_id', itemId),
       ])
@@ -88,6 +100,12 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
         setThumbnailConcept(d.thumbnail_concept ?? '')
         setSeoDescription(d.seo_description ?? '')
         setSeoTags(d.seo_tags ?? '')
+        setTitleOption2(d.title_option_2 ?? '')
+        setTitleOption3(d.title_option_3 ?? '')
+        setThumbnailConcept2(d.thumbnail_concept_2 ?? '')
+        setThumbnailConcept3(d.thumbnail_concept_3 ?? '')
+        setThumbnailUrl2(d.thumbnail_url_2 ?? '')
+        setThumbnailUrl3(d.thumbnail_url_3 ?? '')
       }
       const map: Record<string, string> = {}
       ;((noteRows ?? []) as { sop_id: string; output: string }[]).forEach(r => { map[r.sop_id] = r.output })
@@ -107,7 +125,7 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
     await supabase.from('content_items').update({ [field]: value.trim() || null }).eq('id', itemId)
   }
 
-  async function saveField(field: 'hook' | 'thumbnail_concept' | 'seo_description' | 'seo_tags', value: string) {
+  async function saveField(field: 'hook' | 'thumbnail_concept' | 'seo_description' | 'seo_tags' | 'title_option_2' | 'title_option_3' | 'thumbnail_concept_2' | 'thumbnail_concept_3' | 'thumbnail_url_2' | 'thumbnail_url_3', value: string) {
     await supabase.from('content_items').update({ [field]: value.trim() || null }).eq('id', itemId)
   }
 
@@ -167,6 +185,19 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
                 not just the Focus Session. */}
             <div style={{ marginBottom:'1.25rem', display:'flex', flexDirection:'column', gap:'0.6rem' }}>
               <p style={{ fontSize:'0.63rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' as const, color:C.muted, margin:0 }}>Video Details</p>
+
+              <div>
+                <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, color:C.muted, marginBottom:'0.25rem' }}>Title variants (2 &amp; 3) &mdash; the title above is variant 1</label>
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+                  <input value={titleOption2} onChange={e => setTitleOption2(e.target.value)} onBlur={() => saveField('title_option_2', titleOption2)}
+                    placeholder="Title — variant 2"
+                    style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', outline:'none', boxSizing:'border-box' as const }}/>
+                  <input value={titleOption3} onChange={e => setTitleOption3(e.target.value)} onBlur={() => saveField('title_option_3', titleOption3)}
+                    placeholder="Title — variant 3"
+                    style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', outline:'none', boxSizing:'border-box' as const }}/>
+                </div>
+              </div>
+
               <div>
                 <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, color:C.muted, marginBottom:'0.25rem' }}>Hook</label>
                 <textarea value={hook} onChange={e => setHook(e.target.value)} onBlur={() => saveField('hook', hook)}
@@ -174,10 +205,29 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
                   style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}/>
               </div>
               <div>
-                <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, color:C.muted, marginBottom:'0.25rem' }}>Thumbnail concept</label>
+                <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, color:C.muted, marginBottom:'0.25rem' }}>Thumbnail concept &mdash; variant 1</label>
                 <textarea value={thumbnailConcept} onChange={e => setThumbnailConcept(e.target.value)} onBlur={() => saveField('thumbnail_concept', thumbnailConcept)}
                   placeholder="Type-combo + what's in frame + accent colour, locked in Holy Trifecta" rows={2}
                   style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}/>
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem', marginTop:'0.4rem' }}>
+                  <textarea value={thumbnailConcept2} onChange={e => setThumbnailConcept2(e.target.value)} onBlur={() => saveField('thumbnail_concept_2', thumbnailConcept2)}
+                    placeholder="Thumbnail concept — variant 2" rows={2}
+                    style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}/>
+                  <textarea value={thumbnailConcept3} onChange={e => setThumbnailConcept3(e.target.value)} onBlur={() => saveField('thumbnail_concept_3', thumbnailConcept3)}
+                    placeholder="Thumbnail concept — variant 3" rows={2}
+                    style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}/>
+                </div>
+              </div>
+              <div>
+                <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, color:C.muted, marginBottom:'0.25rem' }}>Thumbnail file links (2 &amp; 3) &mdash; variant 1 is in the links list below</label>
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+                  <input value={thumbnailUrl2} onChange={e => setThumbnailUrl2(e.target.value)} onBlur={() => saveField('thumbnail_url_2', thumbnailUrl2)}
+                    placeholder="Thumbnail file link — variant 2"
+                    style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', outline:'none', boxSizing:'border-box' as const }}/>
+                  <input value={thumbnailUrl3} onChange={e => setThumbnailUrl3(e.target.value)} onBlur={() => saveField('thumbnail_url_3', thumbnailUrl3)}
+                    placeholder="Thumbnail file link — variant 3"
+                    style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', outline:'none', boxSizing:'border-box' as const }}/>
+                </div>
               </div>
               <div>
                 <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, color:C.muted, marginBottom:'0.25rem' }}>SEO description</label>
