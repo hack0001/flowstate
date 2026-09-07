@@ -324,6 +324,28 @@ const IDEA_STAGE = { key:'💡 Idea', color:'#4a4a6a', bg:'rgba(74,74,106,0.12)'
 const ALL_STAGES = [IDEA_STAGE, ...PIPELINE_STAGES]
 const STAGE_KEYS  = ALL_STAGES.map(s => s.key)
 
+// ── Stage → SOP, by THEME (not advance-logic) ──────────────────────────────
+// This is deliberately separate from lib/sops.ts's STAGE_TO_SOP /
+// sopForStage(), which map a stage you're CURRENTLY sitting in to the SOP
+// you work through to leave it (offset by one stage). This map is for a
+// reference viewer: clicking "Research" should show the Research SOP, not
+// the next one. Matched 1-for-1 against each SOP's own tagline/title in
+// lib/sops.ts.
+const STAGE_SOP_ID: Record<string, string> = {
+  '💡 Idea': '01',
+  '✅ Validated': '01',
+  '📚 Research': '02',
+  '🎯 Holy Trifecta': '03',
+  '✍️ Script': '04',
+  '🎨 Assets': '05',
+  '🎙️ Voiceover': '06',
+  '✂️ Editing': '07',
+  '🖼️ Thumbnail & SEO': '08',
+  '☁️ Scheduled': '09',
+  '📣 Live': '09',
+  '📊 Post-Published': '10',
+}
+
 const FORMATS = ['Long-form', 'Short', 'Both', 'Podcast clip']
 
 // Which funnel role a video plays — from Dave Jeltema / Shane Hummus content-system videos:
@@ -405,6 +427,48 @@ function MoveModal({ item, onMove, onClose }: { item:ContentItem; onMove:(s:stri
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Stage SOP viewer modal ──────────────────────────────────────────────────
+// Opened by clicking a Kanban column header. Read-only reference view of the
+// full production SOP for that stage — steps, tagline, icon — resolved via
+// STAGE_SOP_ID (thematic map, see above), not the advance-logic STAGE_TO_SOP
+// in lib/sops.ts.
+function SopViewerModal({ stageKey, onClose }: { stageKey: string; onClose: () => void }) {
+  const sopId = STAGE_SOP_ID[stageKey]
+  const sop = SOPS.find(s => s.id === sopId)
+  const stageMeta = ALL_STAGES.find(s => s.key === stageKey)
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60, padding:'1rem' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background:C.surface, border:'1px solid '+C.border, borderRadius:'1.25rem', padding:'1.5rem', width:'100%', maxWidth:'30rem', maxHeight:'85vh', overflowY:'auto' as const }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.25rem' }}>
+          <span style={{ fontSize:'0.72rem', fontWeight:800, color: stageMeta?.color ?? C.text }}>{stageKey}</span>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex' }}><X size={16}/></button>
+        </div>
+        {!sop ? (
+          <p style={{ fontSize:'0.8rem', color:C.muted, margin:'0.75rem 0 0' }}>No SOP is linked to this stage yet.</p>
+        ) : (
+          <>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', margin:'0.5rem 0 0.75rem' }}>
+              <span style={{ fontSize:'1.3rem' }} dangerouslySetInnerHTML={{ __html: sop.icon }} />
+              <h3 style={{ fontSize:'1rem', fontWeight:800, color:C.text, margin:0 }}>
+                <span style={{ color:C.muted, fontSize:'0.65rem', fontWeight:500, marginRight:'0.4rem' }}>SOP {sop.id}</span>
+                {sop.title}
+              </h3>
+            </div>
+            <p style={{ fontSize:'0.75rem', color:C.cyan, fontStyle:'italic', margin:'0 0 1rem', lineHeight:1.5 }}>{sop.tagline}</p>
+            <ol style={{ margin:0, padding:'0 0 0 1.25rem', display:'flex', flexDirection:'column', gap:'0.55rem' }}>
+              {sop.steps.map((step, i) => (
+                <li key={i} style={{ fontSize:'0.8rem', color:C.sec, lineHeight:1.6 }}
+                  dangerouslySetInnerHTML={{ __html: step }} />
+              ))}
+            </ol>
+          </>
+        )}
       </div>
     </div>
   )
@@ -1588,6 +1652,7 @@ export default function ContentPage() {
   const [pipelineFormat, setPipelineFormat] = useState<'long' | 'shorts'>('long')
   const [moveTarget, setMoveTarget] = useState<ContentItem | null>(null)
   const [detailItem, setDetailItem] = useState<ContentItem | null>(null)
+  const [sopStageKey, setSopStageKey] = useState<string | null>(null)
   const [showAdd,    setShowAdd]    = useState(false)
   const [showFindIdeas, setShowFindIdeas] = useState(false)
   const [focusMsg,   setFocusMsg]   = useState<string | null>(null)
@@ -2013,9 +2078,9 @@ export default function ContentPage() {
           {view === 'pipeline' && (
             <div style={{ marginTop:'0.875rem', display:'flex', gap:'0.4rem', flexWrap:'wrap' as const }}>
               {PIPELINE_STAGES.map(s => (
-                <div key={s.key} title={s.tip} style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.62rem', color:s.color, background:s.bg, border:'1px solid '+s.color+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem', cursor:'default' }}>
+                <button key={s.key} title={s.tip + ' — click to view SOP'} onClick={() => setSopStageKey(s.key)} style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.62rem', color:s.color, background:s.bg, border:'1px solid '+s.color+'30', borderRadius:'9999px', padding:'0.15rem 0.5rem', cursor:'pointer', fontFamily:'inherit' }}>
                   {s.key}
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -2266,13 +2331,19 @@ export default function ContentPage() {
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(195px,1fr))', gap:'0.625rem', alignItems:'start' }}>
               {byStage.map(stage => (
                 <div key={stage.key} style={{ background:stage.bg, border:'1px solid '+stage.color+'28', borderRadius:'1rem', padding:'0.875rem' }}>
-                  <div style={{ marginBottom:'0.75rem' }}>
+                  <button onClick={() => setSopStageKey(stage.key)} title="View SOP for this stage" style={{
+                    display:'block', width:'100%', textAlign:'left', background:'none', border:'none',
+                    padding:0, marginBottom:'0.75rem', cursor:'pointer', fontFamily:'inherit',
+                  }}>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.25rem' }}>
-                      <span style={{ fontSize:'0.7rem', fontWeight:800, color:stage.color }}>{stage.key}</span>
+                      <span style={{ fontSize:'0.7rem', fontWeight:800, color:stage.color, display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                        {stage.key}
+                        <FileText size={10} style={{ opacity:0.55, flexShrink:0 }}/>
+                      </span>
                       <span style={{ fontSize:'0.62rem', color:stage.color, background:stage.color+'18', borderRadius:'9999px', padding:'0.1rem 0.375rem', fontWeight:700 }}>{stage.items.length}</span>
                     </div>
                     <p style={{ fontSize:'0.6rem', color:C.muted, margin:0, lineHeight:1.45 }}>{stage.tip}</p>
-                  </div>
+                  </button>
                   {stage.items.length === 0 ? (
                     <p style={{ fontSize:'0.65rem', color:C.muted, textAlign:'center', padding:'0.75rem 0', margin:0 }}>empty</p>
                   ) : (
@@ -2418,6 +2489,7 @@ export default function ContentPage() {
 
       {moveTarget && <MoveModal item={moveTarget} onMove={s => moveStage(moveTarget, s)} onClose={() => setMoveTarget(null)}/>}
       {detailItem && <ContentItemDetail itemId={detailItem.id} onClose={() => setDetailItem(null)}/>}
+      {sopStageKey && <SopViewerModal stageKey={sopStageKey} onClose={() => setSopStageKey(null)}/>}
       {showAdd    && <AddIdeaModal onAdd={addIdea} onClose={() => setShowAdd(false)}/>}
       {showFindIdeas && (
         <FindIdeasModal
