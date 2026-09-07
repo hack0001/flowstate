@@ -194,6 +194,41 @@ function fmtTimeLabel(hhmm: string | null): string | null {
   return h12 + ':' + String(m).padStart(2, '0') + ' ' + period
 }
 
+// Minutes-since-midnight for a task's "HH:MM" start_time.
+function homeMinutesFromHHMM(hhmm: string | null): number | null {
+  if (!hhmm) return null
+  const [h, m] = hhmm.split(':').map(Number)
+  if (Number.isNaN(h)) return null
+  return h * 60 + (m || 0)
+}
+
+// Lenient parser for the free-text reminder/habit timeLabel field ("9am",
+// "9:30 PM", "18:00"...) — same as Calendar's own parseTimeLabel
+// (app/calendar/page.tsx), duplicated locally since it's a small pure
+// function, not shared logic. Returns null for "Anytime"/unparseable, which
+// sorts to the end alongside untimed tasks.
+function homeParseTimeLabel(label: string): number | null {
+  if (!label) return null
+  const m = label.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i)
+  if (!m) return null
+  let h = parseInt(m[1], 10)
+  const min = m[2] ? parseInt(m[2], 10) : 0
+  const ap = m[3]?.toLowerCase()
+  if (ap === 'pm' && h < 12) h += 12
+  if (ap === 'am' && h === 12) h = 0
+  if (h > 23 || min > 59) return null
+  return h * 60 + min
+}
+
+// One unified, time-ordered feed per day -- tasks, reminders and habit
+// blocks interleaved by actual time of day, instead of three separate
+// grouped lists (which is how it worked before: all habits, then all
+// reminders, then all tasks, regardless of when any of them actually fall).
+type HomeDayEntry =
+  | { kind: 'habit'; sortMin: number | null; habit: HomeHabitBlock }
+  | { kind: 'reminder'; sortMin: number | null; reminder: Reminder }
+  | { kind: 'task'; sortMin: number | null; task: HomeTask; isFill: boolean }
+
 function HomeDaysBoard({ refreshKey }: { refreshKey?: number }) {
   const router = useRouter()
   const { celebrate } = useCelebration()
@@ -210,6 +245,8 @@ function HomeDaysBoard({ refreshKey }: { refreshKey?: number }) {
   const [editingTimeId, setEditingTimeId] = useState<string | null>(null)
   const [timeDraft, setTimeDraft] = useState('')
   const [durationDraft, setDurationDraft] = useState(30)
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null)
+  const [titleDraft, setTitleDraft] = useState('')
 
   const load = useCallback(async () => {
     // Each source is fetched independently -- if reminders or habit_blocks
@@ -261,33 +298,20 @@ function HomeDaysBoard({ refreshKey }: { refreshKey?: number }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [load, refreshKey])
 
-  // Calendar-driven ordering: whatever has a start_time (set on Calendar's
-  // Timeline) leads, earliest first; anything not yet time-blocked falls
-  // back to the shared priority order.
-  function sortByCalendar(list: HomeTask[]) {
-    return [...list].sort((a, b) => {
-      const at = a.start_time ? Number(a.start_time.slice(0,2)) * 60 + Number(a.start_time.slice(3,5)) : null
-      const bt = b.start_time ? Number(b.start_time.slice(0,2)) * 60 + Number(b.start_time.slice(3,5)) : null
-      if (at !== null && bt !== null) return at - bt
-      if (at !== null) return -1
-      if (bt !== null) return 1
-      const ai = order.indexOf(a.id), bi = order.indexOf(b.id)
-      if (ai === -1 && bi === -1) return 0
-      if (ai === -1) return 1
-      if (bi === -1) return -1
-      return ai - bi
-    })
-  }
 
   // The next HOME_DAYS_COUNT days (today first), each with its date string,
-  // day-of-week (for habit_blocks matching), and a display label.
+  // day-of-week (for habit_blocks matching), and a display label. dateLabel
+  // is the small "day/month" shown under the heading, calendar-cell style --
+  // shown on every column now, not just the later ones, so Today/Tomorrow
+  // still read as an actual date at a glance.
   const dayInfo = Array.from({ length: HOME_DAYS_COUNT }, (_, i) => {
     const d = new Date(Date.now() + i * 86400000)
     const dateStr = toDateStr(d)
     return {
       dateStr,
       dow: d.getDay(),
-      label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+      label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-GB', { weekday: 'short' }),
+      dateLabel: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
     }
   })
 
@@ -307,20 +331,41 @@ function HomeDaysBoard({ refreshKey }: { refreshKey?: number }) {
   const FILL_TARGET = 5
   const usedFillIds = new Set<string>()
   const days = dayInfo.map(d => {
-    const due = sortByCalendar(tasks.filter(t => t.due_date === d.dateStr))
+    const due = tasks.filter(t => t.due_date === d.dateStr)
     let fill: HomeTask[] = []
     if (due.length < FILL_TARGET) {
       fill = undatedByPriority.filter(t => !usedFillIds.has(t.id)).slice(0, FILL_TARGET - due.length)
       fill.forEach(t => usedFillIds.add(t.id))
     }
-    return {
-      ...d,
-      list: [...due, ...fill],
-      reminderList: reminders.filter(r => reminderOccursOn(r, d.dateStr)),
-      habitList: habitBlocks.filter(h => h.days.includes(d.dow)),
-    }
+    const dayHabits = habitBlocks.filter(h => h.days.includes(d.dow))
+    const dayReminders = reminders.filter(r => reminderOccursOn(r, d.dateStr))
+
+    // One combined, chronological feed -- a quick snapshot of the day
+    // actually reads top-to-bottom as the day unfolds, not grouped by type.
+    const entries: HomeDayEntry[] = [
+      ...dayHabits.map(habit => ({ kind:'habit' as const, sortMin: homeParseTimeLabel(habit.timeLabel), habit })),
+      ...dayReminders.map(reminder => ({ kind:'reminder' as const, sortMin: homeParseTimeLabel(reminder.timeLabel), reminder })),
+      ...due.map(task => ({ kind:'task' as const, sortMin: homeMinutesFromHHMM(task.start_time), task, isFill:false })),
+      ...fill.map(task => ({ kind:'task' as const, sortMin: null, task, isFill:true })),
+    ]
+    entries.sort((a, b) => {
+      if (a.sortMin !== null && b.sortMin !== null) return a.sortMin - b.sortMin
+      if (a.sortMin !== null) return -1
+      if (b.sortMin !== null) return 1
+      // Both untimed -- two untimed tasks fall back to the shared priority
+      // order; everything else keeps its original (stable-sort) position.
+      if (a.kind === 'task' && b.kind === 'task') {
+        const ai = order.indexOf(a.task.id), bi = order.indexOf(b.task.id)
+        if (ai === -1 && bi === -1) return 0
+        if (ai === -1) return 1
+        if (bi === -1) return -1
+        return ai - bi
+      }
+      return 0
+    })
+
+    return { ...d, entries }
   })
-  const fillIds = usedFillIds
 
   async function toggleDone(task: HomeTask) {
     const next = task.status === 'Done' ? 'Not started' : 'Done'
@@ -409,70 +454,105 @@ function HomeDaysBoard({ refreshKey }: { refreshKey?: number }) {
     await supabase.from('master_tasks').update(patch).eq('id', task.id)
   }
 
-  function Column({ label, dueDate, list, reminderList, habitList, fillIds }: { label: string; dueDate: string; list: HomeTask[]; reminderList: Reminder[]; habitList: HomeHabitBlock[]; fillIds: Set<string> }) {
+  // Inline title editing -- click the task text itself to rename it right
+  // here, instead of needing to open the Tasks page for a text-only edit.
+  function startEditTitle(task: HomeTask) {
+    setEditingTitleId(task.id)
+    setTitleDraft(task.title)
+    setEditingTimeId(null)
+    setRescheduleId(null)
+  }
+
+  async function saveTitle(task: HomeTask) {
+    const trimmed = titleDraft.trim()
+    setEditingTitleId(null)
+    if (!trimmed || trimmed === task.title) return
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, title: trimmed } : t))
+    await supabase.from('master_tasks').update({ title: trimmed }).eq('id', task.id)
+  }
+
+  function Column({ label, dateLabel, dueDate, entries }: { label: string; dateLabel: string; dueDate: string; entries: HomeDayEntry[] }) {
     const isColumnOver = dragOverDay === dueDate
+    const isToday = dueDate === todayStr
+    const taskEntries = entries.filter((e): e is Extract<HomeDayEntry, { kind: 'task' }> => e.kind === 'task').map(e => e.task)
     return (
       <div
         onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverDay(dueDate) }}
         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && dragOverDay === dueDate) setDragOverDay(null) }}
-        onDrop={e => handleColumnDrop(e, dueDate, list)}
-        style={{ flex:'1 1 240px', minWidth:'240px', borderRadius:'0.75rem', padding:'0.4rem', background: isColumnOver ? C.cyan+'0c' : 'transparent', border:'1px dashed '+(isColumnOver ? C.cyan+'60' : 'transparent'), transition:'background 0.1s,border-color 0.1s' }}>
-        <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.5rem' }}>{label}</p>
+        onDrop={e => handleColumnDrop(e, dueDate, taskEntries)}
+        style={{
+          borderRadius:'0.875rem', padding:'0.65rem', background: isColumnOver ? C.cyan+'0c' : C.card,
+          border:'1px solid '+(isColumnOver ? C.cyan+'60' : isToday ? C.cyan+'40' : C.border),
+          boxShadow: isToday ? '0 0 0 1px '+C.cyan+'15' : 'none',
+          transition:'background 0.1s,border-color 0.1s', display:'flex', flexDirection:'column', minWidth:0,
+        }}>
+        <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:'0.4rem', marginBottom:'0.55rem', paddingBottom:'0.5rem', borderBottom:'1px solid '+C.border }}>
+          <p style={{ fontSize:'0.72rem', fontWeight:800, letterSpacing:'0.04em', textTransform:'uppercase', color: isToday ? C.cyan : C.text, margin:0 }}>{label}</p>
+          <p style={{ fontSize:'0.64rem', color:C.muted, margin:0, flexShrink:0 }}>{dateLabel}</p>
+        </div>
         <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
-          {list.length === 0 && reminderList.length === 0 && habitList.length === 0 && (
+          {entries.length === 0 && (
             <p style={{ fontSize:'0.75rem', color:C.muted, margin:'0 0 0.25rem' }}>Nothing scheduled.</p>
           )}
-          {habitList.map(h => (
-            <div
-              key={h.id}
-              onClick={() => router.push('/calendar')}
-              title="Open Calendar to edit"
-              style={{
-                display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
-                background: (h.color || C.border) + '14', border:'1px solid '+(h.color || C.border)+'45', borderRadius:'0.6rem', cursor:'pointer',
-              }}>
-              {h.emoji && <span style={{ fontSize:'0.75rem', flexShrink:0 }}>{h.emoji}</span>}
-              {h.timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:h.color || C.muted, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{h.timeLabel}</span>}
-              <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color:h.color || C.sec, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{h.title}</span>
-              <ChevronRight size={12} color={C.muted} style={{ flexShrink:0 }} />
-            </div>
-          ))}
-          {reminderList.map(r => (
-            <div
-              key={r.id}
-              onClick={() => router.push('/calendar')}
-              title="Open Calendar to edit"
-              style={{
-                display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
-                background: C.surface, border:'1px dashed '+C.border, borderRadius:'0.6rem', cursor:'pointer',
-              }}>
-              <Bell size={12} color={r.color || C.muted} style={{ flexShrink:0 }} />
-              {r.emoji && <span style={{ fontSize:'0.7rem', flexShrink:0 }}>{r.emoji}</span>}
-              {r.timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{r.timeLabel}</span>}
-              <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color:C.sec, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</span>
-              <ChevronRight size={12} color={C.muted} style={{ flexShrink:0 }} />
-            </div>
-          ))}
-          {list.map(task => {
+          {entries.map(entry => {
+            if (entry.kind === 'habit') {
+              const h = entry.habit
+              return (
+                <div
+                  key={'habit-'+h.id}
+                  onClick={() => router.push('/calendar')}
+                  title="Open Calendar to edit"
+                  style={{
+                    display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
+                    background: (h.color || C.border) + '14', border:'1px solid '+(h.color || C.border)+'45', borderRadius:'0.6rem', cursor:'pointer',
+                  }}>
+                  {h.emoji && <span style={{ fontSize:'0.75rem', flexShrink:0 }}>{h.emoji}</span>}
+                  {h.timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:h.color || C.muted, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{h.timeLabel}</span>}
+                  <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color:h.color || C.sec, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{h.title}</span>
+                  <ChevronRight size={12} color={C.muted} style={{ flexShrink:0 }} />
+                </div>
+              )
+            }
+            if (entry.kind === 'reminder') {
+              const r = entry.reminder
+              return (
+                <div
+                  key={'reminder-'+r.id}
+                  onClick={() => router.push('/calendar')}
+                  title="Open Calendar to edit"
+                  style={{
+                    display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
+                    background: C.surface, border:'1px dashed '+C.border, borderRadius:'0.6rem', cursor:'pointer',
+                  }}>
+                  <Bell size={12} color={r.color || C.muted} style={{ flexShrink:0 }} />
+                  {r.emoji && <span style={{ fontSize:'0.7rem', flexShrink:0 }}>{r.emoji}</span>}
+                  {r.timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{r.timeLabel}</span>}
+                  <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color:C.sec, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</span>
+                  <ChevronRight size={12} color={C.muted} style={{ flexShrink:0 }} />
+                </div>
+              )
+            }
+            const task = entry.task
+            const isFill = entry.isFill
             const done = task.status === 'Done'
             const timeLabel = fmtTimeLabel(task.start_time)
-            const isFill = fillIds.has(task.id)
             const rescheduling = rescheduleId === task.id
             const editingTime = editingTimeId === task.id
+            const editingTitle = editingTitleId === task.id
             const opts = rescheduling ? rescheduleOptions(task.due_date ? new Date(task.due_date + 'T12:00:00') : new Date()) : []
             return (
-              <div key={task.id}>
+              <div key={'task-'+task.id}>
                 <div
-                  draggable
+                  draggable={!editingTitle}
                   onDragStart={e => handleTaskDragStart(e, task.id, dueDate)}
                   onDragEnd={() => { setDragId(null); setDragOver(null) }}
                   onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(task.id) }}
                   onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && dragOver === task.id) setDragOver(null) }}
-                  onDrop={e => { e.stopPropagation(); handleColumnDrop(e, dueDate, list, task.id) }}
+                  onDrop={e => { e.stopPropagation(); handleColumnDrop(e, dueDate, taskEntries, task.id) }}
                   style={{
                     display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
                     background: C.surface, border:'1px solid '+(dragOver===task.id?C.cyan+'80':isFill?C.amber+'35':C.border),
-                    borderRadius:'0.6rem', opacity: dragId===task.id ? 0.4 : 1, cursor:'grab', transition:'opacity 0.1s,border-color 0.1s',
+                    borderRadius:'0.6rem', opacity: dragId===task.id ? 0.4 : 1, cursor: editingTitle ? 'default' : 'grab', transition:'opacity 0.1s,border-color 0.1s',
                   }}>
                   <GripVertical size={12} color={C.muted} style={{ flexShrink:0 }} />
                   <button type="button" onClick={() => toggleDone(task)} style={{
@@ -485,7 +565,24 @@ function HomeDaysBoard({ refreshKey }: { refreshKey?: number }) {
                   {task.is_frog && <span style={{ fontSize:'0.7rem', flexShrink:0 }}>&#128054;</span>}
                   {timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:C.cyan, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{timeLabel}</span>}
                   {!timeLabel && isFill && <span style={{ fontSize:'0.58rem', fontWeight:700, color:C.amber, flexShrink:0, textTransform:'uppercase', letterSpacing:'0.04em' }}>Priority</span>}
-                  <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color: done?C.muted:C.text, textDecoration: done?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.title}</span>
+                  {editingTitle ? (
+                    <input
+                      autoFocus
+                      value={titleDraft}
+                      onChange={e => setTitleDraft(e.target.value)}
+                      onBlur={() => saveTitle(task)}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingTitleId(null) }}
+                      onClick={e => e.stopPropagation()}
+                      style={{ flex:1, minWidth:0, fontSize:'0.8rem', color:C.text, background:C.card, border:'1px solid '+C.cyan, borderRadius:'0.35rem', padding:'0.15rem 0.4rem', fontFamily:'inherit', outline:'none' }}
+                    />
+                  ) : (
+                    <span
+                      onClick={() => startEditTitle(task)}
+                      title="Click to rename"
+                      style={{ flex:1, minWidth:0, fontSize:'0.8rem', color: done?C.muted:C.text, textDecoration: done?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor:'text' }}>
+                      {task.title}
+                    </span>
+                  )}
                   <button type="button" draggable={false} onClick={() => { startEditTime(task); setRescheduleId(null) }} title={timeLabel ? 'Change time' : 'Set time'} style={{
                     background:'none', border:'none', color: editingTime ? C.cyan : C.muted, cursor:'pointer', padding:'0.2rem', flexShrink:0, display:'flex', alignItems:'center',
                   }}>
@@ -548,7 +645,7 @@ function HomeDaysBoard({ refreshKey }: { refreshKey?: number }) {
           "Recommend & Organise", opened here with today pre-selected so this
           list updates the moment you confirm. */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.65rem', gap:'0.75rem', flexWrap:'wrap' }}>
-        <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>Drag a card to a different day to move it, or use <Zap size={10} style={{ verticalAlign:'-1px' }}/> to set its time.</p>
+        <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>Drag a card to a different day to move it, click its title to rename, or use <Zap size={10} style={{ verticalAlign:'-1px' }}/> to set its time.</p>
         <button onClick={() => router.push('/calendar?openRecommend=today')} style={{
           display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.4rem 0.75rem',
           background:'linear-gradient(135deg,rgba(0,212,255,0.15),rgba(0,255,136,0.12))',
@@ -558,9 +655,9 @@ function HomeDaysBoard({ refreshKey }: { refreshKey?: number }) {
           <Sparkles size={12} />Organise Today
         </button>
       </div>
-      <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap' }}>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:'0.75rem' }}>
         {days.map(d => (
-          <Column key={d.dateStr} label={d.label} dueDate={d.dateStr} list={d.list} reminderList={d.reminderList} habitList={d.habitList} fillIds={fillIds} />
+          <Column key={d.dateStr} label={d.label} dateLabel={d.dateLabel} dueDate={d.dateStr} entries={d.entries} />
         ))}
       </div>
     </div>
