@@ -1,31 +1,35 @@
 // ============================================================
 // Google Docs REST API client — real in-place editing for scripts
 //
-// Reuses the exact same "flowstate-drive" service account and access token
-// as lib/googleDrive.ts (the 'drive' OAuth scope already covers the Docs
-// API). This is what makes true in-place edits possible — unlike Claude's
+// Authenticates via Workspace domain-wide delegation, impersonating Tom's
+// own Google account (see getImpersonatedAccessToken() in lib/googleDrive.ts)
+// rather than the bare "flowstate-drive" service account. Tom's Workspace
+// blocks sharing files with external accounts outright (confirmed: Google
+// shows a "can't share outside your organization" warning), so per-doc
+// sharing was a dead end — delegation sidesteps that by acting AS Tom, who
+// already owns/has access to whatever doc he pastes in.
+//
+// This is what makes true in-place edits possible at all — unlike Claude's
 // built-in Drive connector (claude.ai / Cowork's own Drive tools), which can
 // only read a doc or create a new one, this calls docs.googleapis.com's
 // batchUpdate directly, the same underlying mechanic third-party "Claude can
 // edit Google Docs" tools use.
 //
-// SETUP REQUIRED (one-time, done by Tom in his own Google account):
-//   1. Share the specific Google Doc (or its parent folder) with the
-//      service account's email (GOOGLE_DRIVE_CLIENT_EMAIL) as Editor —
-//      same step already done for SOUND MONEY HQ in Drive.
-//   2. Make sure the "Google Docs API" is enabled for the same Google Cloud
-//      project the service account belongs to (Drive API being enabled
-//      does not automatically enable this — it's a separate API to flip on
-//      in the Cloud Console's "APIs & Services" page). If a request below
-//      fails with something like "Docs API has not been used in project...",
-//      that's the fix.
+// SETUP REQUIRED (one-time, done by Tom as a Workspace Super Admin) — see
+// the getImpersonatedAccessToken() header comment in lib/googleDrive.ts for
+// the exact steps (Cloud Console domain-wide delegation + Admin Console
+// authorization + GOOGLE_WORKSPACE_IMPERSONATE_EMAIL env var). Also make
+// sure the "Google Docs API" is enabled for the same Google Cloud project
+// the service account belongs to — Drive API being enabled doesn't
+// automatically enable this, it's a separate flip in the Cloud Console's
+// "APIs & Services" page.
 //
-// SERVER-ONLY — goes through lib/googleDrive.ts's getAccessToken(), which
-// reads process.env.GOOGLE_DRIVE_PRIVATE_KEY. Never import this from a
+// SERVER-ONLY — goes through lib/googleDrive.ts's getImpersonatedAccessToken(),
+// which reads process.env.GOOGLE_DRIVE_PRIVATE_KEY. Never import this from a
 // client component; all access goes through app/api/gdocs/route.ts.
 // ============================================================
 
-import { getAccessToken } from './googleDrive'
+import { getImpersonatedAccessToken } from './googleDrive'
 
 const DOCS_API = 'https://docs.googleapis.com/v1/documents'
 
@@ -39,7 +43,7 @@ export function extractDocId(urlOrId: string): string | null {
 }
 
 async function docsFetch(path: string, opts: RequestInit = {}) {
-  const token = await getAccessToken()
+  const token = await getImpersonatedAccessToken()
   const res = await fetch(DOCS_API + path, {
     ...opts,
     headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
@@ -52,6 +56,17 @@ async function docsFetch(path: string, opts: RequestInit = {}) {
     // the likely cause, so the UI can tell Tom exactly what to do.
     if (body.includes('SUGGEST') || /developer preview/i.test(body)) {
       throw new Error('Suggestion mode isn\'t available on this Google Cloud project yet -- it requires enrolling in the Google Workspace Developer Preview Program (needs a Workspace-domain email, not a personal Gmail). See https://developers.google.com/workspace/preview. Raw error: ' + body)
+    }
+    // A bare 403/PERMISSION_DENIED with no other detail, now that this goes
+    // through domain-wide delegation, most likely means the delegation
+    // itself isn't fully wired up yet (Client ID not authorized in Admin
+    // Console, wrong/missing scopes there, or GOOGLE_WORKSPACE_IMPERSONATE_EMAIL
+    // pointing at the wrong address) rather than a per-doc sharing issue.
+    if (res.status === 403 && /PERMISSION_DENIED/i.test(body)) {
+      throw new Error(
+        'Permission denied. Since this uses domain-wide delegation (not per-doc sharing), check: (1) the service account\'s Client ID is authorized in Admin Console -> Security -> API Controls -> Domain-wide Delegation with scopes ' +
+        'https://www.googleapis.com/auth/drive and https://www.googleapis.com/auth/documents, (2) GOOGLE_WORKSPACE_IMPERSONATE_EMAIL matches the Google account that actually owns/has access to this doc, and (3) it can take a few minutes for a new delegation grant to take effect. Raw error: ' + body
+      )
     }
     throw new Error('Google Docs API error ' + res.status + ': ' + body)
   }

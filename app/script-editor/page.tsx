@@ -261,7 +261,7 @@ export default function ScriptEditorPage() {
           )}
           {loadErr === null && !snapshot && (
             <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.6rem 0 0', lineHeight:1.5 }}>
-              First time using this doc? Share it with the service account email in your Google Drive setup (Editor access) — same as SOUND MONEY HQ.
+              Works on any doc you own or have access to — no per-doc sharing needed (this uses Workspace domain-wide delegation, not a shared service account).
             </p>
           )}
         </div>

@@ -23,7 +23,13 @@ const SCOPE = 'https://www.googleapis.com/auth/drive'
 const TOKEN_URI = 'https://oauth2.googleapis.com/token'
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
 
+// Wider scope for the impersonated token below -- explicitly includes the
+// Docs API scope alongside Drive, so whatever gets authorized for domain-wide
+// delegation in the Workspace Admin Console matches exactly what's requested.
+const IMPERSONATED_SCOPE = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents'
+
 let cachedToken: { token: string; expiresAt: number } | null = null
+let cachedImpersonatedToken: { token: string; expiresAt: number } | null = null
 
 function base64url(input: Buffer | string): string {
   return Buffer.from(input).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
@@ -66,6 +72,69 @@ export async function getAccessToken(): Promise<string> {
   const data = await res.json()
   cachedToken = { token: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 }
   return cachedToken.token
+}
+
+// A second, wider-scoped token that impersonates Tom's own Google account
+// (admin@derivativemedia.co.uk) via Workspace domain-wide delegation, instead
+// of acting as the bare service account. This exists because Tom's Workspace
+// blocks sharing files with external accounts entirely (confirmed: sharing
+// this service account onto a doc triggers Google's "can't share outside
+// your organization" warning) -- domain-wide delegation sidesteps that by
+// letting the service account act AS Tom on his own files, so nothing needs
+// to be individually shared with it ever again.
+//
+// SETUP (one-time, done by Tom as a Workspace Super Admin):
+//   1. Google Cloud Console -> IAM & Admin -> Service Accounts -> the
+//      "flowstate-drive" account -> enable "Domain-wide delegation" ->
+//      copy the numeric OAuth Client ID it generates.
+//   2. Google Admin Console (admin.google.com) -> Security -> Access and
+//      data control -> API Controls -> Domain-wide Delegation -> Add new ->
+//      paste that Client ID -> scopes:
+//      https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/documents
+//   3. Set GOOGLE_WORKSPACE_IMPERSONATE_EMAIL=admin@derivativemedia.co.uk
+//      in .env.local (and the Vercel dashboard for production).
+//
+// Deliberately kept SEPARATE from getAccessToken() above: that token can
+// only ever see what's been explicitly shared with the service account
+// (SOUND MONEY HQ), which is the safety invariant the Brand Assets browser
+// below relies on to accept an arbitrary folderId from the client without
+// its own allow-list. This impersonated token can see everything in Tom's
+// Drive, so it's only ever used by lib/googleDocs.ts's Script Editor, which
+// Tom drives by pasting in one specific doc URL at a time -- never by
+// browsing/listing an arbitrary folder tree client-side.
+export async function getImpersonatedAccessToken(): Promise<string> {
+  if (cachedImpersonatedToken && cachedImpersonatedToken.expiresAt > Date.now() + 30_000) return cachedImpersonatedToken.token
+
+  const impersonateEmail = process.env.GOOGLE_WORKSPACE_IMPERSONATE_EMAIL
+  if (!impersonateEmail) {
+    throw new Error('Domain-wide delegation not configured — missing GOOGLE_WORKSPACE_IMPERSONATE_EMAIL in .env.local (see lib/googleDrive.ts header for the full setup steps).')
+  }
+  const clientEmail = process.env.GOOGLE_DRIVE_CLIENT_EMAIL
+  const rawKey = process.env.GOOGLE_DRIVE_PRIVATE_KEY
+  if (!clientEmail || !rawKey) {
+    throw new Error('Google Drive not configured — missing GOOGLE_DRIVE_CLIENT_EMAIL / GOOGLE_DRIVE_PRIVATE_KEY in .env.local')
+  }
+  const privateKey = rawKey.trim().replace(/^"|"$/g, '').replace(/\\n/g, '\n')
+
+  const now = Math.floor(Date.now() / 1000)
+  const header = { alg: 'RS256', typ: 'JWT' }
+  // The 'sub' claim is what makes this an impersonated token instead of a
+  // bare service-account one -- it only works once the Client ID above has
+  // been authorized for domain-wide delegation with a matching scope.
+  const claims = { iss: clientEmail, sub: impersonateEmail, scope: IMPERSONATED_SCOPE, aud: TOKEN_URI, iat: now, exp: now + 3600 }
+  const unsigned = base64url(JSON.stringify(header)) + '.' + base64url(JSON.stringify(claims))
+  const signature = crypto.sign('RSA-SHA256', Buffer.from(unsigned), privateKey)
+  const jwt = unsigned + '.' + base64url(signature)
+
+  const res = await fetch(TOKEN_URI, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt }),
+  })
+  if (!res.ok) throw new Error('Google auth failed (impersonated): ' + (await res.text()))
+  const data = await res.json()
+  cachedImpersonatedToken = { token: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 }
+  return cachedImpersonatedToken.token
 }
 
 export type DriveFile = {
