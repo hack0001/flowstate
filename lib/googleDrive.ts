@@ -29,7 +29,11 @@ function base64url(input: Buffer | string): string {
   return Buffer.from(input).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-async function getAccessToken(): Promise<string> {
+// Exported so lib/googleDocs.ts can reuse the same service-account token
+// instead of duplicating the JWT-signing logic — the 'drive' scope this
+// requests already covers the Docs API (docs.googleapis.com) too, so no
+// second credential or scope is needed for real in-place Google Doc edits.
+export async function getAccessToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 30_000) return cachedToken.token
 
   const clientEmail = process.env.GOOGLE_DRIVE_CLIENT_EMAIL
