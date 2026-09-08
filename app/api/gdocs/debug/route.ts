@@ -48,10 +48,10 @@ export async function GET(req: NextRequest) {
       result.docError = String(e)
     }
 
-    // Harmless write probe: searches for a string that can't exist in any
-    // real doc, so occurrencesChanged will be 0 and nothing is actually
-    // changed -- but it still exercises the exact batchUpdate write path
-    // (and its authorization check) that reading the doc does not.
+    // Harmless write probe #1 (replaceAllText): searches for a string that
+    // can't exist in any real doc, so occurrencesChanged will be 0 and
+    // nothing is actually changed -- but it still exercises the batchUpdate
+    // write path (and its authorization check) that reading the doc does not.
     try {
       const writeRes = await fetch('https://docs.googleapis.com/v1/documents/' + docId + ':batchUpdate', {
         method: 'POST',
@@ -62,6 +62,36 @@ export async function GET(req: NextRequest) {
       result.writeProbeBody = await writeRes.json().catch(async () => await writeRes.text())
     } catch (e) {
       result.writeProbeError = String(e)
+    }
+
+    // Harmless write probe #2 (insertText + deleteContentRange): the real
+    // "Rewrite with Claude" / "Append" tools use these two request types,
+    // never tested by probe #1 above. Inserts a single throwaway character
+    // near the end, then deletes that exact same character back out in the
+    // same call -- nets to a true no-op on content, but exercises the same
+    // request types replaceGoogleDocText()/appendToGoogleDoc() use, to check
+    // whether it's specifically these that are denied vs replaceAllText.
+    try {
+      const freshDoc = await fetch('https://docs.googleapis.com/v1/documents/' + docId, {
+        headers: { Authorization: 'Bearer ' + token },
+      }).then(r => r.json())
+      const content = freshDoc.body?.content ?? []
+      const endIndex = content.length ? (content[content.length - 1].endIndex ?? 1) : 1
+      const insertAt = Math.max(1, endIndex - 1)
+      const writeRes2 = await fetch('https://docs.googleapis.com/v1/documents/' + docId + ':batchUpdate', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [
+            { insertText: { location: { index: insertAt }, text: 'X' } },
+            { deleteContentRange: { range: { startIndex: insertAt, endIndex: insertAt + 1 } } },
+          ],
+        }),
+      })
+      result.writeProbe2Status = writeRes2.status
+      result.writeProbe2Body = await writeRes2.json().catch(async () => await writeRes2.text())
+    } catch (e) {
+      result.writeProbe2Error = String(e)
     }
   } else {
     result.docSkipped = 'Pass ?docId=... to also test the Docs API call.'
