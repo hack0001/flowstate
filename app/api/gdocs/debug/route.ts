@@ -47,6 +47,22 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       result.docError = String(e)
     }
+
+    // Harmless write probe: searches for a string that can't exist in any
+    // real doc, so occurrencesChanged will be 0 and nothing is actually
+    // changed -- but it still exercises the exact batchUpdate write path
+    // (and its authorization check) that reading the doc does not.
+    try {
+      const writeRes = await fetch('https://docs.googleapis.com/v1/documents/' + docId + ':batchUpdate', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: [{ replaceAllText: { containsText: { text: '__DIAGNOSTIC_PROBE_STRING_THAT_CANNOT_EXIST__', matchCase: true }, replaceText: '' } }] }),
+      })
+      result.writeProbeStatus = writeRes.status
+      result.writeProbeBody = await writeRes.json().catch(async () => await writeRes.text())
+    } catch (e) {
+      result.writeProbeError = String(e)
+    }
   } else {
     result.docSkipped = 'Pass ?docId=... to also test the Docs API call.'
   }
