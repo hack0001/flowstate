@@ -18,8 +18,19 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // TEMPORARY: verbose diagnostics on the REAL endpoint, not a parallel
+  // replica -- every hand-built replica of this exact operation (see
+  // app/api/gdocs/debug/route.ts, probes 1-4) has succeeded against the same
+  // doc, same token, same request shape, including a full-document
+  // delete+reinsert and a SUGGEST-mode write. So the gap has to be something
+  // about what THIS route actually receives or does at runtime that isn't
+  // reproduced by a synthetic test -- logging it here is the only way left
+  // to see it. Safe to trim back down once this is resolved.
+  let parsed: { action?: string; url?: string; text?: string; find?: string; replace?: string; matchCase?: boolean; suggest?: boolean } = {}
   try {
-    const { action, url, text, find, replace, matchCase, suggest } = await req.json()
+    parsed = await req.json()
+    const { action, url, text, find, replace, matchCase, suggest } = parsed
+    console.log('[gdocs POST] received', { action, url, textLen: text?.length, find, replace, matchCase, suggest })
     if (!url) return NextResponse.json({ error: 'Missing url.' }, { status: 400 })
 
     if (action === 'replace_all') {
@@ -39,6 +50,17 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ error: "Unknown action — use 'replace_all', 'find_replace', or 'append'." }, { status: 400 })
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 })
+    console.error('[gdocs POST] threw', e)
+    return NextResponse.json({
+      error: String(e),
+      debug: {
+        receivedAction: parsed.action ?? null,
+        receivedUrl: parsed.url ?? null,
+        receivedTextLen: parsed.text?.length ?? null,
+        receivedSuggest: parsed.suggest ?? null,
+        errorName: e instanceof Error ? e.name : typeof e,
+        errorStack: e instanceof Error ? e.stack : undefined,
+      },
+    }, { status: 500 })
   }
 }
