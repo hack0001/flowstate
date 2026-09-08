@@ -166,7 +166,7 @@ export default function ScriptEditorPage() {
         body: JSON.stringify({ action: 'replace_all', url: docUrl, text: proposedText, suggest: suggestMode }),
       })
       const data = await res.json()
-      if (data?.error) setApplyMsg('Failed: ' + String(data.error))
+      if (data?.error) setApplyMsg('Failed: ' + String(data.error) + (data.debug ? '\n\nDEBUG: ' + JSON.stringify(data.debug, null, 2) : ''))
       else { setApplyMsg(suggestMode ? 'Suggested in the doc — open it to Accept/Reject.' : 'Applied to the doc.'); loadDoc(docUrl) }
     } catch (e) {
       setApplyMsg('Failed: ' + String(e))
@@ -371,7 +371,7 @@ export default function ScriptEditorPage() {
               </div>
             )}
 
-            {applyMsg && <p style={{ fontSize:'0.78rem', color: applyMsg.startsWith('Failed') ? C.red : C.green, marginTop:'0.9rem' }}>{applyMsg}</p>}
+            {applyMsg && <p style={{ fontSize:'0.78rem', color: applyMsg.startsWith('Failed') ? C.red : C.green, marginTop:'0.9rem', whiteSpace:'pre-wrap' as const }}>{applyMsg}</p>}
           </>
         )}
       </div>
