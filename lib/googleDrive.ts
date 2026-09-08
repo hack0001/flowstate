@@ -102,8 +102,14 @@ export async function getAccessToken(): Promise<string> {
 // Drive, so it's only ever used by lib/googleDocs.ts's Script Editor, which
 // Tom drives by pasting in one specific doc URL at a time -- never by
 // browsing/listing an arbitrary folder tree client-side.
-export async function getImpersonatedAccessToken(): Promise<string> {
-  if (cachedImpersonatedToken && cachedImpersonatedToken.expiresAt > Date.now() + 30_000) return cachedImpersonatedToken.token
+// forceRefresh bypasses the cache entirely and mints a brand-new token --
+// used by lib/googleDocs.ts to recover from a stale/insufficiently-authorized
+// cached token (e.g. one minted moments before a delegation grant finished
+// propagating on Google's side, then held in memory by a warm serverless
+// instance for up to its full ~1hr lifetime) without waiting for it to
+// naturally expire or for the app to get redeployed.
+export async function getImpersonatedAccessToken(forceRefresh = false): Promise<string> {
+  if (!forceRefresh && cachedImpersonatedToken && cachedImpersonatedToken.expiresAt > Date.now() + 30_000) return cachedImpersonatedToken.token
 
   const impersonateEmail = process.env.GOOGLE_WORKSPACE_IMPERSONATE_EMAIL
   if (!impersonateEmail) {

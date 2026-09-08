@@ -43,11 +43,27 @@ export function extractDocId(urlOrId: string): string | null {
 }
 
 async function docsFetch(path: string, opts: RequestInit = {}) {
-  const token = await getImpersonatedAccessToken()
-  const res = await fetch(DOCS_API + path, {
-    ...opts,
-    headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-  })
+  const attempt = async (forceRefresh: boolean) => {
+    const token = await getImpersonatedAccessToken(forceRefresh)
+    const res = await fetch(DOCS_API + path, {
+      ...opts,
+      headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    })
+    return res
+  }
+
+  let res = await attempt(false)
+
+  // A cached token minted moments before a delegation grant fully propagated
+  // (or before per-doc sharing was fixed) can look valid but keep getting
+  // denied for up to its full ~1hr lifetime, even after the underlying
+  // access is actually fine now -- a warm serverless instance holds onto it
+  // in memory rather than re-minting. One automatic retry with a forced
+  // fresh token clears that without needing a redeploy or a wait.
+  if (res.status === 403) {
+    res = await attempt(true)
+  }
+
   if (!res.ok) {
     const body = await res.text()
     // Suggest mode (writeControl.writeMode = 'SUGGEST') is currently gated
@@ -57,15 +73,12 @@ async function docsFetch(path: string, opts: RequestInit = {}) {
     if (body.includes('SUGGEST') || /developer preview/i.test(body)) {
       throw new Error('Suggestion mode isn\'t available on this Google Cloud project yet -- it requires enrolling in the Google Workspace Developer Preview Program (needs a Workspace-domain email, not a personal Gmail). See https://developers.google.com/workspace/preview. Raw error: ' + body)
     }
-    // A bare 403/PERMISSION_DENIED with no other detail, now that this goes
-    // through domain-wide delegation, most likely means the delegation
-    // itself isn't fully wired up yet (Client ID not authorized in Admin
-    // Console, wrong/missing scopes there, or GOOGLE_WORKSPACE_IMPERSONATE_EMAIL
-    // pointing at the wrong address) rather than a per-doc sharing issue.
+    // A bare 403/PERMISSION_DENIED that survives even a forced-fresh token
+    // is a real configuration problem, not a caching artifact.
     if (res.status === 403 && /PERMISSION_DENIED/i.test(body)) {
       throw new Error(
-        'Permission denied. Since this uses domain-wide delegation (not per-doc sharing), check: (1) the service account\'s Client ID is authorized in Admin Console -> Security -> API Controls -> Domain-wide Delegation with scopes ' +
-        'https://www.googleapis.com/auth/drive and https://www.googleapis.com/auth/documents, (2) GOOGLE_WORKSPACE_IMPERSONATE_EMAIL matches the Google account that actually owns/has access to this doc, and (3) it can take a few minutes for a new delegation grant to take effect. Raw error: ' + body
+        'Permission denied (persisted after retrying with a fresh token). Since this uses domain-wide delegation (not per-doc sharing), check: (1) the service account\'s Client ID is authorized in Admin Console -> Security -> API Controls -> Domain-wide Delegation with scopes ' +
+        'https://www.googleapis.com/auth/drive and https://www.googleapis.com/auth/documents, (2) GOOGLE_WORKSPACE_IMPERSONATE_EMAIL matches the Google account that actually owns/has access to this doc. Raw error: ' + body
       )
     }
     throw new Error('Google Docs API error ' + res.status + ': ' + body)
