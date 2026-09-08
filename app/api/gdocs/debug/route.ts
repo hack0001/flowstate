@@ -126,6 +126,34 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       result.writeProbe3Error = String(e)
     }
+
+    // Harmless write probe #4: THE actual smoking-gun test. Identical no-op
+    // to probe #1 (replaceAllText on a string that can't exist -- changes
+    // nothing) except this one adds writeControl: { writeMode: 'SUGGEST' },
+    // exactly like replaceGoogleDocText(url, text, suggest=true) does. The
+    // Script Editor's suggestion-mode checkbox defaults to CHECKED
+    // (useState(true)) and resets back to checked on every page refresh --
+    // so if suggestion mode isn't actually enabled for this Cloud project,
+    // every real "Apply to Google Doc" click sends writeControl.SUGGEST and
+    // gets a bare PERMISSION_DENIED back (Google's error body for this case
+    // may not literally say "SUGGEST" or "developer preview", so the
+    // friendly error in docsFetch never triggers and it looks identical to
+    // a generic permission problem). If writeProbe4 fails here while probe #1
+    // (no writeControl) succeeds, that confirms suggestion mode is the cause.
+    try {
+      const writeRes4 = await fetch('https://docs.googleapis.com/v1/documents/' + docId + ':batchUpdate', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [{ replaceAllText: { containsText: { text: '__DIAGNOSTIC_PROBE_STRING_THAT_CANNOT_EXIST__', matchCase: true }, replaceText: '' } }],
+          writeControl: { writeMode: 'SUGGEST' },
+        }),
+      })
+      result.writeProbe4Status = writeRes4.status
+      result.writeProbe4Body = await writeRes4.json().catch(async () => await writeRes4.text())
+    } catch (e) {
+      result.writeProbe4Error = String(e)
+    }
   } else {
     result.docSkipped = 'Pass ?docId=... to also test the Docs API call.'
   }
