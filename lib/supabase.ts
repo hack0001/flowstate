@@ -714,3 +714,56 @@ export async function deleteAdobeSkillResource(id: string): Promise<{ error: str
   if (error) return { error: explainAdobeSkillsError(error.message) }
   return { error: null }
 }
+
+// ---- Music library (Sound folder) ----
+// A running store of links to music/sound tracks worth using in videos or
+// Shorts -- a trending/slowed TikTok or YouTube audio, a phonk track, a
+// lo-fi bed, etc -- each named with an optional artist, genre/mood tag and
+// notes, plus a simple saved/used tracker. Own dedicated section,
+// app/music/page.tsx. Requires 045_music_library.sql.
+export const MUSIC_GENRES = ['Trending / Viral', 'Phonk', 'Lo-fi / Chill', 'Cinematic / Epic', 'Upbeat / Pop', 'Other'] as const
+export type MusicGenre = typeof MUSIC_GENRES[number]
+export type MusicTrack = {
+  id: string
+  genre: MusicGenre
+  title: string
+  url: string
+  artist: string | null
+  notes: string | null
+  status: 'Saved' | 'Used'
+  created_at: string
+}
+
+function explainMusicLibraryError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('music_library')) {
+    return 'Setup needed: run supabase/migrations/045_music_library.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading the music library.'
+}
+
+export async function getMusicLibrary(): Promise<{ tracks: MusicTrack[]; error: string | null }> {
+  const { data, error } = await supabase.from('music_library').select('*').order('created_at', { ascending: false })
+  if (error) return { tracks: [], error: explainMusicLibraryError(error.message) }
+  return { tracks: (data as MusicTrack[]) ?? [], error: null }
+}
+
+export async function addMusicTrack(genre: MusicGenre, title: string, url: string, artist: string, notes: string): Promise<{ track: MusicTrack | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('music_library')
+    .insert({ genre, title: title.trim(), url: url.trim(), artist: artist.trim() || null, notes: notes.trim() || null, status: 'Saved' })
+    .select().single()
+  if (error) return { track: null, error: explainMusicLibraryError(error.message) }
+  return { track: data as MusicTrack, error: null }
+}
+
+export async function updateMusicTrack(id: string, patch: Partial<Pick<MusicTrack, 'genre' | 'title' | 'url' | 'artist' | 'notes' | 'status'>>): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('music_library').update(patch).eq('id', id)
+  if (error) return { error: explainMusicLibraryError(error.message) }
+  return { error: null }
+}
+
+export async function deleteMusicTrack(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('music_library').delete().eq('id', id)
+  if (error) return { error: explainMusicLibraryError(error.message) }
+  return { error: null }
+}
