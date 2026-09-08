@@ -44,8 +44,26 @@ async function docsFetch(path: string, opts: RequestInit = {}) {
     ...opts,
     headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
   })
-  if (!res.ok) throw new Error('Google Docs API error ' + res.status + ': ' + (await res.text()))
+  if (!res.ok) {
+    const body = await res.text()
+    // Suggest mode (writeControl.writeMode = 'SUGGEST') is currently gated
+    // behind Google's Workspace Developer Preview Program -- surface a
+    // specific, actionable message instead of a raw API error when that's
+    // the likely cause, so the UI can tell Tom exactly what to do.
+    if (body.includes('SUGGEST') || /developer preview/i.test(body)) {
+      throw new Error('Suggestion mode isn\'t available on this Google Cloud project yet -- it requires enrolling in the Google Workspace Developer Preview Program (needs a Workspace-domain email, not a personal Gmail). See https://developers.google.com/workspace/preview. Raw error: ' + body)
+    }
+    throw new Error('Google Docs API error ' + res.status + ': ' + body)
+  }
   return res.json()
+}
+
+// Requests processed with writeMode 'SUGGEST' show up in Google Docs as
+// real, colored suggestions -- exactly what you see when a collaborator
+// edits in Suggesting mode -- which Tom can then Accept/Reject right there
+// in the Docs UI, instead of the edit landing directly in the document.
+function writeControlFor(suggest: boolean) {
+  return suggest ? { writeControl: { writeMode: 'SUGGEST' } } : {}
 }
 
 // Google's doc JSON is a deeply nested structural-element tree — this walks
@@ -97,35 +115,35 @@ export async function getGoogleDocText(docIdOrUrl: string): Promise<GoogleDocSna
 // for "rewrite this whole script" / "tighten the intro" style requests
 // where Claude regenerates the full text; for a single surgical swap use
 // findReplaceInGoogleDoc instead, which doesn't touch anything else.
-export async function replaceGoogleDocText(docIdOrUrl: string, newText: string): Promise<void> {
+export async function replaceGoogleDocText(docIdOrUrl: string, newText: string, suggest = false): Promise<void> {
   const { docId, endIndex } = await getGoogleDocText(docIdOrUrl)
   const requests: any[] = []
   if (endIndex > 1) {
     requests.push({ deleteContentRange: { range: { startIndex: 1, endIndex: endIndex - 1 } } })
   }
   if (newText) requests.push({ insertText: { location: { index: 1 }, text: newText } })
-  await docsFetch('/' + docId + ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests }) })
+  await docsFetch('/' + docId + ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests, ...writeControlFor(suggest) }) })
 }
 
 // Surgical find/replace across the whole doc — swap a name, fix a repeated
 // phrase, tighten one line — without regenerating or touching anything
 // else. Returns how many occurrences were changed.
-export async function findReplaceInGoogleDoc(docIdOrUrl: string, findText: string, replaceText: string, matchCase = false): Promise<number> {
+export async function findReplaceInGoogleDoc(docIdOrUrl: string, findText: string, replaceText: string, matchCase = false, suggest = false): Promise<number> {
   const docId = extractDocId(docIdOrUrl)
   if (!docId) throw new Error('Could not find a Google Doc ID in that link.')
   const data = await docsFetch('/' + docId + ':batchUpdate', {
     method: 'POST',
-    body: JSON.stringify({ requests: [{ replaceAllText: { containsText: { text: findText, matchCase }, replaceText } }] }),
+    body: JSON.stringify({ requests: [{ replaceAllText: { containsText: { text: findText, matchCase }, replaceText } }], ...writeControlFor(suggest) }),
   })
   return data.replies?.[0]?.replaceAllText?.occurrencesChanged ?? 0
 }
 
 // Appends text to the end of the doc — e.g. adding a new section — without
 // touching what's already there.
-export async function appendToGoogleDoc(docIdOrUrl: string, text: string): Promise<void> {
+export async function appendToGoogleDoc(docIdOrUrl: string, text: string, suggest = false): Promise<void> {
   const { docId, endIndex } = await getGoogleDocText(docIdOrUrl)
   await docsFetch('/' + docId + ':batchUpdate', {
     method: 'POST',
-    body: JSON.stringify({ requests: [{ insertText: { location: { index: Math.max(1, endIndex - 1) }, text } }] }),
+    body: JSON.stringify({ requests: [{ insertText: { location: { index: Math.max(1, endIndex - 1) }, text } }], ...writeControlFor(suggest) }),
   })
 }

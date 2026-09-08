@@ -21,6 +21,28 @@ const MODELS = [
 type Snapshot = { docId: string; title: string; text: string; endIndex: number }
 type Tool = 'rewrite' | 'find_replace' | 'append'
 
+// "Skill" presets — editing rules lifted from the installed CGE skills
+// (cge-scriptwriter's VOICE RULES, cge-holy-trifecta's intro rules), minus
+// their intake questions and promo/CTA blocks, which don't belong in an
+// automated doc edit. Selecting one prepends its rules to the system prompt
+// sent to Claude, on top of whatever instruction you type. Add more presets
+// here as you find edits you keep asking for the same way.
+const STYLE_PRESETS = [
+  { id:'none', label:'No preset — just my instruction', rules:'' },
+  {
+    id:'scriptwriter-voice', label:'Scriptwriter voice (CGE method)',
+    rules:"Match this voice: conversational mid-length sentences with the occasional short punchy line, natural connectors ('Now,' 'So,' 'All right,' 'By the way,' 'Honestly'). Complete sentences only -- no fragments, no one-word lines like 'Boom.' or 'Done.' Numbers always numeric ($77,000 not 'seventy-seven thousand'; '5 ways' not 'five ways'). No year stamps -- use 'right now' or 'currently' instead. No robotic triple-beat cadence ('it's fast, it's free, it's easy'). Avoid AI-sounding phrases: 'level up', 'unlock your potential', 'game-changer', 'delve', 'in today's fast-paced world', 'in conclusion', 'here's the thing', 'at the end of the day'. Plain vocabulary, roughly a 10-year-old reading level.",
+  },
+  {
+    id:'punchier-hook', label:'Punch up the hook/intro (CGE Holy Trifecta method)',
+    rules:"Rewrite the opening so it restates the title's promise in the first 1-2 sentences using the title's own keywords -- don't bury it. Keep the cold open to roughly 10-30 seconds of spoken content (about 30-90 words). Vary the rhythm -- no robotic triple-beat cadence. Numbers always numeric, no year stamps, complete sentences only. Never invent a stat, quote, or name -- write [FILL IN: description] instead.",
+  },
+  {
+    id:'tighten', label:'Tighten & trim',
+    rules:'Cut ruthlessly for pace -- remove filler, redundant setup, and throat-clearing, while keeping every fact, number, and beat that is actually load-bearing. Prefer shorter sentences. Do not add new content.',
+  },
+] as const
+
 const inputStyle: React.CSSProperties = {
   width:'100%', padding:'0.6rem 0.8rem', background:C.surface, border:'1px solid '+C.border,
   borderRadius:'0.625rem', color:C.text, fontFamily:'inherit', fontSize:'0.85rem', outline:'none',
@@ -58,8 +80,15 @@ export default function ScriptEditorPage() {
   const [model, setModel] = useState<string>(MODELS[1].value)
   const [tool, setTool] = useState<Tool>('rewrite')
 
+  // Suggestion mode -- when on, edits land in the doc as real Google Docs
+  // suggestions (colored, Accept/Reject) instead of landing directly.
+  // Requires the doc's Google Cloud project to be enrolled in Google's
+  // Workspace Developer Preview Program -- see the note under the toggle.
+  const [suggestMode, setSuggestMode] = useState(true)
+
   // Rewrite tool
   const [instruction, setInstruction] = useState('')
+  const [stylePreset, setStylePreset] = useState<string>(STYLE_PRESETS[0].id)
   const [proposedText, setProposedText] = useState('')
   const [generating, setGenerating] = useState(false)
   const [genMsg, setGenMsg] = useState<string | null>(null)
@@ -71,6 +100,7 @@ export default function ScriptEditorPage() {
 
   // Append tool
   const [appendInstruction, setAppendInstruction] = useState('')
+  const [appendStylePreset, setAppendStylePreset] = useState<string>(STYLE_PRESETS[0].id)
   const [appendProposed, setAppendProposed] = useState('')
 
   const [applying, setApplying] = useState(false)
@@ -101,7 +131,9 @@ export default function ScriptEditorPage() {
     if (!snapshot || !instruction.trim()) return
     setGenerating(true)
     setGenMsg(null)
-    const systemPrompt = "You are editing a YouTube script live, alongside the writer, in a Google Doc. You'll get the CURRENT FULL TEXT of the doc and an instruction for what to change. Return ONLY the complete, updated full text of the document -- no commentary, no markdown fences, no preamble, no explanation before or after. Keep it plain text (no markdown headers/bullets) matching the doc's existing style. Leave anything not related to the instruction exactly as it was, unless the instruction clearly asks for a full rewrite."
+    const preset = STYLE_PRESETS.find(p => p.id === stylePreset)
+    let systemPrompt = "You are editing a YouTube script live, alongside the writer, in a Google Doc. You'll get the CURRENT FULL TEXT of the doc and an instruction for what to change. Return ONLY the complete, updated full text of the document -- no commentary, no markdown fences, no preamble, no explanation before or after. Keep it plain text (no markdown headers/bullets) matching the doc's existing style. Leave anything not related to the instruction exactly as it was, unless the instruction clearly asks for a full rewrite."
+    if (preset?.rules) systemPrompt += '\n\n' + preset.rules
     const userPrompt = 'CURRENT DOCUMENT TEXT:\n"""\n' + snapshot.text + '\n"""\n\nINSTRUCTION: ' + instruction.trim()
     const { text, error } = await consult(systemPrompt, userPrompt, model)
     if (error) setGenMsg(error)
@@ -113,7 +145,9 @@ export default function ScriptEditorPage() {
     if (!snapshot || !appendInstruction.trim()) return
     setGenerating(true)
     setGenMsg(null)
-    const systemPrompt = "You are helping write a YouTube script live, alongside the writer, in a Google Doc. You'll get the CURRENT FULL TEXT of the doc (for context/voice/continuity) and an instruction for a new section to add at the END of the doc. Return ONLY the new section's text to append -- no commentary, no markdown fences, no repeating the existing text. Plain text, matching the doc's existing style and voice."
+    const preset = STYLE_PRESETS.find(p => p.id === appendStylePreset)
+    let systemPrompt = "You are helping write a YouTube script live, alongside the writer, in a Google Doc. You'll get the CURRENT FULL TEXT of the doc (for context/voice/continuity) and an instruction for a new section to add at the END of the doc. Return ONLY the new section's text to append -- no commentary, no markdown fences, no repeating the existing text. Plain text, matching the doc's existing style and voice."
+    if (preset?.rules) systemPrompt += '\n\n' + preset.rules
     const userPrompt = 'CURRENT DOCUMENT TEXT (for context only -- do not repeat it):\n"""\n' + snapshot.text + '\n"""\n\nWhat to add at the end: ' + appendInstruction.trim()
     const { text, error } = await consult(systemPrompt, userPrompt, model)
     if (error) setGenMsg(error)
@@ -129,11 +163,11 @@ export default function ScriptEditorPage() {
       const res = await fetch('/api/gdocs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'replace_all', url: docUrl, text: proposedText }),
+        body: JSON.stringify({ action: 'replace_all', url: docUrl, text: proposedText, suggest: suggestMode }),
       })
       const data = await res.json()
       if (data?.error) setApplyMsg('Failed: ' + String(data.error))
-      else { setApplyMsg('Applied to the doc.'); loadDoc(docUrl) }
+      else { setApplyMsg(suggestMode ? 'Suggested in the doc — open it to Accept/Reject.' : 'Applied to the doc.'); loadDoc(docUrl) }
     } catch (e) {
       setApplyMsg('Failed: ' + String(e))
     } finally {
@@ -149,11 +183,11 @@ export default function ScriptEditorPage() {
       const res = await fetch('/api/gdocs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'find_replace', url: docUrl, find: findText, replace: replaceText, matchCase }),
+        body: JSON.stringify({ action: 'find_replace', url: docUrl, find: findText, replace: replaceText, matchCase, suggest: suggestMode }),
       })
       const data = await res.json()
       if (data?.error) setApplyMsg('Failed: ' + String(data.error))
-      else { setApplyMsg(data.occurrencesChanged + ' occurrence(s) changed.'); loadDoc(docUrl) }
+      else { setApplyMsg(data.occurrencesChanged + (suggestMode ? ' occurrence(s) suggested — open the doc to Accept/Reject.' : ' occurrence(s) changed.')); loadDoc(docUrl) }
     } catch (e) {
       setApplyMsg('Failed: ' + String(e))
     } finally {
@@ -169,11 +203,11 @@ export default function ScriptEditorPage() {
       const res = await fetch('/api/gdocs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'append', url: docUrl, text: '\n' + appendProposed }),
+        body: JSON.stringify({ action: 'append', url: docUrl, text: '\n' + appendProposed, suggest: suggestMode }),
       })
       const data = await res.json()
       if (data?.error) setApplyMsg('Failed: ' + String(data.error))
-      else { setApplyMsg('Appended to the doc.'); setAppendProposed(''); setAppendInstruction(''); loadDoc(docUrl) }
+      else { setApplyMsg(suggestMode ? 'Suggested in the doc — open it to Accept/Reject.' : 'Appended to the doc.'); setAppendProposed(''); setAppendInstruction(''); loadDoc(docUrl) }
     } catch (e) {
       setApplyMsg('Failed: ' + String(e))
     } finally {
@@ -242,6 +276,19 @@ export default function ScriptEditorPage() {
               </div>
             </div>
 
+            {/* Suggestion mode toggle */}
+            <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'0.875rem 1rem', marginBottom:'1.25rem' }}>
+              <label style={{ display:'flex', alignItems:'flex-start', gap:'0.6rem', cursor:'pointer' }}>
+                <input type="checkbox" checked={suggestMode} onChange={e => setSuggestMode(e.target.checked)} style={{ marginTop:'0.2rem' }}/>
+                <span>
+                  <span style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:C.text }}>Apply as a suggestion, not a direct edit</span>
+                  <span style={{ display:'block', fontSize:'0.72rem', color:C.muted, lineHeight:1.5, marginTop:'0.15rem' }}>
+                    On: the edit lands in the doc as a real Google Docs suggestion — colored, with Accept/Reject right there in Docs. Off: it writes straight in. Suggestion mode needs the Google Cloud project behind the service account enrolled in Google's <a href="https://developers.google.com/workspace/preview" target="_blank" rel="noopener noreferrer" style={{ color:C.cyan }}>Workspace Developer Preview Program</a> (a Workspace-domain email, not personal Gmail) — if it's not enrolled yet, applying will fail with a message telling you that. Note: "Rewrite with Claude" suggests the whole document as one big delete + one big insert (accept/reject as a block); "Quick find & replace" suggests each occurrence separately for finer review.
+                  </span>
+                </span>
+              </label>
+            </div>
+
             {/* Tool tabs */}
             <div style={{ display:'flex', gap:'0.4rem', marginBottom:'1rem' }}>
               {(Object.keys(TAB_META) as Tool[]).map(t => (
@@ -256,6 +303,10 @@ export default function ScriptEditorPage() {
                 <div style={{ display:'flex', gap:'0.5rem', marginBottom:'0.75rem' }}>
                   <textarea value={instruction} onChange={e => setInstruction(e.target.value)} placeholder="What do you want changed? e.g. 'Tighten the intro to 3 sentences' or 'Make the hook punchier'" style={{ ...textareaStyle, minHeight:60, flex:1 }}/>
                 </div>
+                <label style={{ display:'block', fontSize:'0.7rem', fontWeight:700, color:C.sec, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.4rem' }}>Style / skill</label>
+                <select value={stylePreset} onChange={e => setStylePreset(e.target.value)} style={{ ...inputStyle, cursor:'pointer', marginBottom:'0.75rem' }}>
+                  {STYLE_PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
                 <div style={{ display:'flex', gap:'0.5rem', alignItems:'center', marginBottom:'0.75rem' }}>
                   <select value={model} onChange={e => setModel(e.target.value)} style={{ ...inputStyle, width:'auto', cursor:'pointer' }}>
                     {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
@@ -295,6 +346,10 @@ export default function ScriptEditorPage() {
             {tool === 'append' && (
               <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1rem' }}>
                 <textarea value={appendInstruction} onChange={e => setAppendInstruction(e.target.value)} placeholder="What should the new section say? e.g. 'Write the outro, mention subscribing and the next video'" style={{ ...textareaStyle, minHeight:60, marginBottom:'0.75rem' }}/>
+                <label style={{ display:'block', fontSize:'0.7rem', fontWeight:700, color:C.sec, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.4rem' }}>Style / skill</label>
+                <select value={appendStylePreset} onChange={e => setAppendStylePreset(e.target.value)} style={{ ...inputStyle, cursor:'pointer', marginBottom:'0.75rem' }}>
+                  {STYLE_PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
                 <div style={{ display:'flex', gap:'0.5rem', alignItems:'center', marginBottom:'0.75rem' }}>
                   <select value={model} onChange={e => setModel(e.target.value)} style={{ ...inputStyle, width:'auto', cursor:'pointer' }}>
                     {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
