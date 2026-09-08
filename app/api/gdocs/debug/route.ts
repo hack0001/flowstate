@@ -93,6 +93,39 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       result.writeProbe2Error = String(e)
     }
+
+    // Harmless write probe #3: replicates replaceGoogleDocText() EXACTLY --
+    // delete the WHOLE body (index 1 to endIndex-1), then reinsert the exact
+    // same text back at index 1. Net effect on content is zero, but unlike
+    // probe #2 (which only touched one untouched character at the very end),
+    // this spans the ENTIRE document -- including the parts that currently
+    // have pending suggestions in them (visible in docBody above) -- which
+    // is exactly what "Apply to Google Doc" does and probe #2 didn't cover.
+    try {
+      const freshDoc2 = await fetch('https://docs.googleapis.com/v1/documents/' + docId, {
+        headers: { Authorization: 'Bearer ' + token },
+      }).then(r => r.json())
+      const content2 = freshDoc2.body?.content ?? []
+      const endIndex2 = content2.length ? (content2[content2.length - 1].endIndex ?? 1) : 1
+      let fullText = ''
+      for (const el of content2) {
+        for (const pe of el.paragraph?.elements ?? []) {
+          if (pe.textRun?.content) fullText += pe.textRun.content
+        }
+      }
+      const requests3: any[] = []
+      if (endIndex2 > 1) requests3.push({ deleteContentRange: { range: { startIndex: 1, endIndex: endIndex2 - 1 } } })
+      if (fullText) requests3.push({ insertText: { location: { index: 1 }, text: fullText } })
+      const writeRes3 = await fetch('https://docs.googleapis.com/v1/documents/' + docId + ':batchUpdate', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: requests3 }),
+      })
+      result.writeProbe3Status = writeRes3.status
+      result.writeProbe3Body = await writeRes3.json().catch(async () => await writeRes3.text())
+    } catch (e) {
+      result.writeProbe3Error = String(e)
+    }
   } else {
     result.docSkipped = 'Pass ?docId=... to also test the Docs API call.'
   }
