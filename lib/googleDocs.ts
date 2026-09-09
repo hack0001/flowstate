@@ -187,17 +187,31 @@ export async function replaceGoogleDocText(docIdOrUrl: string, newText: string, 
 // ordered before insert -- deleting the old range first leaves a gap at
 // that same start index, and inserting there lands the new text exactly
 // where the old text was.
-function computeDiffRequests(oldText: string, newText: string): any[] {
+// docEndIndex is the document body's real endIndex from the API (not
+// inferred) -- every paragraph, and the body as a whole, ends with an
+// implicit newline that Google will not let any request touch: insertText
+// must land strictly before it, and deleteContentRange must stop strictly
+// before it too (mirroring replaceGoogleDocText's own `endIndex - 1`
+// above). Skipping this clamp is what caused "Index N must be less than
+// the end index of the referenced segment, N" -- a diff that adds new
+// content at the very end of the doc naturally lands its insert exactly
+// on that reserved boundary.
+function computeDiffRequests(oldText: string, newText: string, docEndIndex: number): any[] {
   if (oldText === newText) return []
+  const maxIndex = docEndIndex - 1
   const parts = diffWordsWithSpace(oldText, newText)
   type Hunk = { kind: 'delete' | 'insert'; start: number; text: string }
   const hunks: Hunk[] = []
   let origIndex = 1
   for (const part of parts) {
     if (part.added) {
-      if (part.value) hunks.push({ kind: 'insert', start: origIndex, text: part.value })
+      if (part.value) hunks.push({ kind: 'insert', start: Math.min(origIndex, maxIndex), text: part.value })
     } else if (part.removed) {
-      if (part.value) hunks.push({ kind: 'delete', start: origIndex, text: part.value })
+      if (part.value) {
+        const start = origIndex
+        const end = Math.min(origIndex + part.value.length, maxIndex)
+        if (end > start) hunks.push({ kind: 'delete', start, text: part.value.slice(0, end - start) })
+      }
       origIndex += part.value.length
     } else {
       origIndex += part.value.length
@@ -215,8 +229,20 @@ function computeDiffRequests(oldText: string, newText: string): any[] {
 // Claude's proposed text, and sends only the targeted edits. Falls back to
 // doing nothing if the diff finds no actual changes.
 export async function patchGoogleDocText(docIdOrUrl: string, newText: string, suggest = false): Promise<{ changed: boolean }> {
-  const { docId, text: currentText } = await getGoogleDocText(docIdOrUrl)
-  const requests = computeDiffRequests(currentText, newText)
+  const { docId, text: currentText, endIndex } = await getGoogleDocText(docIdOrUrl)
+  // The diff walk assumes every character of currentText maps 1:1 to a
+  // document index -- true for plain paragraphs of text, which covers a
+  // normal script doc. If the doc has something that occupies index space
+  // without producing extracted text (an inline image, a page break, a
+  // structural element extractText() doesn't walk), that assumption
+  // breaks and a positional diff could misplace edits elsewhere in the
+  // doc. Fall back to the whole-body replace (already proven safe) rather
+  // than risk that.
+  if (currentText.length !== endIndex - 1) {
+    await replaceGoogleDocText(docIdOrUrl, newText, suggest)
+    return { changed: true }
+  }
+  const requests = computeDiffRequests(currentText, newText, endIndex)
   if (requests.length === 0) return { changed: false }
   await docsFetch('/' + docId + ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests, ...writeControlFor(suggest) }) })
   return { changed: true }
