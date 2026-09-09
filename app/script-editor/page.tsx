@@ -2,7 +2,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { getScriptDocLinks, addScriptDocLink, updateScriptDocLink, deleteScriptDocLink, type ScriptDocLink } from '@/lib/supabase'
-import { ChevronLeft, RefreshCw, Wand2, Search, Plus, Check, AlertCircle, FileEdit, X, Pencil, Bookmark } from 'lucide-react'
+import { CHANNEL_BRIEF, SCRIPT_VOICE } from '@/lib/channelBrief'
+import { ChevronLeft, RefreshCw, Wand2, Search, Plus, Check, AlertCircle, FileEdit, X, Pencil, Bookmark, SpellCheck, Target, Sparkles, Clapperboard } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -103,6 +104,47 @@ const STYLE_PRESETS = [
   {
     id:'tighten', label:'Tighten & trim',
     rules:'Cut ruthlessly for pace -- remove filler, redundant setup, and throat-clearing, while keeping every fact, number, and beat that is actually load-bearing. Prefer shorter sentences. Do not add new content.',
+  },
+] as const
+
+// Common instruction glued onto every review preset's system prompt --
+// keeps the output contract (JSON array of small, located edits) identical
+// to the free-form "Ask Claude" flow so they all render as the same
+// reviewable cards.
+const REVIEW_OUTPUT_CONTRACT = "Return ONLY a JSON array (no markdown fences, no commentary before or after) of edit objects, each shaped exactly like {\"originalText\": string, \"replacementText\": string, \"reason\": string}. originalText must be copied EXACTLY, character-for-character, from the document text below -- same spelling, punctuation, capitalization and spacing -- since it's used to locate the exact spot in the doc; never paraphrase or approximate it, and never invent text that isn't actually there. If there's nothing to flag, return []."
+
+// One-click review buttons -- each runs a specialized system prompt built
+// from the channel's real strategy brief and script voice (lib/channelBrief.ts,
+// the same single source of truth used everywhere else in the content
+// pipeline), so "channel tone and vibe" isn't reinvented per-button. Each
+// produces the same {originalText, replacementText, reason} edit shape as
+// the free-form Rewrite flow, so they render as the same review cards --
+// including the visual-breakdown preset, whose "edit" is just the original
+// line with a bracketed screen-direction tag appended, not a reword.
+const REVIEW_PRESETS = [
+  {
+    id: 'grammar',
+    label: 'Grammar',
+    icon: <SpellCheck size={13}/>,
+    systemPrompt: "You are proofreading a YouTube script for grammar, spelling, punctuation, and clarity -- nothing else, not style or content. This script is written in a specific deliberate voice for reading aloud, so don't 'fix' intentional choices: sentence fragments used for comedic timing, informal contractions, dry deadpan phrasing, or a banned-word list are all correct as written if they match this voice:\n\n" + SCRIPT_VOICE + "\n\nOnly propose an edit for a genuine grammar, spelling, punctuation, or clarity error -- never a style preference. reason should name the specific error (e.g. 'subject-verb agreement', 'missing comma', 'typo', 'ambiguous pronoun'). " + REVIEW_OUTPUT_CONTRACT,
+  },
+  {
+    id: 'coherency',
+    label: 'Content & channel fit',
+    icon: <Target size={13}/>,
+    systemPrompt: "You are reviewing a YouTube script for whether it actually fits the channel's established strategy, audience, and voice -- not grammar. Here is the channel's strategy brief and script voice this script must fit:\n\n" + CHANNEL_BRIEF + "\n\n" + SCRIPT_VOICE + "\n\nLook specifically for: claims or framing drifting off the channel's niche or audience, missing or weak prescriptive ending (what this means for the viewer's savings/money), the Austrian-economics lens turning into policy-advocacy sermonising instead of staying inside the analysis, factual claims that seem shaky or unsupported, structure that doesn't match the channel's proven patterns, or tone that doesn't match the script voice. reason should name the specific coherency issue and why the fix helps. " + REVIEW_OUTPUT_CONTRACT,
+  },
+  {
+    id: 'humor',
+    label: 'Make it funnier',
+    icon: <Sparkles size={13}/>,
+    systemPrompt: "You are punching up a YouTube script with more humour, in exactly this style:\n\n" + SCRIPT_VOICE + "\n\nFocus specifically on the HUMOUR guidance above -- deadpan, dry, sarcastic understatement, never sold or over-explained. Find lines that are flat or could land an irreverent analogy, a dry aside, or a sardonic button, and propose a funnier version without changing the facts or the point being made. Don't force a joke into every line -- only propose an edit where it genuinely improves the line. reason should be a one-clause note on the comedic beat (e.g. 'deadpan understatement', 'irreverent analogy'). " + REVIEW_OUTPUT_CONTRACT,
+  },
+  {
+    id: 'visual_breakdown',
+    label: 'Visual breakdown',
+    icon: <Clapperboard size={13}/>,
+    systemPrompt: "You are storyboarding a script for a FACELESS YouTube channel -- voiceover only, no on-camera host, so every line needs something on screen. Go through the script line by line (or beat by beat for a longer passage) and decide what should be showing at that moment. Append a short bracketed tag to the END of each line, choosing whichever fits: [SCREENSHOT: ...], [ANIMATION: ...], [TEXT ON SCREEN: ...], [IMAGE: ...], [B-ROLL: ...], [STOCK FOOTAGE: ...], [AI VISUAL: ...], [MEME: ...], [AUDIO: ...] (sfx or music cue) -- be specific about WHAT it shows, not just the category (e.g. '[B-ROLL: empty grocery store shelves]', not '[B-ROLL: footage]'). Cover the whole script, one edit per line or short beat, in order -- don't skip sections. Each edit's replacementText must be the original line UNCHANGED plus the bracketed tag appended after it -- do not reword the line itself. reason should be a short note on why that visual fits the moment. " + REVIEW_OUTPUT_CONTRACT,
   },
 ] as const
 
@@ -277,6 +319,25 @@ export default function ScriptEditorPage() {
       const { edits, error: parseError } = parseProposedEdits(text)
       if (parseError) setGenMsg(parseError)
       else if (edits.length === 0) setGenMsg('Claude found nothing to change.')
+      setProposedEdits(edits)
+    }
+    setGenerating(false)
+  }
+
+  // One-click alternative to typing an instruction -- runs a REVIEW_PRESETS
+  // system prompt straight away and fills the same review-card list.
+  async function generateReview(preset: (typeof REVIEW_PRESETS)[number]) {
+    if (!snapshot) return
+    setGenerating(true)
+    setGenMsg(null)
+    const userPrompt = 'CURRENT DOCUMENT TEXT:\n"""\n' + snapshot.text + '\n"""'
+    const { text, error } = await consult(preset.systemPrompt, userPrompt, model)
+    if (error) {
+      setGenMsg(error)
+    } else {
+      const { edits, error: parseError } = parseProposedEdits(text)
+      if (parseError) setGenMsg(parseError)
+      else if (edits.length === 0) setGenMsg('Claude found nothing to flag.')
       setProposedEdits(edits)
     }
     setGenerating(false)
@@ -489,6 +550,19 @@ export default function ScriptEditorPage() {
 
             {tool === 'rewrite' && (
               <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1rem' }}>
+                <label style={{ display:'block', fontSize:'0.7rem', fontWeight:700, color:C.sec, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.5rem' }}>Quick review — one click, no instruction needed</label>
+                <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' as const, marginBottom:'1rem' }}>
+                  {REVIEW_PRESETS.map(preset => (
+                    <button key={preset.id} onClick={() => generateReview(preset)} disabled={generating} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 0.85rem', background:'rgba(0,212,255,0.08)', border:'1px solid rgba(0,212,255,0.25)', borderRadius:'0.625rem', color:C.cyan, cursor: generating ? 'not-allowed' : 'pointer', fontFamily:'inherit', fontSize:'0.78rem', fontWeight:700 }}>
+                      {preset.icon} {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', margin:'0 0 0.75rem' }}>
+                  <div style={{ flex:1, height:1, background:C.border }}/>
+                  <span style={{ fontSize:'0.68rem', color:C.muted, fontWeight:700, textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>or write your own</span>
+                  <div style={{ flex:1, height:1, background:C.border }}/>
+                </div>
                 <div style={{ display:'flex', gap:'0.5rem', marginBottom:'0.75rem' }}>
                   <textarea value={instruction} onChange={e => setInstruction(e.target.value)} placeholder="What do you want changed? e.g. 'Tighten the intro to 3 sentences' or 'Make the hook punchier'" style={{ ...textareaStyle, minHeight:60, flex:1 }}/>
                 </div>
