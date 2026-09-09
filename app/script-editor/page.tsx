@@ -21,6 +21,69 @@ const MODELS = [
 type Snapshot = { docId: string; title: string; text: string; endIndex: number }
 type Tool = 'rewrite' | 'find_replace' | 'append'
 
+// A single AI-proposed edit, reviewed as its own card in the UI. Nothing
+// reaches the Google Doc until its Accept button is clicked -- this is the
+// app-level review layer that replaces relying on Google's native
+// writeMode: SUGGEST, which is gated behind Google's Workspace Developer
+// Preview Program and has proven unreliable here (silently landing as a
+// direct edit -- see the commentUpdateState handling in lib/googleDocs.ts).
+// Rejecting just removes the card; accepting calls the apply_edit action,
+// which re-locates originalText fresh in the live doc and only touches
+// that one small range.
+type ProposedEdit = {
+  id: string
+  originalText: string
+  replacementText: string
+  reason?: string
+  status: 'pending' | 'applying'
+  error?: string
+}
+
+// Claude is asked to return a JSON array of {originalText, replacementText,
+// reason}. Defensive parsing: strips a markdown fence if the model wraps
+// the array in one despite instructions not to, and drops any entry
+// missing a non-empty originalText (nothing to locate in the doc with an
+// empty string).
+function parseProposedEdits(raw: string): { edits: ProposedEdit[]; error: string | null } {
+  let cleaned = raw.trim()
+  const fenced = cleaned.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/)
+  if (fenced) cleaned = fenced[1]
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(cleaned)
+  } catch {
+    return { edits: [], error: "Couldn't parse Claude's response as a list of edits -- try again, or rephrase the instruction." }
+  }
+  if (!Array.isArray(parsed)) return { edits: [], error: "Claude didn't return a list of edits." }
+  const edits: ProposedEdit[] = (parsed as Record<string, unknown>[])
+    .filter(e => e && typeof e.originalText === 'string' && (e.originalText as string).trim())
+    .map((e, i) => ({
+      id: 'edit-' + Date.now() + '-' + i,
+      originalText: String(e.originalText),
+      replacementText: typeof e.replacementText === 'string' ? e.replacementText : '',
+      reason: typeof e.reason === 'string' && e.reason.trim() ? e.reason.trim() : undefined,
+      status: 'pending' as const,
+    }))
+  return { edits, error: null }
+}
+
+// How many times originalText appears in the doc's current text -- shown
+// as a heads-up on each card before the user clicks Accept. The server
+// does the real, authoritative check when Accept is actually clicked (and
+// refuses ambiguous or missing matches rather than guessing); this is just
+// an earlier warning so it doesn't come as a surprise.
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return 0
+  let count = 0, from = 0
+  while (true) {
+    const idx = haystack.indexOf(needle, from)
+    if (idx === -1) break
+    count++
+    from = idx + needle.length
+  }
+  return count
+}
+
 // "Skill" presets — editing rules lifted from the installed CGE skills
 // (cge-scriptwriter's VOICE RULES, cge-holy-trifecta's intro rules), minus
 // their intake questions and promo/CTA blocks, which don't belong in an
@@ -97,10 +160,11 @@ export default function ScriptEditorPage() {
     try { window.localStorage.setItem('scriptEditorSuggestMode', String(v)) } catch {}
   }
 
-  // Rewrite tool
+  // Rewrite tool -- proposedEdits holds the current review batch; nothing
+  // in it has touched the doc yet (see ProposedEdit's doc comment above).
   const [instruction, setInstruction] = useState('')
   const [stylePreset, setStylePreset] = useState<string>(STYLE_PRESETS[0].id)
-  const [proposedText, setProposedText] = useState('')
+  const [proposedEdits, setProposedEdits] = useState<ProposedEdit[]>([])
   const [generating, setGenerating] = useState(false)
   const [genMsg, setGenMsg] = useState<string | null>(null)
 
@@ -172,7 +236,7 @@ export default function ScriptEditorPage() {
       const res = await fetch('/api/gdocs?url=' + encodeURIComponent(url.trim()))
       const data = await res.json()
       if (data?.error) { setLoadErr(String(data.error)); setSnapshot(null) }
-      else { setSnapshot(data); setProposedText(''); setAppendProposed('') }
+      else { setSnapshot(data); setProposedEdits([]); setAppendProposed('') }
     } catch (e) {
       setLoadErr('Failed to load: ' + String(e))
     } finally {
@@ -185,13 +249,61 @@ export default function ScriptEditorPage() {
     setGenerating(true)
     setGenMsg(null)
     const preset = STYLE_PRESETS.find(p => p.id === stylePreset)
-    let systemPrompt = "You are editing a YouTube script live, alongside the writer, in a Google Doc. You'll get the CURRENT FULL TEXT of the doc and an instruction for what to change. Return ONLY the complete, updated full text of the document -- no commentary, no markdown fences, no preamble, no explanation before or after. Keep it plain text (no markdown headers/bullets) matching the doc's existing style. Leave anything not related to the instruction exactly as it was, unless the instruction clearly asks for a full rewrite."
+    let systemPrompt = "You are proposing precise, individually reviewable edits to a YouTube script in a Google Doc, alongside the writer. You'll get the CURRENT FULL TEXT of the doc and an instruction for what to change. Return ONLY a JSON array (no markdown fences, no commentary before or after) of edit objects, each shaped exactly like {\"originalText\": string, \"replacementText\": string, \"reason\": string}. originalText must be copied EXACTLY, character-for-character, from the current document text below -- same spelling, punctuation, capitalization and spacing -- since it's used to locate the exact spot to change; never paraphrase or approximate it, and never invent text that isn't actually there. Keep each edit as small and targeted as the change actually requires -- usually a phrase or a sentence -- rather than rewriting whole paragraphs, unless the instruction clearly calls for a bigger rewrite (in that case it's fine for one edit's originalText/replacementText to span a larger passage, or to propose several separate edits). reason should be one short clause explaining why. If nothing in the document needs to change, return []."
     if (preset?.rules) systemPrompt += '\n\n' + preset.rules
     const userPrompt = 'CURRENT DOCUMENT TEXT:\n"""\n' + snapshot.text + '\n"""\n\nINSTRUCTION: ' + instruction.trim()
     const { text, error } = await consult(systemPrompt, userPrompt, model)
-    if (error) setGenMsg(error)
-    else setProposedText(text)
+    if (error) {
+      setGenMsg(error)
+    } else {
+      const { edits, error: parseError } = parseProposedEdits(text)
+      if (parseError) setGenMsg(parseError)
+      else if (edits.length === 0) setGenMsg('Claude found nothing to change.')
+      setProposedEdits(edits)
+    }
     setGenerating(false)
+  }
+
+  function rejectEdit(id: string) {
+    setProposedEdits(prev => prev.filter(e => e.id !== id))
+  }
+
+  function updateEditText(id: string, replacementText: string) {
+    setProposedEdits(prev => prev.map(e => e.id === id ? { ...e, replacementText } : e))
+  }
+
+  // Accept-one-edit -- the only thing in this whole tool that actually
+  // writes to the Google Doc. Independent per call: re-fetches and
+  // re-locates originalText fresh each time, so accepting several edits in
+  // a row (or out of order) is safe even though earlier accepts change the
+  // doc the later ones will be located against.
+  async function acceptEdit(id: string) {
+    const edit = proposedEdits.find(e => e.id === id)
+    if (!edit) return
+    setProposedEdits(prev => prev.map(e => e.id === id ? { ...e, status: 'applying', error: undefined } : e))
+    try {
+      const res = await fetch('/api/gdocs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'apply_edit', url: docUrl, originalText: edit.originalText, replacementText: edit.replacementText, suggest: suggestMode }),
+      })
+      const data = await res.json()
+      if (data?.error) {
+        setProposedEdits(prev => prev.map(e => e.id === id ? { ...e, status: 'pending', error: String(data.error) } : e))
+        return
+      }
+      if (data.suggestionWarning) setApplyMsg('Warning: ' + String(data.suggestionWarning))
+      setProposedEdits(prev => prev.filter(e => e.id !== id))
+      loadDoc(docUrl)
+    } catch (e) {
+      setProposedEdits(prev => prev.map(e => e.id === id ? { ...e, status: 'pending', error: String(e) } : e))
+    }
+  }
+
+  async function acceptAllPending() {
+    for (const id of proposedEdits.filter(e => e.status === 'pending').map(e => e.id)) {
+      await acceptEdit(id)
+    }
   }
 
   async function generateAppend() {
@@ -206,31 +318,6 @@ export default function ScriptEditorPage() {
     if (error) setGenMsg(error)
     else setAppendProposed(text)
     setGenerating(false)
-  }
-
-  async function applyReplaceAll() {
-    if (!snapshot || !proposedText.trim()) return
-    setApplying(true)
-    setApplyMsg(null)
-    try {
-      const res = await fetch('/api/gdocs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'replace_all', url: docUrl, text: proposedText, suggest: suggestMode }),
-      })
-      const data = await res.json()
-      if (data?.error) setApplyMsg('Failed: ' + String(data.error) + (data.debug ? '\n\nDEBUG: ' + JSON.stringify(data.debug, null, 2) : ''))
-      else if (data.changed === false) setApplyMsg('No changes found — the proposed text matches the doc already.')
-      else {
-        if (data.suggestionWarning) setApplyMsg('Warning: ' + String(data.suggestionWarning))
-        else setApplyMsg(suggestMode ? 'Suggested in the doc — open it to Accept/Reject.' : 'Applied to the doc.')
-        loadDoc(docUrl)
-      }
-    } catch (e) {
-      setApplyMsg('Failed: ' + String(e))
-    } finally {
-      setApplying(false)
-    }
   }
 
   async function applyFindReplace() {
@@ -296,7 +383,7 @@ export default function ScriptEditorPage() {
             <FileEdit size={22} color={C.cyan}/> Script Editor
           </h1>
           <p style={{ fontSize:'0.82rem', color:C.sec, margin:0 }}>
-            Real in-place edits to a Google Doc — Claude drafts the change, you review it, then it's applied directly. No copy-pasting.
+            Claude proposes small edits to a Google Doc, you Accept or Reject each one right here, and only accepted edits reach the doc. Nothing lands without your say-so.
           </p>
         </div>
       </div>
@@ -364,9 +451,9 @@ export default function ScriptEditorPage() {
               <label style={{ display:'flex', alignItems:'flex-start', gap:'0.6rem', cursor:'pointer' }}>
                 <input type="checkbox" checked={suggestMode} onChange={e => setSuggestMode(e.target.checked)} style={{ marginTop:'0.2rem' }}/>
                 <span>
-                  <span style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:C.text }}>Apply as a suggestion, not a direct edit</span>
+                  <span style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:C.text }}>Also try landing accepted edits as a Google Docs suggestion</span>
                   <span style={{ display:'block', fontSize:'0.72rem', color:C.muted, lineHeight:1.5, marginTop:'0.15rem' }}>
-                    On: the edit lands in the doc as a real Google Docs suggestion — colored, with Accept/Reject right there in Docs. Off: it writes straight in. Suggestion mode needs the Google Cloud project behind the service account enrolled in Google's <a href="https://developers.google.com/workspace/preview" target="_blank" rel="noopener noreferrer" style={{ color:C.cyan }}>Workspace Developer Preview Program</a> (a Workspace-domain email, not personal Gmail) — if it's not enrolled yet, applying will fail with a message telling you that. "Rewrite with Claude" only touches the words that actually changed — it diffs the current doc against Claude's proposal and suggests (or applies) just those edits, so unrelated text and formatting elsewhere is left alone. "Quick find & replace" suggests each occurrence separately too.
+                    Review happens here first either way — nothing reaches the doc until you click Accept on a "Rewrite with Claude" card, or hit the buttons on Find & Replace / Append. This toggle only affects what happens at that moment: On additionally tries to land it as a real, colored Google Docs suggestion (still Accept/Reject-able there too) — this needs the Google Cloud project enrolled in Google's <a href="https://developers.google.com/workspace/preview" target="_blank" rel="noopener noreferrer" style={{ color:C.cyan }}>Workspace Developer Preview Program</a>, and has been unreliable here (it can silently write directly instead — you'll see a warning if that happens). Off writes it straight in once you've already approved it.
                   </span>
                 </span>
               </label>
@@ -399,14 +486,48 @@ export default function ScriptEditorPage() {
                   </button>
                 </div>
                 {genMsg && <p style={{ fontSize:'0.75rem', color:C.amber, margin:'0 0 0.75rem' }}>{genMsg}</p>}
-                {proposedText && (
-                  <>
-                    <label style={{ display:'block', fontSize:'0.7rem', fontWeight:700, color:C.sec, textTransform:'uppercase' as const, letterSpacing:'0.06em', margin:'0.5rem 0 0.4rem' }}>Proposed text — edit freely before applying</label>
-                    <textarea value={proposedText} onChange={e => setProposedText(e.target.value)} style={{ ...textareaStyle, minHeight:220 }}/>
-                    <button onClick={applyReplaceAll} disabled={applying} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1.2rem', marginTop:'0.75rem', background:'linear-gradient(135deg,'+C.green+',#00cc6a)', border:'none', borderRadius:'0.625rem', color:'#000', cursor: applying ? 'not-allowed' : 'pointer', fontFamily:'inherit', fontSize:'0.82rem', fontWeight:800 }}>
-                      <Check size={14}/> {applying ? 'Applying...' : 'Apply to Google Doc'}
-                    </button>
-                  </>
+
+                {proposedEdits.length > 0 && (
+                  <div style={{ marginTop:'0.5rem' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.6rem' }}>
+                      <label style={{ fontSize:'0.7rem', fontWeight:700, color:C.sec, textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>
+                        {proposedEdits.length} proposed edit{proposedEdits.length === 1 ? '' : 's'} — review each
+                      </label>
+                      {proposedEdits.length > 1 && (
+                        <button onClick={acceptAllPending} disabled={proposedEdits.some(e => e.status === 'applying')} style={{ fontSize:'0.7rem', padding:'0.35rem 0.7rem', background:'rgba(0,255,136,0.1)', border:'1px solid rgba(0,255,136,0.3)', borderRadius:'0.5rem', color:C.green, cursor: proposedEdits.some(e => e.status === 'applying') ? 'not-allowed' : 'pointer', fontFamily:'inherit', fontWeight:700 }}>
+                          Accept all
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.65rem' }}>
+                      {proposedEdits.map(edit => {
+                        const occurrences = snapshot ? countOccurrences(snapshot.text, edit.originalText) : 1
+                        return (
+                          <div key={edit.id} style={{ background:C.surface, border:'1px solid '+(edit.error ? C.red : C.border), borderRadius:'0.75rem', padding:'0.85rem' }}>
+                            {occurrences !== 1 && (
+                              <p style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.7rem', color:C.amber, margin:'0 0 0.6rem' }}>
+                                <AlertCircle size={12}/> {occurrences === 0 ? "Can't find this text in the doc anymore — it may already be out of date." : 'Appears ' + occurrences + ' times — accepting may be ambiguous.'}
+                              </p>
+                            )}
+                            <label style={{ display:'block', fontSize:'0.68rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.05em', marginBottom:'0.25rem' }}>Current</label>
+                            <p style={{ fontSize:'0.8rem', color:C.sec, margin:'0 0 0.6rem', textDecoration:'line-through', textDecorationColor:C.red, whiteSpace:'pre-wrap' as const, lineHeight:1.5 }}>{edit.originalText}</p>
+                            <label style={{ display:'block', fontSize:'0.68rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.05em', marginBottom:'0.25rem' }}>Suggested — edit freely before accepting</label>
+                            <textarea value={edit.replacementText} onChange={e => updateEditText(edit.id, e.target.value)} placeholder="(delete this text)" style={{ ...textareaStyle, minHeight:48, fontSize:'0.8rem', color:C.green, marginBottom:'0.6rem' }}/>
+                            {edit.reason && <p style={{ fontSize:'0.72rem', color:C.sec, margin:'0 0 0.6rem', fontStyle:'italic' as const }}>{edit.reason}</p>}
+                            {edit.error && <p style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', color:C.red, margin:'0 0 0.6rem' }}><AlertCircle size={12}/> {edit.error}</p>}
+                            <div style={{ display:'flex', gap:'0.5rem' }}>
+                              <button onClick={() => acceptEdit(edit.id)} disabled={edit.status === 'applying'} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.4rem 0.9rem', background:'linear-gradient(135deg,'+C.green+',#00cc6a)', border:'none', borderRadius:'0.5rem', color:'#000', cursor: edit.status === 'applying' ? 'not-allowed' : 'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:800 }}>
+                                <Check size={12}/> {edit.status === 'applying' ? 'Applying...' : 'Accept'}
+                              </button>
+                              <button onClick={() => rejectEdit(edit.id)} disabled={edit.status === 'applying'} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.4rem 0.9rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.sec, cursor: edit.status === 'applying' ? 'not-allowed' : 'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700 }}>
+                                <X size={12}/> Reject
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
                 )}
               </div>
             )}

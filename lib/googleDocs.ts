@@ -91,8 +91,23 @@ async function docsFetch(path: string, opts: RequestInit = {}) {
 // real, colored suggestions -- exactly what you see when a collaborator
 // edits in Suggesting mode -- which Tom can then Accept/Reject right there
 // in the Docs UI, instead of the edit landing directly in the document.
-function writeControlFor(suggest: boolean) {
-  return suggest ? { writeControl: { writeMode: 'SUGGEST' } } : {}
+//
+// requiredRevisionId ties the write to the exact revision the indexes were
+// calculated against (from documents.get). If the doc changed in between --
+// e.g. Tom had it open and typed something while this was being prepared --
+// Google rejects the whole batchUpdate instead of silently applying it
+// against positions that have since shifted. Every write path refetches a
+// snapshot right before diffing/writing, and patchGoogleDocText retries
+// once (refetch + recompute) if this specific conflict happens.
+function writeControlFor(suggest: boolean, revisionId?: string) {
+  const writeControl: Record<string, string> = {}
+  if (suggest) writeControl.writeMode = 'SUGGEST'
+  if (revisionId) writeControl.requiredRevisionId = revisionId
+  return Object.keys(writeControl).length ? { writeControl } : {}
+}
+
+function isRevisionConflict(e: unknown): boolean {
+  return e instanceof Error && /revision/i.test(e.message)
 }
 
 // Google documents a "partial failure" mode for suggestion writes: the
@@ -147,7 +162,7 @@ function extractText(doc: any): string {
   return text
 }
 
-export type GoogleDocSnapshot = { docId: string; title: string; text: string; endIndex: number }
+export type GoogleDocSnapshot = { docId: string; title: string; text: string; endIndex: number; revisionId?: string }
 
 export async function getGoogleDocText(docIdOrUrl: string): Promise<GoogleDocSnapshot> {
   const docId = extractDocId(docIdOrUrl)
@@ -164,7 +179,7 @@ export async function getGoogleDocText(docIdOrUrl: string): Promise<GoogleDocSna
   const doc = await docsFetch('/' + docId + '?suggestionsViewMode=SUGGESTIONS_INLINE')
   const content = doc.body?.content ?? []
   const endIndex = content.length ? (content[content.length - 1].endIndex ?? 1) : 1
-  return { docId, title: doc.title ?? 'Untitled', text: extractText(doc), endIndex }
+  return { docId, title: doc.title ?? 'Untitled', text: extractText(doc), endIndex, revisionId: doc.revisionId }
 }
 
 // Wipes the whole doc body and replaces it with newText. Simple and
@@ -174,13 +189,13 @@ export async function getGoogleDocText(docIdOrUrl: string): Promise<GoogleDocSna
 // where Claude regenerates the full text; for a single surgical swap use
 // findReplaceInGoogleDoc instead, which doesn't touch anything else.
 export async function replaceGoogleDocText(docIdOrUrl: string, newText: string, suggest = false): Promise<{ suggestionWarning: string | null }> {
-  const { docId, endIndex } = await getGoogleDocText(docIdOrUrl)
+  const { docId, endIndex, revisionId } = await getGoogleDocText(docIdOrUrl)
   const requests: any[] = []
   if (endIndex > 1) {
     requests.push({ deleteContentRange: { range: { startIndex: 1, endIndex: endIndex - 1 } } })
   }
   if (newText) requests.push({ insertText: { location: { index: 1 }, text: newText } })
-  const data = await docsFetch('/' + docId + ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests, ...writeControlFor(suggest) }) })
+  const data = await docsFetch('/' + docId + ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests, ...writeControlFor(suggest, revisionId) }) })
   return { suggestionWarning: suggestionWarning(data, suggest) }
 }
 
@@ -259,28 +274,104 @@ function computeDiffRequests(oldText: string, newText: string, docEndIndex: numb
 // Claude's proposed text, and sends only the targeted edits. Falls back to
 // doing nothing if the diff finds no actual changes.
 export async function patchGoogleDocText(docIdOrUrl: string, newText: string, suggest = false): Promise<{ changed: boolean; suggestionWarning: string | null }> {
-  const { docId, text: currentText, endIndex } = await getGoogleDocText(docIdOrUrl)
-  // The diff walk assumes every character of currentText maps 1:1 to a
-  // document index -- true for plain paragraphs of text, which covers a
-  // normal script doc. If the doc has something that occupies index space
-  // without producing extracted text (an inline image, a page break, a
-  // structural element extractText() doesn't walk), that assumption
-  // breaks and a positional diff could misplace edits elsewhere in the
-  // doc. Fall back to the whole-body replace (already proven safe) rather
-  // than risk that.
-  if (currentText.length !== endIndex - 1) {
-    const { suggestionWarning: warning } = await replaceGoogleDocText(docIdOrUrl, newText, suggest)
-    return { changed: true, suggestionWarning: warning }
+  const attempt = async (): Promise<{ changed: boolean; suggestionWarning: string | null }> => {
+    const { docId, text: currentText, endIndex, revisionId } = await getGoogleDocText(docIdOrUrl)
+    // The diff walk assumes every character of currentText maps 1:1 to a
+    // document index -- true for plain paragraphs of text, which covers a
+    // normal script doc. If the doc has something that occupies index space
+    // without producing extracted text (an inline image, a page break, a
+    // structural element extractText() doesn't walk), that assumption
+    // breaks and a positional diff could misplace edits elsewhere in the doc.
+    if (currentText.length !== endIndex - 1) {
+      // In suggest mode, the only safe fallback left is a whole-document
+      // delete+insert -- which would show up in Docs as ONE giant
+      // accept-or-reject-everything suggestion, exactly the "overwriter"
+      // behavior this feature exists to avoid. Refuse instead of silently
+      // doing that; a direct edit (suggest=false) is still fine since it
+      // doesn't create a misleading suggestion.
+      if (suggest) {
+        throw new Error('This document has something (an image, table, or other structural element) that makes precise, per-word suggestions unsafe to compute right now. Turn off "Apply as a suggestion" to apply this as a direct edit instead, or make this particular change by hand in Google Docs.')
+      }
+      const { suggestionWarning: warning } = await replaceGoogleDocText(docIdOrUrl, newText, suggest)
+      return { changed: true, suggestionWarning: warning }
+    }
+    const requests = computeDiffRequests(currentText, newText, endIndex)
+    if (requests.length === 0) return { changed: false, suggestionWarning: null }
+    const data = await docsFetch('/' + docId + ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests, ...writeControlFor(suggest, revisionId) }) })
+    return { changed: true, suggestionWarning: suggestionWarning(data, suggest) }
   }
-  const requests = computeDiffRequests(currentText, newText, endIndex)
-  if (requests.length === 0) return { changed: false, suggestionWarning: null }
-  const data = await docsFetch('/' + docId + ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests, ...writeControlFor(suggest) }) })
-  return { changed: true, suggestionWarning: suggestionWarning(data, suggest) }
+  try {
+    return await attempt()
+  } catch (e) {
+    // The doc changed between our read and our write -- e.g. it was open
+    // and being typed into at the same time. Refetch and recompute the
+    // diff against the new state once before giving up, rather than either
+    // applying against stale positions or failing on a race that a simple
+    // retry would clear.
+    if (isRevisionConflict(e)) return await attempt()
+    throw e
+  }
+}
+
+// Applies ONE specific, already-approved edit -- the write side of the
+// app-level review flow (Claude proposes a list of small {originalText,
+// replacementText} edits, the app shows each as a card, and only clicking
+// Accept calls this). This exists as an alternative to Google's native
+// writeMode: SUGGEST, which is gated behind Google's Workspace Developer
+// Preview Program and has proven unreliable here (see suggestionWarning
+// above) -- this doesn't depend on that at all. The review/approval step
+// happens in the app; by the time this runs, the edit is already decided,
+// so it's applied as a normal direct edit (small and precise, not a
+// whole-doc replace) unless suggest is explicitly requested too, in which
+// case it also tries writeMode: SUGGEST for this one small range.
+//
+// Always re-fetches fresh and locates originalText by an exact, live
+// string search rather than trusting any previously-computed index --
+// self-healing against the doc having changed (including from *other*
+// edits in the same review batch that were just accepted) without needing
+// to track shifting positions across multiple accepts. Refuses to guess if
+// the text isn't found, or is ambiguous (appears more than once), rather
+// than risk touching the wrong occurrence.
+export async function applyProposedEdit(docIdOrUrl: string, originalText: string, replacementText: string, suggest = false): Promise<{ suggestionWarning: string | null }> {
+  const attempt = async (): Promise<{ suggestionWarning: string | null }> => {
+    const { docId, text: currentText, revisionId } = await getGoogleDocText(docIdOrUrl)
+    const occurrences: number[] = []
+    let searchFrom = 0
+    while (true) {
+      const idx = currentText.indexOf(originalText, searchFrom)
+      if (idx === -1) break
+      occurrences.push(idx)
+      searchFrom = idx + Math.max(originalText.length, 1)
+    }
+    if (occurrences.length === 0) {
+      throw new Error('Could not find that exact text in the document anymore -- it may have already changed. Refresh and try again.')
+    }
+    if (occurrences.length > 1) {
+      throw new Error('That text appears ' + occurrences.length + ' times in the document -- too ambiguous to apply safely without risking the wrong spot. Edit it directly in Google Docs instead, or ask for a more specific edit.')
+    }
+    const startIndex = occurrences[0] + 1 // 1-based Google Docs index
+    const requests: any[] = []
+    if (originalText.length > 0) requests.push({ deleteContentRange: { range: { startIndex, endIndex: startIndex + originalText.length } } })
+    if (replacementText) requests.push({ insertText: { location: { index: startIndex }, text: replacementText } })
+    if (requests.length === 0) return { suggestionWarning: null }
+    const data = await docsFetch('/' + docId + ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests, ...writeControlFor(suggest, revisionId) }) })
+    return { suggestionWarning: suggestionWarning(data, suggest) }
+  }
+  try {
+    return await attempt()
+  } catch (e) {
+    if (isRevisionConflict(e)) return await attempt()
+    throw e
+  }
 }
 
 // Surgical find/replace across the whole doc — swap a name, fix a repeated
 // phrase, tighten one line — without regenerating or touching anything
 // else. Returns how many occurrences were changed.
+// No requiredRevisionId here on purpose -- replaceAllText matches by live
+// text content, not fixed positions, so a doc that changed since it was
+// last viewed doesn't create the corruption risk a positional edit would;
+// requiring an exact revision match would only add failures for no benefit.
 export async function findReplaceInGoogleDoc(docIdOrUrl: string, findText: string, replaceText: string, matchCase = false, suggest = false): Promise<{ occurrencesChanged: number; suggestionWarning: string | null }> {
   const docId = extractDocId(docIdOrUrl)
   if (!docId) throw new Error('Could not find a Google Doc ID in that link.')
@@ -294,10 +385,10 @@ export async function findReplaceInGoogleDoc(docIdOrUrl: string, findText: strin
 // Appends text to the end of the doc — e.g. adding a new section — without
 // touching what's already there.
 export async function appendToGoogleDoc(docIdOrUrl: string, text: string, suggest = false): Promise<{ suggestionWarning: string | null }> {
-  const { docId, endIndex } = await getGoogleDocText(docIdOrUrl)
+  const { docId, endIndex, revisionId } = await getGoogleDocText(docIdOrUrl)
   const data = await docsFetch('/' + docId + ':batchUpdate', {
     method: 'POST',
-    body: JSON.stringify({ requests: [{ insertText: { location: { index: Math.max(1, endIndex - 1) }, text } }], ...writeControlFor(suggest) }),
+    body: JSON.stringify({ requests: [{ insertText: { location: { index: Math.max(1, endIndex - 1) }, text } }], ...writeControlFor(suggest, revisionId) }),
   })
   return { suggestionWarning: suggestionWarning(data, suggest) }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGoogleDocText, patchGoogleDocText, findReplaceInGoogleDoc, appendToGoogleDoc } from '@/lib/googleDocs'
+import { getGoogleDocText, patchGoogleDocText, findReplaceInGoogleDoc, appendToGoogleDoc, applyProposedEdit } from '@/lib/googleDocs'
 
 // Powers app/script-editor/page.tsx — real in-place Google Docs edits via
 // the Docs API (not just Drive read/create, which is all Claude's built-in
@@ -22,10 +22,10 @@ export async function POST(req: NextRequest) {
   // saga turned out to be a wrong doc URL (a stale link saved against a
   // focus-video's script_url), not an auth bug, and having the received
   // URL/text length surface in the UI is what caught that. Cheap to keep.
-  let parsed: { action?: string; url?: string; text?: string; find?: string; replace?: string; matchCase?: boolean; suggest?: boolean } = {}
+  let parsed: { action?: string; url?: string; text?: string; find?: string; replace?: string; matchCase?: boolean; suggest?: boolean; originalText?: string; replacementText?: string } = {}
   try {
     parsed = await req.json()
-    const { action, url, text, find, replace, matchCase, suggest } = parsed
+    const { action, url, text, find, replace, matchCase, suggest, originalText, replacementText } = parsed
     if (!url) return NextResponse.json({ error: 'Missing url.' }, { status: 400 })
 
     if (action === 'replace_all') {
@@ -43,7 +43,18 @@ export async function POST(req: NextRequest) {
       const { suggestionWarning } = await appendToGoogleDoc(url, text, !!suggest)
       return NextResponse.json({ ok: true, suggestionWarning })
     }
-    return NextResponse.json({ error: "Unknown action — use 'replace_all', 'find_replace', or 'append'." }, { status: 400 })
+    if (action === 'apply_edit') {
+      // Accept-one-proposed-edit -- the write side of the app-level AI
+      // review flow (see app/script-editor/page.tsx's edit cards). Each
+      // call is independent and re-locates originalText fresh in the live
+      // doc, so accepting edits out of order or one at a time is safe.
+      if (typeof originalText !== 'string' || typeof replacementText !== 'string') {
+        return NextResponse.json({ error: 'Missing originalText/replacementText.' }, { status: 400 })
+      }
+      const { suggestionWarning } = await applyProposedEdit(url, originalText, replacementText, !!suggest)
+      return NextResponse.json({ ok: true, suggestionWarning })
+    }
+    return NextResponse.json({ error: "Unknown action — use 'replace_all', 'find_replace', 'append', or 'apply_edit'." }, { status: 400 })
   } catch (e) {
     return NextResponse.json({
       error: String(e),
