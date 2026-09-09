@@ -152,7 +152,16 @@ export type GoogleDocSnapshot = { docId: string; title: string; text: string; en
 export async function getGoogleDocText(docIdOrUrl: string): Promise<GoogleDocSnapshot> {
   const docId = extractDocId(docIdOrUrl)
   if (!docId) throw new Error('Could not find a Google Doc ID in that link.')
-  const doc = await docsFetch('/' + docId)
+  // Explicitly request SUGGESTIONS_INLINE -- Google's docs warn that the
+  // indices in a documents.get response can shift depending on this
+  // parameter when a doc has pending suggestions in it (Tom's script doc
+  // does), and that SUGGESTIONS_INLINE is specifically the representation
+  // whose indices are safe to feed into a subsequent batchUpdate. Without
+  // it, the API falls back to a privilege-based default that isn't
+  // guaranteed to match -- harmless so far since it's happened to line up,
+  // but not something to keep relying on for a diff that depends on exact
+  // character offsets.
+  const doc = await docsFetch('/' + docId + '?suggestionsViewMode=SUGGESTIONS_INLINE')
   const content = doc.body?.content ?? []
   const endIndex = content.length ? (content[content.length - 1].endIndex ?? 1) : 1
   return { docId, title: doc.title ?? 'Untitled', text: extractText(doc), endIndex }
