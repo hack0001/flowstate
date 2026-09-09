@@ -45,17 +45,45 @@ type ProposedEdit = {
 // the array in one despite instructions not to, and drops any entry
 // missing a non-empty originalText (nothing to locate in the doc with an
 // empty string).
+// Scans for the first balanced top-level [...] array anywhere in the text,
+// respecting string literals so brackets inside quoted strings don't throw
+// off the depth count. More forgiving than requiring the whole response to
+// be exactly the array: longer, denser system prompts (the ones with the
+// full channel brief baked in) sometimes get Claude adding a line of
+// commentary before or after the JSON despite being told not to -- a bare
+// "does the whole string parse as JSON" check fails on that even though a
+// perfectly good array is sitting right there in the middle.
+function extractJsonArray(raw: string): string | null {
+  const start = raw.indexOf('[')
+  if (start === -1) return null
+  let depth = 0, inString = false, escapeNext = false
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i]
+    if (escapeNext) { escapeNext = false; continue }
+    if (ch === '\\') { escapeNext = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === '[') depth++
+    else if (ch === ']') {
+      depth--
+      if (depth === 0) return raw.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
 function parseProposedEdits(raw: string): { edits: ProposedEdit[]; error: string | null } {
-  let cleaned = raw.trim()
-  const fenced = cleaned.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/)
-  if (fenced) cleaned = fenced[1]
+  const preview = raw.length > 500 ? raw.slice(0, 500) + '…' : raw
+  const jsonSlice = extractJsonArray(raw) ?? raw.trim()
   let parsed: unknown
   try {
-    parsed = JSON.parse(cleaned)
+    parsed = JSON.parse(jsonSlice)
   } catch {
-    return { edits: [], error: "Couldn't parse Claude's response as a list of edits -- try again, or rephrase the instruction." }
+    return { edits: [], error: "Couldn't parse Claude's response as a list of edits. What it actually said:\n" + preview }
   }
-  if (!Array.isArray(parsed)) return { edits: [], error: "Claude didn't return a list of edits." }
+  if (!Array.isArray(parsed)) {
+    return { edits: [], error: "Claude didn't return a list of edits. What it actually said:\n" + preview }
+  }
   const edits: ProposedEdit[] = (parsed as Record<string, unknown>[])
     .filter(e => e && typeof e.originalText === 'string' && (e.originalText as string).trim())
     .map((e, i) => ({
@@ -111,7 +139,7 @@ const STYLE_PRESETS = [
 // keeps the output contract (JSON array of small, located edits) identical
 // to the free-form "Ask Claude" flow so they all render as the same
 // reviewable cards.
-const REVIEW_OUTPUT_CONTRACT = "Return ONLY a JSON array (no markdown fences, no commentary before or after) of edit objects, each shaped exactly like {\"originalText\": string, \"replacementText\": string, \"reason\": string}. originalText must be copied EXACTLY, character-for-character, from the document text below -- same spelling, punctuation, capitalization and spacing -- since it's used to locate the exact spot in the doc; never paraphrase or approximate it, and never invent text that isn't actually there. If there's nothing to flag, return []."
+const REVIEW_OUTPUT_CONTRACT = "Your ENTIRE reply must be a single JSON array and nothing else -- the very first character you write must be [ and the very last must be ]. No markdown code fences, no preamble like \"Here are the issues I found\", no summary or sign-off after the array, no commentary anywhere. Just the raw array. It must be an array of edit objects, each shaped exactly like {\"originalText\": string, \"replacementText\": string, \"reason\": string}. originalText must be copied EXACTLY, character-for-character, from the document text below -- same spelling, punctuation, capitalization and spacing -- since it's used to locate the exact spot in the doc; never paraphrase or approximate it, and never invent text that isn't actually there. If there's nothing to flag, your entire reply must be exactly []."
 
 // One-click review buttons -- each runs a specialized system prompt built
 // from the channel's real strategy brief and script voice (lib/channelBrief.ts,
@@ -578,7 +606,7 @@ export default function ScriptEditorPage() {
                     <Wand2 size={13}/> {generating ? 'Thinking...' : 'Ask Claude'}
                   </button>
                 </div>
-                {genMsg && <p style={{ fontSize:'0.75rem', color:C.amber, margin:'0 0 0.75rem' }}>{genMsg}</p>}
+                {genMsg && <p style={{ fontSize:'0.75rem', color:C.amber, margin:'0 0 0.75rem', whiteSpace:'pre-wrap' as const }}>{genMsg}</p>}
 
                 {proposedEdits.length > 0 && (
                   <div style={{ marginTop:'0.5rem' }}>
@@ -655,7 +683,7 @@ export default function ScriptEditorPage() {
                     <Wand2 size={13}/> {generating ? 'Thinking...' : 'Ask Claude'}
                   </button>
                 </div>
-                {genMsg && <p style={{ fontSize:'0.75rem', color:C.amber, margin:'0 0 0.75rem' }}>{genMsg}</p>}
+                {genMsg && <p style={{ fontSize:'0.75rem', color:C.amber, margin:'0 0 0.75rem', whiteSpace:'pre-wrap' as const }}>{genMsg}</p>}
                 {appendProposed && (
                   <>
                     <label style={{ display:'block', fontSize:'0.7rem', fontWeight:700, color:C.sec, textTransform:'uppercase' as const, letterSpacing:'0.06em', margin:'0.5rem 0 0.4rem' }}>Proposed new section — edit freely before applying</label>
