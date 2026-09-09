@@ -167,6 +167,7 @@ export default function ScriptEditorPage() {
       })
       const data = await res.json()
       if (data?.error) setApplyMsg('Failed: ' + String(data.error) + (data.debug ? '\n\nDEBUG: ' + JSON.stringify(data.debug, null, 2) : ''))
+      else if (data.changed === false) setApplyMsg('No changes found — the proposed text matches the doc already.')
       else { setApplyMsg(suggestMode ? 'Suggested in the doc — open it to Accept/Reject.' : 'Applied to the doc.'); loadDoc(docUrl) }
     } catch (e) {
       setApplyMsg('Failed: ' + String(e))
@@ -283,7 +284,7 @@ export default function ScriptEditorPage() {
                 <span>
                   <span style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:C.text }}>Apply as a suggestion, not a direct edit</span>
                   <span style={{ display:'block', fontSize:'0.72rem', color:C.muted, lineHeight:1.5, marginTop:'0.15rem' }}>
-                    On: the edit lands in the doc as a real Google Docs suggestion — colored, with Accept/Reject right there in Docs. Off: it writes straight in. Suggestion mode needs the Google Cloud project behind the service account enrolled in Google's <a href="https://developers.google.com/workspace/preview" target="_blank" rel="noopener noreferrer" style={{ color:C.cyan }}>Workspace Developer Preview Program</a> (a Workspace-domain email, not personal Gmail) — if it's not enrolled yet, applying will fail with a message telling you that. Note: "Rewrite with Claude" suggests the whole document as one big delete + one big insert (accept/reject as a block); "Quick find & replace" suggests each occurrence separately for finer review.
+                    On: the edit lands in the doc as a real Google Docs suggestion — colored, with Accept/Reject right there in Docs. Off: it writes straight in. Suggestion mode needs the Google Cloud project behind the service account enrolled in Google's <a href="https://developers.google.com/workspace/preview" target="_blank" rel="noopener noreferrer" style={{ color:C.cyan }}>Workspace Developer Preview Program</a> (a Workspace-domain email, not personal Gmail) — if it's not enrolled yet, applying will fail with a message telling you that. "Rewrite with Claude" only touches the words that actually changed — it diffs the current doc against Claude's proposal and suggests (or applies) just those edits, so unrelated text and formatting elsewhere is left alone. "Quick find & replace" suggests each occurrence separately too.
                   </span>
                 </span>
               </label>

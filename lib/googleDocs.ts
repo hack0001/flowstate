@@ -29,6 +29,7 @@
 // client component; all access goes through app/api/gdocs/route.ts.
 // ============================================================
 
+import { diffWordsWithSpace } from 'diff'
 import { getImpersonatedAccessToken } from './googleDrive'
 
 const DOCS_API = 'https://docs.googleapis.com/v1/documents'
@@ -151,6 +152,74 @@ export async function replaceGoogleDocText(docIdOrUrl: string, newText: string, 
   }
   if (newText) requests.push({ insertText: { location: { index: 1 }, text: newText } })
   await docsFetch('/' + docId + ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests, ...writeControlFor(suggest) }) })
+}
+
+// Turns a word-level diff between the doc's current text and Claude's
+// proposed text into targeted insertText/deleteContentRange requests, so
+// "Apply to Google Doc" only touches what actually changed instead of
+// nuking and reinserting the whole body. This matters a lot in suggestion
+// mode: a whole-doc replace shows up in Google Docs as one giant
+// accept-everything-or-reject-everything block, whereas this shows up as
+// normal, reviewable track-changes-style suggestions -- strikethrough on
+// the words that changed, underline on their replacements, everything
+// else in the doc left completely alone (so unrelated formatting on
+// untouched text survives too).
+//
+// Index bookkeeping: Google Docs body indices are 1-based UTF-16 offsets.
+// We walk the diff parts in document order, tracking `origIndex` -- the
+// position we're at in the ORIGINAL (currently-live) text. Unchanged and
+// removed parts advance it (they exist in the original); added parts
+// don't (they're new, so they don't correspond to any original position --
+// an addition is recorded at whatever origIndex has reached so far, i.e.
+// immediately after anything already consumed). A "word changed" diff
+// produces a removed part immediately followed (or preceded) by an added
+// part -- since only `removed` advances origIndex, both end up anchored at
+// the same start position, which is exactly what you want for an in-place
+// replacement.
+//
+// A single batchUpdate call applies its requests in order, and each one's
+// indices are evaluated against the document AS MUTATED BY THE PRIOR
+// requests in that same call -- not the original. So requests are emitted
+// back-to-front (highest original position first): once you've mutated
+// something near the end of the doc, positions before that mutation are
+// completely unaffected and can still use their original index values.
+// For a delete+insert pair anchored at the exact same position, delete is
+// ordered before insert -- deleting the old range first leaves a gap at
+// that same start index, and inserting there lands the new text exactly
+// where the old text was.
+function computeDiffRequests(oldText: string, newText: string): any[] {
+  if (oldText === newText) return []
+  const parts = diffWordsWithSpace(oldText, newText)
+  type Hunk = { kind: 'delete' | 'insert'; start: number; text: string }
+  const hunks: Hunk[] = []
+  let origIndex = 1
+  for (const part of parts) {
+    if (part.added) {
+      if (part.value) hunks.push({ kind: 'insert', start: origIndex, text: part.value })
+    } else if (part.removed) {
+      if (part.value) hunks.push({ kind: 'delete', start: origIndex, text: part.value })
+      origIndex += part.value.length
+    } else {
+      origIndex += part.value.length
+    }
+  }
+  hunks.sort((a, b) => (b.start !== a.start ? b.start - a.start : (a.kind === 'delete' ? -1 : 1)))
+  return hunks.map(h => h.kind === 'delete'
+    ? { deleteContentRange: { range: { startIndex: h.start, endIndex: h.start + h.text.length } } }
+    : { insertText: { location: { index: h.start }, text: h.text } })
+}
+
+// The real "Apply to Google Doc" path for the Rewrite tool -- fetches the
+// doc fresh (so it diffs against whatever's live right now, self-healing
+// against any staleness since the text was generated), diffs it against
+// Claude's proposed text, and sends only the targeted edits. Falls back to
+// doing nothing if the diff finds no actual changes.
+export async function patchGoogleDocText(docIdOrUrl: string, newText: string, suggest = false): Promise<{ changed: boolean }> {
+  const { docId, text: currentText } = await getGoogleDocText(docIdOrUrl)
+  const requests = computeDiffRequests(currentText, newText)
+  if (requests.length === 0) return { changed: false }
+  await docsFetch('/' + docId + ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests, ...writeControlFor(suggest) }) })
+  return { changed: true }
 }
 
 // Surgical find/replace across the whole doc — swap a name, fix a repeated
