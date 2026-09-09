@@ -227,16 +227,34 @@ export default function ScriptEditorPage() {
     else refreshLinks()
   }
 
-  const loadDoc = useCallback(async (url: string) => {
+  // resetForms controls whether switching to (or reloading) a doc should
+  // wipe the review batch. The "Load" button and clicking a saved link
+  // pass true (default) -- you're deliberately switching documents, so
+  // stale proposed edits from a different doc shouldn't linger. Refreshing
+  // the preview after successfully applying ONE edit -- from acceptEdit,
+  // applyFindReplace, applyAppend -- passes false, so accepting one card
+  // doesn't wipe out every other still-pending card in the same batch.
+  // (That was a real bug: accepting a change was silently clearing the
+  // whole proposedEdits list because this always ran with the old
+  // unconditional reset.)
+  const loadDoc = useCallback(async (url: string, resetForms = true) => {
     if (!url.trim()) return
     setLoadingDoc(true)
     setLoadErr(null)
-    setApplyMsg(null)
+    // Only clear the status message on a deliberate doc switch. A
+    // post-action refresh (resetForms=false) runs right after
+    // acceptEdit/applyFindReplace/applyAppend just set that same message
+    // (e.g. a suggestionWarning) -- clearing it here too would wipe it out
+    // before it was ever visible, in the same render batch.
+    if (resetForms) setApplyMsg(null)
     try {
       const res = await fetch('/api/gdocs?url=' + encodeURIComponent(url.trim()))
       const data = await res.json()
       if (data?.error) { setLoadErr(String(data.error)); setSnapshot(null) }
-      else { setSnapshot(data); setProposedEdits([]); setAppendProposed('') }
+      else {
+        setSnapshot(data)
+        if (resetForms) { setProposedEdits([]); setAppendProposed('') }
+      }
     } catch (e) {
       setLoadErr('Failed to load: ' + String(e))
     } finally {
@@ -266,6 +284,7 @@ export default function ScriptEditorPage() {
 
   function rejectEdit(id: string) {
     setProposedEdits(prev => prev.filter(e => e.id !== id))
+    setApplyMsg('Rejected — no change made to the doc.')
   }
 
   function updateEditText(id: string, replacementText: string) {
@@ -294,7 +313,7 @@ export default function ScriptEditorPage() {
       }
       if (data.suggestionWarning) setApplyMsg('Warning: ' + String(data.suggestionWarning))
       setProposedEdits(prev => prev.filter(e => e.id !== id))
-      loadDoc(docUrl)
+      loadDoc(docUrl, false)
     } catch (e) {
       setProposedEdits(prev => prev.map(e => e.id === id ? { ...e, status: 'pending', error: String(e) } : e))
     }
@@ -334,7 +353,7 @@ export default function ScriptEditorPage() {
       if (data?.error) setApplyMsg('Failed: ' + String(data.error))
       else if (data.suggestionWarning) setApplyMsg('Warning: ' + String(data.suggestionWarning))
       else setApplyMsg(data.occurrencesChanged + (suggestMode ? ' occurrence(s) suggested — open the doc to Accept/Reject.' : ' occurrence(s) changed.'))
-      if (!data?.error) loadDoc(docUrl)
+      if (!data?.error) loadDoc(docUrl, false)
     } catch (e) {
       setApplyMsg('Failed: ' + String(e))
     } finally {
@@ -357,7 +376,7 @@ export default function ScriptEditorPage() {
       else {
         if (data.suggestionWarning) setApplyMsg('Warning: ' + String(data.suggestionWarning))
         else setApplyMsg(suggestMode ? 'Suggested in the doc — open it to Accept/Reject.' : 'Appended to the doc.')
-        setAppendProposed(''); setAppendInstruction(''); loadDoc(docUrl)
+        setAppendProposed(''); setAppendInstruction(''); loadDoc(docUrl, false)
       }
     } catch (e) {
       setApplyMsg('Failed: ' + String(e))
