@@ -767,3 +767,45 @@ export async function deleteMusicTrack(id: string): Promise<{ error: string | nu
   if (error) return { error: explainMusicLibraryError(error.message) }
   return { error: null }
 }
+
+// ---- Script Editor saved doc links ----
+// A small, user-managed list of Google Doc links for quick access in the
+// Script Editor (app/script-editor/page.tsx) -- editable and deletable,
+// any number of them. Replaces an earlier auto-populated list (pulled from
+// active focus videos' script_url field) that went stale and once pointed
+// at the wrong document entirely. Requires 046_script_doc_links.sql.
+export type ScriptDocLink = { id: string; label: string; url: string; created_at: string }
+
+function explainScriptDocLinksError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('script_doc_links')) {
+    return 'Setup needed: run supabase/migrations/046_script_doc_links.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading saved links.'
+}
+
+export async function getScriptDocLinks(): Promise<{ links: ScriptDocLink[]; error: string | null }> {
+  const { data, error } = await supabase.from('script_doc_links').select('*').order('created_at', { ascending: true })
+  if (error) return { links: [], error: explainScriptDocLinksError(error.message) }
+  return { links: (data as ScriptDocLink[]) ?? [], error: null }
+}
+
+export async function addScriptDocLink(label: string, url: string): Promise<{ link: ScriptDocLink | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('script_doc_links')
+    .insert({ label: label.trim(), url: url.trim() })
+    .select().single()
+  if (error) return { link: null, error: explainScriptDocLinksError(error.message) }
+  return { link: data as ScriptDocLink, error: null }
+}
+
+export async function updateScriptDocLink(id: string, patch: Partial<Pick<ScriptDocLink, 'label' | 'url'>>): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('script_doc_links').update(patch).eq('id', id)
+  if (error) return { error: explainScriptDocLinksError(error.message) }
+  return { error: null }
+}
+
+export async function deleteScriptDocLink(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('script_doc_links').delete().eq('id', id)
+  if (error) return { error: explainScriptDocLinksError(error.message) }
+  return { error: null }
+}

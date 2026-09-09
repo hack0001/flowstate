@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { getActiveFocusVideos, type ActiveFocusVideo } from '@/lib/supabase'
-import { ChevronLeft, RefreshCw, Wand2, Search, Plus, Check, AlertCircle, FileEdit } from 'lucide-react'
+import { getScriptDocLinks, addScriptDocLink, updateScriptDocLink, deleteScriptDocLink, type ScriptDocLink } from '@/lib/supabase'
+import { ChevronLeft, RefreshCw, Wand2, Search, Plus, Check, AlertCircle, FileEdit, X, Pencil, Bookmark } from 'lucide-react'
 
 const C = {
   bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
@@ -72,7 +72,6 @@ async function consult(systemPrompt: string, userPrompt: string, model: string):
 
 export default function ScriptEditorPage() {
   const router = useRouter()
-  const [videos, setVideos] = useState<ActiveFocusVideo[]>([])
   const [docUrl, setDocUrl] = useState('')
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [loadingDoc, setLoadingDoc] = useState(false)
@@ -106,9 +105,51 @@ export default function ScriptEditorPage() {
   const [applying, setApplying] = useState(false)
   const [applyMsg, setApplyMsg] = useState<string | null>(null)
 
-  useEffect(() => {
-    getActiveFocusVideos().then(({ videos }) => setVideos(videos.filter(v => v.script_url)))
+  // Saved doc links -- a small, user-managed list for quick access, editable
+  // and deletable, any number of them.
+  const [links, setLinks] = useState<ScriptDocLink[]>([])
+  const [linksErr, setLinksErr] = useState<string | null>(null)
+  const [addingLink, setAddingLink] = useState(false)
+  const [newLinkLabel, setNewLinkLabel] = useState('')
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null)
+  const [editLabel, setEditLabel] = useState('')
+  const [editUrl, setEditUrl] = useState('')
+
+  const refreshLinks = useCallback(() => {
+    getScriptDocLinks().then(({ links, error }) => { setLinks(links); setLinksErr(error) })
   }, [])
+
+  useEffect(() => { refreshLinks() }, [refreshLinks])
+
+  async function saveCurrentAsLink() {
+    if (!docUrl.trim()) return
+    setAddingLink(true)
+    const label = newLinkLabel.trim() || snapshot?.title || 'Untitled link'
+    const { error } = await addScriptDocLink(label, docUrl.trim())
+    if (error) setLinksErr(error)
+    else { setNewLinkLabel(''); refreshLinks() }
+    setAddingLink(false)
+  }
+
+  function startEditLink(link: ScriptDocLink) {
+    setEditingLinkId(link.id)
+    setEditLabel(link.label)
+    setEditUrl(link.url)
+  }
+
+  async function saveEditLink() {
+    if (!editingLinkId) return
+    const { error } = await updateScriptDocLink(editingLinkId, { label: editLabel.trim() || 'Untitled link', url: editUrl.trim() })
+    if (error) setLinksErr(error)
+    setEditingLinkId(null)
+    refreshLinks()
+  }
+
+  async function removeLink(id: string) {
+    const { error } = await deleteScriptDocLink(id)
+    if (error) setLinksErr(error)
+    else refreshLinks()
+  }
 
   const loadDoc = useCallback(async (url: string) => {
     if (!url.trim()) return
@@ -248,15 +289,34 @@ export default function ScriptEditorPage() {
               <RefreshCw size={13} style={{ animation: loadingDoc ? 'spin 1s linear infinite' : 'none' }}/> {loadingDoc ? 'Loading' : 'Load'}
             </button>
           </div>
-          {videos.length > 0 && (
-            <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' as const, marginTop:'0.6rem' }}>
-              {videos.map(v => (
-                <button key={v.id} onClick={() => { setDocUrl(v.script_url ?? ''); loadDoc(v.script_url ?? '') }} style={{ fontSize:'0.68rem', padding:'0.25rem 0.6rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'9999px', color:C.sec, cursor:'pointer', fontFamily:'inherit' }}>
-                  {v.title}
-                </button>
+          {/* Saved links -- editable, deletable, add as many as you want */}
+          <div style={{ marginTop:'0.7rem' }}>
+            <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' as const, alignItems:'center' }}>
+              {links.map(link => editingLinkId === link.id ? (
+                <div key={link.id} style={{ display:'flex', gap:'0.3rem', alignItems:'center', background:C.surface, border:'1px solid '+C.cyan, borderRadius:'0.5rem', padding:'0.3rem' }}>
+                  <input value={editLabel} onChange={e => setEditLabel(e.target.value)} placeholder="Label" style={{ ...inputStyle, padding:'0.3rem 0.5rem', fontSize:'0.7rem', width:110 }}/>
+                  <input value={editUrl} onChange={e => setEditUrl(e.target.value)} placeholder="URL" style={{ ...inputStyle, padding:'0.3rem 0.5rem', fontSize:'0.7rem', width:200 }}/>
+                  <button onClick={saveEditLink} style={{ background:'none', border:'none', color:C.green, cursor:'pointer', padding:'0.2rem' }}><Check size={14}/></button>
+                  <button onClick={() => setEditingLinkId(null)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem' }}><X size={14}/></button>
+                </div>
+              ) : (
+                <div key={link.id} style={{ display:'flex', alignItems:'center', gap:'0.3rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'9999px', padding:'0.15rem 0.3rem 0.15rem 0.7rem' }}>
+                  <button onClick={() => { setDocUrl(link.url); loadDoc(link.url) }} title={link.url} style={{ fontSize:'0.68rem', background:'none', border:'none', color:C.sec, cursor:'pointer', fontFamily:'inherit', padding:0 }}>
+                    {link.label}
+                  </button>
+                  <button onClick={() => startEditLink(link)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem', display:'flex' }}><Pencil size={11}/></button>
+                  <button onClick={() => removeLink(link.id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem', display:'flex' }}><X size={12}/></button>
+                </div>
               ))}
+              <div style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                <input value={newLinkLabel} onChange={e => setNewLinkLabel(e.target.value)} placeholder="Label for this link" style={{ ...inputStyle, padding:'0.3rem 0.6rem', fontSize:'0.68rem', width:130 }}/>
+                <button onClick={saveCurrentAsLink} disabled={addingLink || !docUrl.trim()} title="Save the URL above as a quick-access link" style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.68rem', padding:'0.3rem 0.6rem', background:'rgba(0,212,255,0.08)', border:'1px dashed rgba(0,212,255,0.35)', borderRadius:'9999px', color:C.cyan, cursor: (addingLink || !docUrl.trim()) ? 'not-allowed' : 'pointer', fontFamily:'inherit' }}>
+                  <Bookmark size={11}/> Save link
+                </button>
+              </div>
             </div>
-          )}
+            {linksErr && <p style={{ fontSize:'0.7rem', color:C.red, margin:'0.4rem 0 0' }}>{linksErr}</p>}
+          </div>
           {loadErr && (
             <p style={{ display:'flex', alignItems:'center', gap:'0.4rem', fontSize:'0.75rem', color:C.red, margin:'0.6rem 0 0' }}><AlertCircle size={13}/> {loadErr}</p>
           )}
