@@ -83,7 +83,19 @@ export default function ScriptEditorPage() {
   // suggestions (colored, Accept/Reject) instead of landing directly.
   // Requires the doc's Google Cloud project to be enrolled in Google's
   // Workspace Developer Preview Program -- see the note under the toggle.
-  const [suggestMode, setSuggestMode] = useState(true)
+  // Persisted to localStorage -- it used to silently reset to checked on
+  // every page refresh, which was genuinely confusing to test against
+  // (unchecking it, refreshing, and clicking Apply would quietly apply a
+  // direct edit again without it looking like anything had changed).
+  const [suggestMode, setSuggestModeState] = useState(true)
+  useEffect(() => {
+    const stored = typeof window !== 'undefined' ? window.localStorage.getItem('scriptEditorSuggestMode') : null
+    if (stored !== null) setSuggestModeState(stored === 'true')
+  }, [])
+  function setSuggestMode(v: boolean) {
+    setSuggestModeState(v)
+    try { window.localStorage.setItem('scriptEditorSuggestMode', String(v)) } catch {}
+  }
 
   // Rewrite tool
   const [instruction, setInstruction] = useState('')
@@ -209,7 +221,11 @@ export default function ScriptEditorPage() {
       const data = await res.json()
       if (data?.error) setApplyMsg('Failed: ' + String(data.error) + (data.debug ? '\n\nDEBUG: ' + JSON.stringify(data.debug, null, 2) : ''))
       else if (data.changed === false) setApplyMsg('No changes found — the proposed text matches the doc already.')
-      else { setApplyMsg(suggestMode ? 'Suggested in the doc — open it to Accept/Reject.' : 'Applied to the doc.'); loadDoc(docUrl) }
+      else {
+        if (data.suggestionWarning) setApplyMsg('Warning: ' + String(data.suggestionWarning))
+        else setApplyMsg(suggestMode ? 'Suggested in the doc — open it to Accept/Reject.' : 'Applied to the doc.')
+        loadDoc(docUrl)
+      }
     } catch (e) {
       setApplyMsg('Failed: ' + String(e))
     } finally {
@@ -229,7 +245,9 @@ export default function ScriptEditorPage() {
       })
       const data = await res.json()
       if (data?.error) setApplyMsg('Failed: ' + String(data.error))
-      else { setApplyMsg(data.occurrencesChanged + (suggestMode ? ' occurrence(s) suggested — open the doc to Accept/Reject.' : ' occurrence(s) changed.')); loadDoc(docUrl) }
+      else if (data.suggestionWarning) setApplyMsg('Warning: ' + String(data.suggestionWarning))
+      else setApplyMsg(data.occurrencesChanged + (suggestMode ? ' occurrence(s) suggested — open the doc to Accept/Reject.' : ' occurrence(s) changed.'))
+      if (!data?.error) loadDoc(docUrl)
     } catch (e) {
       setApplyMsg('Failed: ' + String(e))
     } finally {
@@ -249,7 +267,11 @@ export default function ScriptEditorPage() {
       })
       const data = await res.json()
       if (data?.error) setApplyMsg('Failed: ' + String(data.error))
-      else { setApplyMsg(suggestMode ? 'Suggested in the doc — open it to Accept/Reject.' : 'Appended to the doc.'); setAppendProposed(''); setAppendInstruction(''); loadDoc(docUrl) }
+      else {
+        if (data.suggestionWarning) setApplyMsg('Warning: ' + String(data.suggestionWarning))
+        else setApplyMsg(suggestMode ? 'Suggested in the doc — open it to Accept/Reject.' : 'Appended to the doc.')
+        setAppendProposed(''); setAppendInstruction(''); loadDoc(docUrl)
+      }
     } catch (e) {
       setApplyMsg('Failed: ' + String(e))
     } finally {
@@ -432,7 +454,7 @@ export default function ScriptEditorPage() {
               </div>
             )}
 
-            {applyMsg && <p style={{ fontSize:'0.78rem', color: applyMsg.startsWith('Failed') ? C.red : C.green, marginTop:'0.9rem', whiteSpace:'pre-wrap' as const }}>{applyMsg}</p>}
+            {applyMsg && <p style={{ fontSize:'0.78rem', color: applyMsg.startsWith('Failed') ? C.red : applyMsg.startsWith('Warning') ? C.amber : C.green, marginTop:'0.9rem', whiteSpace:'pre-wrap' as const }}>{applyMsg}</p>}
           </>
         )}
       </div>

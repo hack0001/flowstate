@@ -30,18 +30,18 @@ export async function POST(req: NextRequest) {
 
     if (action === 'replace_all') {
       if (typeof text !== 'string') return NextResponse.json({ error: 'Missing text.' }, { status: 400 })
-      const { changed } = await patchGoogleDocText(url, text, !!suggest)
-      return NextResponse.json({ ok: true, changed })
+      const { changed, suggestionWarning } = await patchGoogleDocText(url, text, !!suggest)
+      return NextResponse.json({ ok: true, changed, suggestionWarning })
     }
     if (action === 'find_replace') {
       if (typeof find !== 'string' || typeof replace !== 'string') return NextResponse.json({ error: 'Missing find/replace.' }, { status: 400 })
-      const occurrencesChanged = await findReplaceInGoogleDoc(url, find, replace, !!matchCase, !!suggest)
-      return NextResponse.json({ ok: true, occurrencesChanged })
+      const { occurrencesChanged, suggestionWarning } = await findReplaceInGoogleDoc(url, find, replace, !!matchCase, !!suggest)
+      return NextResponse.json({ ok: true, occurrencesChanged, suggestionWarning })
     }
     if (action === 'append') {
       if (typeof text !== 'string') return NextResponse.json({ error: 'Missing text.' }, { status: 400 })
-      await appendToGoogleDoc(url, text, !!suggest)
-      return NextResponse.json({ ok: true })
+      const { suggestionWarning } = await appendToGoogleDoc(url, text, !!suggest)
+      return NextResponse.json({ ok: true, suggestionWarning })
     }
     return NextResponse.json({ error: "Unknown action — use 'replace_all', 'find_replace', or 'append'." }, { status: 400 })
   } catch (e) {
