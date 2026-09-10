@@ -193,7 +193,7 @@ const STORYBOARD_COLORS: Record<StoryboardCategory, string> = {
   'B-ROLL': '#ff4fa3', 'STOCK FOOTAGE': '#4a9eff', 'AI VISUAL': '#c084fc', 'MEME': '#ff8a3d',
   'AUDIO': '#2fb8ac', 'OTHER': '#8888aa',
 }
-type StoryboardLine = { id: string; line: string; category: StoryboardCategory; visual: string; status: 'pending' | 'accepted' | 'rejected' }
+type StoryboardLine = { id: string; line: string; category: StoryboardCategory; visual: string; status: 'pending' | 'applying' | 'accepted' | 'rejected'; error?: string }
 
 const STORYBOARD_MAX_TOKENS = 24000
 const STORYBOARD_SYSTEM_PROMPT = "You are storyboarding a script for a FACELESS YouTube channel -- voiceover only, no on-camera host, so every line needs something on screen. Go through the ENTIRE script line by line (or beat by beat for a longer passage -- don't skip any section) and decide what should be showing at that moment. Categorize each with exactly one of: " + STORYBOARD_CATEGORIES.join(', ') + " (use AUDIO for a sound effect or music cue, not the voiceover itself, which is already implied). Be specific about WHAT it shows, not just the category (e.g. 'empty grocery store shelves', not 'footage'). Your ENTIRE reply must be a single JSON array and nothing else -- first character [, last character ], no markdown fences, no preamble, no commentary. Each entry shaped exactly like {\"line\": string, \"category\": string, \"visual\": string} where line is copied EXACTLY, character-for-character, from the document text below, category is one of the exact category strings above, and visual is a short, specific description (not a full sentence) of what to show. One entry per line or short beat, in order, covering the whole script."
@@ -515,13 +515,38 @@ export default function ScriptEditorPage() {
     setGenerating(false)
   }
 
-  // Accept/reject a storyboard line -- purely local curation (this tab
-  // never writes to the doc), so it just marks status. Accepted/rejected
-  // stay visible but visually resolved rather than vanishing, so you can
-  // still see what you decided on a pass.
-  function acceptStoryboardLine(id: string) {
-    setStoryboard(prev => prev.map(l => l.id === id ? { ...l, status: 'accepted' } : l))
+  // Accept on a storyboard card writes a real note into the Google Doc --
+  // a new, colored line inserted directly under the script line it
+  // describes, via insert_visual_note. Uses the same suggest-mode toggle
+  // as the other tools. Re-locates the script line fresh each call (same
+  // self-healing approach as acceptEdit), so accepting several cards in a
+  // row is safe even as earlier accepts shift the doc underneath.
+  async function acceptStoryboardLine(id: string) {
+    const line = storyboard.find(l => l.id === id)
+    if (!line) return
+    setStoryboard(prev => prev.map(l => l.id === id ? { ...l, status: 'applying', error: undefined } : l))
+    try {
+      const noteText = '[' + line.category + ': ' + line.visual + ']'
+      const res = await fetch('/api/gdocs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'insert_visual_note', url: docUrl, scriptLine: line.line, noteText, colorHex: STORYBOARD_COLORS[line.category], suggest: suggestMode }),
+      })
+      const data = await res.json()
+      if (data?.error) {
+        setStoryboard(prev => prev.map(l => l.id === id ? { ...l, status: 'pending', error: String(data.error) } : l))
+        return
+      }
+      if (data.suggestionWarning) setApplyMsg('Warning: ' + String(data.suggestionWarning))
+      setStoryboard(prev => prev.map(l => l.id === id ? { ...l, status: 'accepted' } : l))
+      loadDoc(docUrl, false)
+    } catch (e) {
+      setStoryboard(prev => prev.map(l => l.id === id ? { ...l, status: 'pending', error: String(e) } : l))
+    }
   }
+
+  // Reject is purely local -- nothing was ever written for a rejected
+  // note, so this just marks it so you can see what you decided on a pass.
   function rejectStoryboardLine(id: string) {
     setStoryboard(prev => prev.map(l => l.id === id ? { ...l, status: 'rejected' } : l))
   }
@@ -798,7 +823,7 @@ export default function ScriptEditorPage() {
             {tool === 'storyboard' && (
               <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1rem' }}>
                 <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 0.85rem', lineHeight:1.5 }}>
-                  Read-only — this never writes to the doc. Walks the whole script and shows what should be on screen under each line, color-coded by type. For a faceless channel: screenshots, animations, on-screen text, images, b-roll, stock footage, AI visuals, memes, or audio cues.
+                  Walks the whole script and suggests what should be on screen under each line, color-coded by type. Accept writes it into the Google Doc as a new colored line right under the script line; Reject just dismisses it here — nothing is written either way until you click Accept. For a faceless channel: screenshots, animations, on-screen text, images, b-roll, stock footage, AI visuals, memes, or audio cues.
                 </p>
                 <div style={{ display:'flex', gap:'0.5rem', alignItems:'center', marginBottom:'0.75rem' }}>
                   <select value={model} onChange={e => setModel(e.target.value)} style={{ ...inputStyle, width:'auto', cursor:'pointer' }}>
@@ -829,11 +854,12 @@ export default function ScriptEditorPage() {
                           </span>
                           {line.visual && <span style={{ fontSize:'0.75rem', color:C.sec }}>{line.visual}</span>}
                         </div>
+                        {line.error && <p style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', color:C.red, margin:'0 0 0.6rem' }}><AlertCircle size={12}/> {line.error}</p>}
                         <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
-                          <button onClick={() => acceptStoryboardLine(line.id)} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.7rem', background: line.status === 'accepted' ? 'linear-gradient(135deg,'+C.green+',#00cc6a)' : 'transparent', border:'1px solid '+(line.status === 'accepted' ? 'transparent' : C.border), borderRadius:'0.5rem', color: line.status === 'accepted' ? '#000' : C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:800 }}>
-                            <Check size={11}/> {line.status === 'accepted' ? 'Accepted' : 'Accept'}
+                          <button onClick={() => acceptStoryboardLine(line.id)} disabled={line.status === 'applying'} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.7rem', background: line.status === 'accepted' ? 'linear-gradient(135deg,'+C.green+',#00cc6a)' : 'transparent', border:'1px solid '+(line.status === 'accepted' ? 'transparent' : C.border), borderRadius:'0.5rem', color: line.status === 'accepted' ? '#000' : C.sec, cursor: line.status === 'applying' ? 'not-allowed' : 'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:800 }}>
+                            <Check size={11}/> {line.status === 'applying' ? 'Applying...' : line.status === 'accepted' ? 'Accepted' : 'Accept'}
                           </button>
-                          <button onClick={() => rejectStoryboardLine(line.id)} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.7rem', background: line.status === 'rejected' ? 'rgba(255,79,163,0.15)' : 'transparent', border:'1px solid '+(line.status === 'rejected' ? C.red : C.border), borderRadius:'0.5rem', color: line.status === 'rejected' ? C.red : C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:700 }}>
+                          <button onClick={() => rejectStoryboardLine(line.id)} disabled={line.status === 'applying'} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.7rem', background: line.status === 'rejected' ? 'rgba(255,79,163,0.15)' : 'transparent', border:'1px solid '+(line.status === 'rejected' ? C.red : C.border), borderRadius:'0.5rem', color: line.status === 'rejected' ? C.red : C.sec, cursor: line.status === 'applying' ? 'not-allowed' : 'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:700 }}>
                             <X size={11}/> {line.status === 'rejected' ? 'Rejected' : 'Reject'}
                           </button>
                         </div>

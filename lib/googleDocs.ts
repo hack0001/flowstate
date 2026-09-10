@@ -365,6 +365,63 @@ export async function applyProposedEdit(docIdOrUrl: string, originalText: string
   }
 }
 
+function hexToRgbColor(hex: string): { red: number; green: number; blue: number } {
+  const clean = hex.replace('#', '')
+  return {
+    red: parseInt(clean.substring(0, 2), 16) / 255,
+    green: parseInt(clean.substring(2, 4), 16) / 255,
+    blue: parseInt(clean.substring(4, 6), 16) / 255,
+  }
+}
+
+// Inserts a short, colored visual-direction note as its own new line
+// directly under a specific script line -- the write side of the Script
+// Editor's storyboard tab (Accept on a visual-breakdown card calls this).
+// Locates the script line by exact, live string match (same self-healing
+// approach as applyProposedEdit, not a stored index), then inserts
+// "\n" + noteText right after the line so the note becomes its own
+// paragraph immediately following the line's paragraph, and colors just
+// the note text via updateTextStyle (bold + the category's color) so it
+// reads as a director's note rather than more script.
+export async function insertVisualNoteInGoogleDoc(docIdOrUrl: string, scriptLine: string, noteText: string, colorHex: string, suggest = false): Promise<{ suggestionWarning: string | null }> {
+  const attempt = async (): Promise<{ suggestionWarning: string | null }> => {
+    const { docId, text: currentText, endIndex, revisionId } = await getGoogleDocText(docIdOrUrl)
+    const occurrences: number[] = []
+    let searchFrom = 0
+    while (true) {
+      const idx = currentText.indexOf(scriptLine, searchFrom)
+      if (idx === -1) break
+      occurrences.push(idx)
+      searchFrom = idx + Math.max(scriptLine.length, 1)
+    }
+    if (occurrences.length === 0) {
+      throw new Error('Could not find that line in the document anymore -- it may have already changed. Reload and try again.')
+    }
+    if (occurrences.length > 1) {
+      throw new Error('That line appears ' + occurrences.length + ' times in the document -- too ambiguous to place the note safely. Edit it directly in Google Docs instead.')
+    }
+    const maxIndex = endIndex - 1
+    const insertAt = Math.min(occurrences[0] + 1 + scriptLine.length, maxIndex)
+    const noteStart = insertAt + 1 // +1 to skip the leading newline we're inserting
+    const requests: any[] = [
+      { insertText: { location: { index: insertAt }, text: '\n' + noteText } },
+      { updateTextStyle: {
+          range: { startIndex: noteStart, endIndex: noteStart + noteText.length },
+          textStyle: { foregroundColor: { color: { rgbColor: hexToRgbColor(colorHex) } }, bold: true },
+          fields: 'foregroundColor,bold',
+        } },
+    ]
+    const data = await docsFetch('/' + docId + ':batchUpdate', { method: 'POST', body: JSON.stringify({ requests, ...writeControlFor(suggest, revisionId) }) })
+    return { suggestionWarning: suggestionWarning(data, suggest) }
+  }
+  try {
+    return await attempt()
+  } catch (e) {
+    if (isRevisionConflict(e)) return await attempt()
+    throw e
+  }
+}
+
 // Surgical find/replace across the whole doc — swap a name, fix a repeated
 // phrase, tighten one line — without regenerating or touching anything
 // else. Returns how many occurrences were changed.

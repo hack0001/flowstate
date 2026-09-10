@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGoogleDocText, patchGoogleDocText, findReplaceInGoogleDoc, appendToGoogleDoc, applyProposedEdit } from '@/lib/googleDocs'
+import { getGoogleDocText, patchGoogleDocText, findReplaceInGoogleDoc, appendToGoogleDoc, applyProposedEdit, insertVisualNoteInGoogleDoc } from '@/lib/googleDocs'
 
 // Powers app/script-editor/page.tsx — real in-place Google Docs edits via
 // the Docs API (not just Drive read/create, which is all Claude's built-in
@@ -22,10 +22,10 @@ export async function POST(req: NextRequest) {
   // saga turned out to be a wrong doc URL (a stale link saved against a
   // focus-video's script_url), not an auth bug, and having the received
   // URL/text length surface in the UI is what caught that. Cheap to keep.
-  let parsed: { action?: string; url?: string; text?: string; find?: string; replace?: string; matchCase?: boolean; suggest?: boolean; originalText?: string; replacementText?: string } = {}
+  let parsed: { action?: string; url?: string; text?: string; find?: string; replace?: string; matchCase?: boolean; suggest?: boolean; originalText?: string; replacementText?: string; scriptLine?: string; noteText?: string; colorHex?: string } = {}
   try {
     parsed = await req.json()
-    const { action, url, text, find, replace, matchCase, suggest, originalText, replacementText } = parsed
+    const { action, url, text, find, replace, matchCase, suggest, originalText, replacementText, scriptLine, noteText, colorHex } = parsed
     if (!url) return NextResponse.json({ error: 'Missing url.' }, { status: 400 })
 
     if (action === 'replace_all') {
@@ -54,7 +54,17 @@ export async function POST(req: NextRequest) {
       const { suggestionWarning } = await applyProposedEdit(url, originalText, replacementText, !!suggest)
       return NextResponse.json({ ok: true, suggestionWarning })
     }
-    return NextResponse.json({ error: "Unknown action — use 'replace_all', 'find_replace', 'append', or 'apply_edit'." }, { status: 400 })
+    if (action === 'insert_visual_note') {
+      // Write side of the Script Editor's storyboard tab -- Accept on a
+      // visual-breakdown card lands here, inserting a colored note line
+      // right under the script line it describes.
+      if (typeof scriptLine !== 'string' || typeof noteText !== 'string' || typeof colorHex !== 'string') {
+        return NextResponse.json({ error: 'Missing scriptLine/noteText/colorHex.' }, { status: 400 })
+      }
+      const { suggestionWarning } = await insertVisualNoteInGoogleDoc(url, scriptLine, noteText, colorHex, !!suggest)
+      return NextResponse.json({ ok: true, suggestionWarning })
+    }
+    return NextResponse.json({ error: "Unknown action — use 'replace_all', 'find_replace', 'append', 'apply_edit', or 'insert_visual_note'." }, { status: 400 })
   } catch (e) {
     return NextResponse.json({
       error: String(e),
