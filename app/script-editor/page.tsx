@@ -20,7 +20,7 @@ const MODELS = [
 ] as const
 
 type Snapshot = { docId: string; title: string; text: string; endIndex: number }
-type Tool = 'rewrite' | 'find_replace' | 'append'
+type Tool = 'rewrite' | 'find_replace' | 'append' | 'storyboard'
 
 // A single AI-proposed edit, reviewed as its own card in the UI. Nothing
 // reaches the Google Doc until its Accept button is clicked -- this is the
@@ -147,8 +147,10 @@ const REVIEW_OUTPUT_CONTRACT = "Your ENTIRE reply must be a single JSON array an
 // pipeline), so "channel tone and vibe" isn't reinvented per-button. Each
 // produces the same {originalText, replacementText, reason} edit shape as
 // the free-form Rewrite flow, so they render as the same review cards --
-// including the visual-breakdown preset, whose "edit" is just the original
-// line with a bracketed screen-direction tag appended, not a reword.
+// (The visual breakdown used to be a fourth preset here, but it needs a
+// fundamentally different shape -- a full line-by-line storyboard, not a
+// handful of flagged spots -- so it's its own tab now; see STORYBOARD_PROMPT
+// and the 'storyboard' tool below.)
 const REVIEW_PRESETS = [
   {
     id: 'grammar',
@@ -171,18 +173,63 @@ const REVIEW_PRESETS = [
     maxTokens: 8000,
     systemPrompt: "You are punching up a YouTube script with more humour, in exactly this style:\n\n" + SCRIPT_VOICE + "\n\nFocus specifically on the HUMOUR guidance above -- deadpan, dry, sarcastic understatement, never sold or over-explained. Find lines that are flat or could land an irreverent analogy, a dry aside, or a sardonic button, and propose a funnier version without changing the facts or the point being made. Don't force a joke into every line -- only propose an edit where it genuinely improves the line. reason should be a one-clause note on the comedic beat (e.g. 'deadpan understatement', 'irreverent analogy'). " + REVIEW_OUTPUT_CONTRACT,
   },
-  {
-    id: 'visual_breakdown',
-    label: 'Visual breakdown',
-    icon: <Clapperboard size={13}/>,
-    // Biggest output of the four by far -- one edit per line/beat across
-    // the WHOLE script, not just a handful of flagged spots. This is what
-    // was hitting the old 4000-token cap before any usable text came out,
-    // surfacing as a bare "Empty response from Claude" with no clue why.
-    maxTokens: 16000,
-    systemPrompt: "You are storyboarding a script for a FACELESS YouTube channel -- voiceover only, no on-camera host, so every line needs something on screen. Go through the script line by line (or beat by beat for a longer passage) and decide what should be showing at that moment. Append a short bracketed tag to the END of each line, choosing whichever fits: [SCREENSHOT: ...], [ANIMATION: ...], [TEXT ON SCREEN: ...], [IMAGE: ...], [B-ROLL: ...], [STOCK FOOTAGE: ...], [AI VISUAL: ...], [MEME: ...], [AUDIO: ...] (sfx or music cue) -- be specific about WHAT it shows, not just the category (e.g. '[B-ROLL: empty grocery store shelves]', not '[B-ROLL: footage]'). Cover the whole script, one edit per line or short beat, in order -- don't skip sections. Each edit's replacementText must be the original line UNCHANGED plus the bracketed tag appended after it -- do not reword the line itself. reason should be a short note on why that visual fits the moment. " + REVIEW_OUTPUT_CONTRACT,
-  },
 ] as const
+
+// ---- Visual storyboard (its own tab, not an edit-review preset) ----
+// Read-only line-by-line production plan for a FACELESS channel -- every
+// line needs something on screen, so this proposes what. Deliberately a
+// much more compact JSON shape than the edit-card presets above: each
+// entry repeats the line's text only ONCE (as `line`), with `category` and
+// `visual` as short separate fields, instead of an originalText +
+// replacementText pair where replacementText redundantly repeats the whole
+// line again just to append a tag. That duplication was roughly doubling
+// the output size for a whole-script pass and is what was hitting the
+// token cap even at 16000 -- this shape needs meaningfully less room for
+// the same coverage, on top of the higher ceiling below.
+const STORYBOARD_CATEGORIES = ['SCREENSHOT', 'ANIMATION', 'TEXT ON SCREEN', 'IMAGE', 'B-ROLL', 'STOCK FOOTAGE', 'AI VISUAL', 'MEME', 'AUDIO'] as const
+type StoryboardCategory = (typeof STORYBOARD_CATEGORIES)[number] | 'OTHER'
+const STORYBOARD_COLORS: Record<StoryboardCategory, string> = {
+  'SCREENSHOT': '#00d4ff', 'ANIMATION': '#8b5cf6', 'TEXT ON SCREEN': '#00ff88', 'IMAGE': '#ffb800',
+  'B-ROLL': '#ff4fa3', 'STOCK FOOTAGE': '#4a9eff', 'AI VISUAL': '#c084fc', 'MEME': '#ff8a3d',
+  'AUDIO': '#2fb8ac', 'OTHER': '#8888aa',
+}
+type StoryboardLine = { id: string; line: string; category: StoryboardCategory; visual: string; status: 'pending' | 'accepted' | 'rejected' }
+
+const STORYBOARD_MAX_TOKENS = 24000
+const STORYBOARD_SYSTEM_PROMPT = "You are storyboarding a script for a FACELESS YouTube channel -- voiceover only, no on-camera host, so every line needs something on screen. Go through the ENTIRE script line by line (or beat by beat for a longer passage -- don't skip any section) and decide what should be showing at that moment. Categorize each with exactly one of: " + STORYBOARD_CATEGORIES.join(', ') + " (use AUDIO for a sound effect or music cue, not the voiceover itself, which is already implied). Be specific about WHAT it shows, not just the category (e.g. 'empty grocery store shelves', not 'footage'). Your ENTIRE reply must be a single JSON array and nothing else -- first character [, last character ], no markdown fences, no preamble, no commentary. Each entry shaped exactly like {\"line\": string, \"category\": string, \"visual\": string} where line is copied EXACTLY, character-for-character, from the document text below, category is one of the exact category strings above, and visual is a short, specific description (not a full sentence) of what to show. One entry per line or short beat, in order, covering the whole script."
+
+// Same tolerant extraction as parseProposedEdits (reuses extractJsonArray),
+// but validates against the storyboard shape instead -- category gets
+// normalized to uppercase and falls back to OTHER (rather than dropping
+// the line) if Claude used a category string slightly off from the exact
+// list, so a minor wording mismatch doesn't silently lose a whole line.
+function parseStoryboardLines(raw: string): { lines: StoryboardLine[]; error: string | null } {
+  const preview = raw.length > 500 ? raw.slice(0, 500) + '…' : raw
+  const jsonSlice = extractJsonArray(raw) ?? raw.trim()
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(jsonSlice)
+  } catch {
+    return { lines: [], error: "Couldn't parse Claude's response as a storyboard. What it actually said:\n" + preview }
+  }
+  if (!Array.isArray(parsed)) {
+    return { lines: [], error: "Claude didn't return a storyboard list. What it actually said:\n" + preview }
+  }
+  const lines: StoryboardLine[] = (parsed as Record<string, unknown>[])
+    .filter(e => e && typeof e.line === 'string' && (e.line as string).trim())
+    .map((e, i) => {
+      const catRaw = typeof e.category === 'string' ? e.category.trim().toUpperCase() : ''
+      const category = (STORYBOARD_CATEGORIES as readonly string[]).includes(catRaw) ? (catRaw as StoryboardCategory) : 'OTHER'
+      return {
+        id: 'sb-' + Date.now() + '-' + i,
+        line: String(e.line),
+        category,
+        visual: typeof e.visual === 'string' ? e.visual : '',
+        status: 'pending' as const,
+      }
+    })
+  return { lines, error: null }
+}
 
 const inputStyle: React.CSSProperties = {
   width:'100%', padding:'0.6rem 0.8rem', background:C.surface, border:'1px solid '+C.border,
@@ -262,6 +309,10 @@ export default function ScriptEditorPage() {
   const [appendInstruction, setAppendInstruction] = useState('')
   const [appendStylePreset, setAppendStylePreset] = useState<string>(STYLE_PRESETS[0].id)
   const [appendProposed, setAppendProposed] = useState('')
+
+  // Storyboard tab -- read-only, never writes to the doc.
+  const [storyboard, setStoryboard] = useState<StoryboardLine[]>([])
+  const [storyboardMsg, setStoryboardMsg] = useState<string | null>(null)
 
   const [applying, setApplying] = useState(false)
   const [applyMsg, setApplyMsg] = useState<string | null>(null)
@@ -443,6 +494,38 @@ export default function ScriptEditorPage() {
     setGenerating(false)
   }
 
+  // Storyboard -- read-only, never touches the doc. Compact {line, category,
+  // visual} shape (line text appears once, not duplicated like the old
+  // edit-card approach) plus a raised token ceiling, specifically to fix
+  // the max_tokens truncation a full-script pass used to hit.
+  async function generateStoryboard() {
+    if (!snapshot) return
+    setGenerating(true)
+    setStoryboardMsg(null)
+    const userPrompt = 'SCRIPT TEXT:\n"""\n' + snapshot.text + '\n"""'
+    const { text, error } = await consult(STORYBOARD_SYSTEM_PROMPT, userPrompt, model, STORYBOARD_MAX_TOKENS)
+    if (error) {
+      setStoryboardMsg(error)
+    } else {
+      const { lines, error: parseError } = parseStoryboardLines(text)
+      if (parseError) setStoryboardMsg(parseError)
+      else if (lines.length === 0) setStoryboardMsg("Claude didn't return any lines.")
+      setStoryboard(lines)
+    }
+    setGenerating(false)
+  }
+
+  // Accept/reject a storyboard line -- purely local curation (this tab
+  // never writes to the doc), so it just marks status. Accepted/rejected
+  // stay visible but visually resolved rather than vanishing, so you can
+  // still see what you decided on a pass.
+  function acceptStoryboardLine(id: string) {
+    setStoryboard(prev => prev.map(l => l.id === id ? { ...l, status: 'accepted' } : l))
+  }
+  function rejectStoryboardLine(id: string) {
+    setStoryboard(prev => prev.map(l => l.id === id ? { ...l, status: 'rejected' } : l))
+  }
+
   async function applyFindReplace() {
     if (!findText.trim()) return
     setApplying(true)
@@ -493,6 +576,7 @@ export default function ScriptEditorPage() {
     rewrite:       { icon:<Wand2 size={13}/>,   label:'Rewrite with Claude' },
     find_replace:  { icon:<Search size={13}/>,  label:'Quick find & replace' },
     append:        { icon:<Plus size={13}/>,    label:'Append new section' },
+    storyboard:    { icon:<Clapperboard size={13}/>, label:'Visual breakdown' },
   }
 
   return (
@@ -707,6 +791,55 @@ export default function ScriptEditorPage() {
                     <Check size={14}/> {applying ? 'Applying...' : 'Append to Google Doc'}
                     </button>
                   </>
+                )}
+              </div>
+            )}
+
+            {tool === 'storyboard' && (
+              <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1rem' }}>
+                <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 0.85rem', lineHeight:1.5 }}>
+                  Read-only — this never writes to the doc. Walks the whole script and shows what should be on screen under each line, color-coded by type. For a faceless channel: screenshots, animations, on-screen text, images, b-roll, stock footage, AI visuals, memes, or audio cues.
+                </p>
+                <div style={{ display:'flex', gap:'0.5rem', alignItems:'center', marginBottom:'0.75rem' }}>
+                  <select value={model} onChange={e => setModel(e.target.value)} style={{ ...inputStyle, width:'auto', cursor:'pointer' }}>
+                    {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                  <button onClick={generateStoryboard} disabled={generating} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.55rem 1rem', background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:'0.625rem', color:C.purple, cursor: generating ? 'not-allowed' : 'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:700 }}>
+                    <Clapperboard size={13}/> {generating ? 'Storyboarding...' : 'Generate visual breakdown'}
+                  </button>
+                </div>
+                {storyboardMsg && <p style={{ fontSize:'0.75rem', color:C.amber, margin:'0 0 0.75rem', whiteSpace:'pre-wrap' as const }}>{storyboardMsg}</p>}
+
+                {storyboard.length > 0 && (
+                  <div style={{ display:'flex', flexDirection:'column' as const, gap:'0.55rem', marginTop:'0.5rem' }}>
+                    {storyboard.map(line => (
+                      <div key={line.id} style={{
+                        background:C.surface,
+                        border:'1px solid '+(line.status === 'rejected' ? C.border : line.status === 'accepted' ? 'rgba(0,255,136,0.35)' : C.border),
+                        borderLeft:'3px solid '+STORYBOARD_COLORS[line.category],
+                        borderRadius:'0.6rem',
+                        padding:'0.7rem 0.85rem',
+                        opacity: line.status === 'rejected' ? 0.5 : 1,
+                      }}>
+                        <p style={{ fontSize:'0.82rem', color:C.text, margin:'0 0 0.4rem', lineHeight:1.5 }}>{line.line}</p>
+                        {/* Visual note sits directly underneath the line it describes. */}
+                        <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' as const, marginBottom:'0.6rem' }}>
+                          <span style={{ display:'inline-block', fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.05em', textTransform:'uppercase' as const, color:'#000', background:STORYBOARD_COLORS[line.category], borderRadius:'0.3rem', padding:'0.15rem 0.45rem' }}>
+                            {line.category}
+                          </span>
+                          {line.visual && <span style={{ fontSize:'0.75rem', color:C.sec }}>{line.visual}</span>}
+                        </div>
+                        <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                          <button onClick={() => acceptStoryboardLine(line.id)} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.7rem', background: line.status === 'accepted' ? 'linear-gradient(135deg,'+C.green+',#00cc6a)' : 'transparent', border:'1px solid '+(line.status === 'accepted' ? 'transparent' : C.border), borderRadius:'0.5rem', color: line.status === 'accepted' ? '#000' : C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:800 }}>
+                            <Check size={11}/> {line.status === 'accepted' ? 'Accepted' : 'Accept'}
+                          </button>
+                          <button onClick={() => rejectStoryboardLine(line.id)} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.3rem 0.7rem', background: line.status === 'rejected' ? 'rgba(255,79,163,0.15)' : 'transparent', border:'1px solid '+(line.status === 'rejected' ? C.red : C.border), borderRadius:'0.5rem', color: line.status === 'rejected' ? C.red : C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:700 }}>
+                            <X size={11}/> {line.status === 'rejected' ? 'Rejected' : 'Reject'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
