@@ -18,7 +18,7 @@ const ALLOWED_MODELS: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { systemPrompt, userPrompt, model, webSearch, messages } = await req.json()
+    const { systemPrompt, userPrompt, model, webSearch, messages, maxTokens } = await req.json()
     const resolvedModel = ALLOWED_MODELS[model] ?? ALLOWED_MODELS['claude-haiku-4-5-20251001']
 
     const headers: Record<string, string> = {
@@ -26,12 +26,22 @@ export async function POST(req: NextRequest) {
       'x-api-key': process.env.ANTHROPIC_API_KEY ?? '',
       'anthropic-version': '2023-06-01',
     }
+    // Callers can request more room via maxTokens (clamped 256-16000) --
+    // e.g. the Script Editor's per-line visual-breakdown review, which
+    // proposes one edit per line of a whole script and can genuinely need
+    // more than the 4000-token default; that default was silently cutting
+    // the response off before any usable text came out, surfacing as a
+    // bare "Empty response from Claude" with no clue why.
+    const requestedMaxTokens = Number(maxTokens)
+    const resolvedMaxTokens = Number.isFinite(requestedMaxTokens) && requestedMaxTokens > 0
+      ? Math.min(Math.max(requestedMaxTokens, 256), 16000)
+      : (webSearch ? 8000 : 4000)
     const body: Record<string, unknown> = {
       model: resolvedModel,
       // Generous caps — the Find Ideas / validation JSON with the full
       // opportunity breakdown regularly passed 2,500 tokens and got truncated
       // mid-array, which surfaced as JSON parse errors in the UI.
-      max_tokens: webSearch ? 8000 : 4000,
+      max_tokens: resolvedMaxTokens,
       system: systemPrompt,
       // Multi-turn callers (Yap Session) pass a full messages array; every
       // other caller still just passes a single userPrompt string.

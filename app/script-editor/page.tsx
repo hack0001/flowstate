@@ -154,24 +154,32 @@ const REVIEW_PRESETS = [
     id: 'grammar',
     label: 'Grammar',
     icon: <SpellCheck size={13}/>,
+    maxTokens: 8000,
     systemPrompt: "You are proofreading a YouTube script for grammar, spelling, punctuation, and clarity -- nothing else, not style or content. This script is written in a specific deliberate voice for reading aloud, so don't 'fix' intentional choices: sentence fragments used for comedic timing, informal contractions, dry deadpan phrasing, or a banned-word list are all correct as written if they match this voice:\n\n" + SCRIPT_VOICE + "\n\nOnly propose an edit for a genuine grammar, spelling, punctuation, or clarity error -- never a style preference. reason should name the specific error (e.g. 'subject-verb agreement', 'missing comma', 'typo', 'ambiguous pronoun'). " + REVIEW_OUTPUT_CONTRACT,
   },
   {
     id: 'coherency',
     label: 'Content & channel fit',
     icon: <Target size={13}/>,
+    maxTokens: 8000,
     systemPrompt: "You are reviewing a YouTube script for whether it actually fits the channel's established strategy, audience, and voice -- not grammar. Here is the channel's strategy brief and script voice this script must fit:\n\n" + CHANNEL_BRIEF + "\n\n" + SCRIPT_VOICE + "\n\nLook specifically for: claims or framing drifting off the channel's niche or audience, missing or weak prescriptive ending (what this means for the viewer's savings/money), the Austrian-economics lens turning into policy-advocacy sermonising instead of staying inside the analysis, factual claims that seem shaky or unsupported, structure that doesn't match the channel's proven patterns, or tone that doesn't match the script voice. reason should name the specific coherency issue and why the fix helps. " + REVIEW_OUTPUT_CONTRACT,
   },
   {
     id: 'humor',
     label: 'Make it funnier',
     icon: <Sparkles size={13}/>,
+    maxTokens: 8000,
     systemPrompt: "You are punching up a YouTube script with more humour, in exactly this style:\n\n" + SCRIPT_VOICE + "\n\nFocus specifically on the HUMOUR guidance above -- deadpan, dry, sarcastic understatement, never sold or over-explained. Find lines that are flat or could land an irreverent analogy, a dry aside, or a sardonic button, and propose a funnier version without changing the facts or the point being made. Don't force a joke into every line -- only propose an edit where it genuinely improves the line. reason should be a one-clause note on the comedic beat (e.g. 'deadpan understatement', 'irreverent analogy'). " + REVIEW_OUTPUT_CONTRACT,
   },
   {
     id: 'visual_breakdown',
     label: 'Visual breakdown',
     icon: <Clapperboard size={13}/>,
+    // Biggest output of the four by far -- one edit per line/beat across
+    // the WHOLE script, not just a handful of flagged spots. This is what
+    // was hitting the old 4000-token cap before any usable text came out,
+    // surfacing as a bare "Empty response from Claude" with no clue why.
+    maxTokens: 16000,
     systemPrompt: "You are storyboarding a script for a FACELESS YouTube channel -- voiceover only, no on-camera host, so every line needs something on screen. Go through the script line by line (or beat by beat for a longer passage) and decide what should be showing at that moment. Append a short bracketed tag to the END of each line, choosing whichever fits: [SCREENSHOT: ...], [ANIMATION: ...], [TEXT ON SCREEN: ...], [IMAGE: ...], [B-ROLL: ...], [STOCK FOOTAGE: ...], [AI VISUAL: ...], [MEME: ...], [AUDIO: ...] (sfx or music cue) -- be specific about WHAT it shows, not just the category (e.g. '[B-ROLL: empty grocery store shelves]', not '[B-ROLL: footage]'). Cover the whole script, one edit per line or short beat, in order -- don't skip sections. Each edit's replacementText must be the original line UNCHANGED plus the bracketed tag appended after it -- do not reword the line itself. reason should be a short note on why that visual fits the moment. " + REVIEW_OUTPUT_CONTRACT,
   },
 ] as const
@@ -183,12 +191,12 @@ const inputStyle: React.CSSProperties = {
 }
 const textareaStyle: React.CSSProperties = { ...inputStyle, resize:'vertical' as const, lineHeight:1.6 }
 
-async function consult(systemPrompt: string, userPrompt: string, model: string): Promise<{ text: string; error: string | null }> {
+async function consult(systemPrompt: string, userPrompt: string, model: string, maxTokens?: number): Promise<{ text: string; error: string | null }> {
   try {
     const res = await fetch('/api/content/consult', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ systemPrompt, userPrompt, model }),
+      body: JSON.stringify({ systemPrompt, userPrompt, model, maxTokens }),
     })
     const data = await res.json()
     if (data?.error) return { text: '', error: 'API error: ' + JSON.stringify(data.error) }
@@ -196,7 +204,14 @@ async function consult(systemPrompt: string, userPrompt: string, model: string):
       .filter((b: { type: string; text?: string }) => b.type === 'text')
       .map((b: { text?: string }) => b.text ?? '')
       .join('\n').trim()
-    if (!raw) return { text: '', error: 'Empty response from Claude.' }
+    if (!raw) {
+      // stop_reason tells you WHY there's no text -- most likely
+      // "max_tokens" (ran out of room before writing anything usable,
+      // e.g. a large per-line breakdown of a long script), which is a very
+      // different fix (raise maxTokens) from a genuine empty reply.
+      const hint = data?.stop_reason ? ' (stop_reason: ' + data.stop_reason + (data.stop_reason === 'max_tokens' ? ' -- try again, or shorten the task/script' : '') + ')' : ''
+      return { text: '', error: 'Empty response from Claude.' + hint }
+    }
     return { text: raw, error: null }
   } catch (e) {
     return { text: '', error: 'Request failed: ' + String(e) }
@@ -359,7 +374,7 @@ export default function ScriptEditorPage() {
     setGenerating(true)
     setGenMsg(null)
     const userPrompt = 'CURRENT DOCUMENT TEXT:\n"""\n' + snapshot.text + '\n"""'
-    const { text, error } = await consult(preset.systemPrompt, userPrompt, model)
+    const { text, error } = await consult(preset.systemPrompt, userPrompt, model, preset.maxTokens)
     if (error) {
       setGenMsg(error)
     } else {
