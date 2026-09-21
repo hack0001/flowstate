@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { getScriptDocLinks, addScriptDocLink, updateScriptDocLink, deleteScriptDocLink, type ScriptDocLink } from '@/lib/supabase'
+import { getScriptDocLinks, addScriptDocLink, updateScriptDocLink, deleteScriptDocLink, type ScriptDocLink, getStoryboardCategories, addStoryboardCategory, updateStoryboardCategory, deleteStoryboardCategory, type StoryboardCategoryRow } from '@/lib/supabase'
 import { CHANNEL_BRIEF, SCRIPT_VOICE } from '@/lib/channelBrief'
 import { ChevronLeft, RefreshCw, Wand2, Search, Plus, Check, AlertCircle, FileEdit, X, Pencil, Bookmark, SpellCheck, Target, Sparkles, Clapperboard } from 'lucide-react'
 
@@ -186,24 +186,46 @@ const REVIEW_PRESETS = [
 // the output size for a whole-script pass and is what was hitting the
 // token cap even at 16000 -- this shape needs meaningfully less room for
 // the same coverage, on top of the higher ceiling below.
-const STORYBOARD_CATEGORIES = ['SCREENSHOT', 'ANIMATION', 'TEXT ON SCREEN', 'IMAGE', 'B-ROLL', 'STOCK FOOTAGE', 'AI VISUAL', 'MEME', 'AUDIO'] as const
-type StoryboardCategory = (typeof STORYBOARD_CATEGORIES)[number] | 'OTHER'
-const STORYBOARD_COLORS: Record<StoryboardCategory, string> = {
-  'SCREENSHOT': '#00d4ff', 'ANIMATION': '#8b5cf6', 'TEXT ON SCREEN': '#00ff88', 'IMAGE': '#ffb800',
-  'B-ROLL': '#ff4fa3', 'STOCK FOOTAGE': '#4a9eff', 'AI VISUAL': '#c084fc', 'MEME': '#ff8a3d',
-  'AUDIO': '#2fb8ac', 'OTHER': '#8888aa',
+// Categories are user-editable (storyboard_categories table, managed from
+// this tab) rather than a fixed enum -- Tom can rename, recolor, add, or
+// remove shot types himself. This fallback list is only used before that
+// table has loaded (or if the migration hasn't been run yet), so the tab
+// still works out of the box. TEXT ON SCREEN's green was toned down from
+// a pure #00ff88 -- Tom flagged the original as too bright.
+const DEFAULT_STORYBOARD_CATEGORIES: StoryboardCategoryRow[] = [
+  { id: 'fallback-screenshot', label: 'SCREENSHOT', color: '#00d4ff', sort_order: 0, created_at: '' },
+  { id: 'fallback-animation', label: 'ANIMATION', color: '#8b5cf6', sort_order: 1, created_at: '' },
+  { id: 'fallback-text', label: 'TEXT ON SCREEN', color: '#3ecf7e', sort_order: 2, created_at: '' },
+  { id: 'fallback-image', label: 'IMAGE', color: '#ffb800', sort_order: 3, created_at: '' },
+  { id: 'fallback-broll', label: 'B-ROLL', color: '#ff4fa3', sort_order: 4, created_at: '' },
+  { id: 'fallback-stock', label: 'STOCK FOOTAGE', color: '#4a9eff', sort_order: 5, created_at: '' },
+  { id: 'fallback-ai', label: 'AI VISUAL', color: '#c084fc', sort_order: 6, created_at: '' },
+  { id: 'fallback-meme', label: 'MEME', color: '#ff8a3d', sort_order: 7, created_at: '' },
+  { id: 'fallback-audio', label: 'AUDIO', color: '#2fb8ac', sort_order: 8, created_at: '' },
+]
+const OTHER_CATEGORY_COLOR = '#8888aa'
+
+function categoryColor(categories: StoryboardCategoryRow[], label: string): string {
+  const match = categories.find(c => c.label.toUpperCase() === label.toUpperCase())
+  return match?.color ?? OTHER_CATEGORY_COLOR
 }
-type StoryboardLine = { id: string; line: string; category: StoryboardCategory; visual: string; status: 'pending' | 'applying' | 'accepted' | 'rejected'; error?: string }
+
+type StoryboardLine = { id: string; line: string; category: string; visual: string; status: 'pending' | 'applying' | 'accepted' | 'rejected'; error?: string }
 
 const STORYBOARD_MAX_TOKENS = 24000
-const STORYBOARD_SYSTEM_PROMPT = "You are storyboarding a script for a FACELESS YouTube channel -- voiceover only, no on-camera host, so every line needs something on screen. Go through the ENTIRE script line by line (or beat by beat for a longer passage -- don't skip any section) and decide what should be showing at that moment. Categorize each with exactly one of: " + STORYBOARD_CATEGORIES.join(', ') + " (use AUDIO for a sound effect or music cue, not the voiceover itself, which is already implied). Be specific about WHAT it shows, not just the category (e.g. 'empty grocery store shelves', not 'footage'). Your ENTIRE reply must be a single JSON array and nothing else -- first character [, last character ], no markdown fences, no preamble, no commentary. Each entry shaped exactly like {\"line\": string, \"category\": string, \"visual\": string} where line is copied EXACTLY, character-for-character, from the document text below, category is one of the exact category strings above, and visual is a short, specific description (not a full sentence) of what to show. One entry per line or short beat, in order, covering the whole script."
+
+function buildStoryboardSystemPrompt(categories: StoryboardCategoryRow[]): string {
+  const labels = categories.map(c => c.label)
+  return "You are storyboarding a script for a FACELESS YouTube channel -- voiceover only, no on-camera host, so every line needs something on screen. Go through the ENTIRE script line by line (or beat by beat for a longer passage -- don't skip any section) and decide what should be showing at that moment. Categorize each with exactly one of: " + labels.join(', ') + " (use a sound/audio category for a sound effect or music cue, not the voiceover itself, which is already implied). Be specific about WHAT it shows, not just the category (e.g. 'empty grocery store shelves', not 'footage'). Your ENTIRE reply must be a single JSON array and nothing else -- first character [, last character ], no markdown fences, no preamble, no commentary. Each entry shaped exactly like {\"line\": string, \"category\": string, \"visual\": string} where line is copied EXACTLY, character-for-character, from the document text below, category is one of the exact category strings above, and visual is a short, specific description (not a full sentence) of what to show. One entry per line or short beat, in order, covering the whole script."
+}
 
 // Same tolerant extraction as parseProposedEdits (reuses extractJsonArray),
 // but validates against the storyboard shape instead -- category gets
 // normalized to uppercase and falls back to OTHER (rather than dropping
-// the line) if Claude used a category string slightly off from the exact
-// list, so a minor wording mismatch doesn't silently lose a whole line.
-function parseStoryboardLines(raw: string): { lines: StoryboardLine[]; error: string | null } {
+// the line) if Claude used a category string that doesn't match any of
+// the current user-defined categories, so a minor wording mismatch
+// doesn't silently lose a whole line.
+function parseStoryboardLines(raw: string, categories: StoryboardCategoryRow[]): { lines: StoryboardLine[]; error: string | null } {
   const preview = raw.length > 500 ? raw.slice(0, 500) + '…' : raw
   const jsonSlice = extractJsonArray(raw) ?? raw.trim()
   let parsed: unknown
@@ -215,11 +237,12 @@ function parseStoryboardLines(raw: string): { lines: StoryboardLine[]; error: st
   if (!Array.isArray(parsed)) {
     return { lines: [], error: "Claude didn't return a storyboard list. What it actually said:\n" + preview }
   }
+  const knownLabels = categories.map(c => c.label.toUpperCase())
   const lines: StoryboardLine[] = (parsed as Record<string, unknown>[])
     .filter(e => e && typeof e.line === 'string' && (e.line as string).trim())
     .map((e, i) => {
       const catRaw = typeof e.category === 'string' ? e.category.trim().toUpperCase() : ''
-      const category = (STORYBOARD_CATEGORIES as readonly string[]).includes(catRaw) ? (catRaw as StoryboardCategory) : 'OTHER'
+      const category = knownLabels.includes(catRaw) ? catRaw : 'OTHER'
       return {
         id: 'sb-' + Date.now() + '-' + i,
         line: String(e.line),
@@ -310,9 +333,60 @@ export default function ScriptEditorPage() {
   const [appendStylePreset, setAppendStylePreset] = useState<string>(STYLE_PRESETS[0].id)
   const [appendProposed, setAppendProposed] = useState('')
 
-  // Storyboard tab -- read-only, never writes to the doc.
+  // Storyboard tab -- accepted notes get written into the doc, rejected
+  // ones don't; see acceptStoryboardLine/rejectStoryboardLine below.
   const [storyboard, setStoryboard] = useState<StoryboardLine[]>([])
   const [storyboardMsg, setStoryboardMsg] = useState<string | null>(null)
+
+  // Storyboard categories -- user-editable (label + color), loaded from
+  // Supabase, falling back to DEFAULT_STORYBOARD_CATEGORIES until that
+  // load finishes (or if the migration hasn't been run yet).
+  const [categories, setCategories] = useState<StoryboardCategoryRow[]>(DEFAULT_STORYBOARD_CATEGORIES)
+  const [categoriesErr, setCategoriesErr] = useState<string | null>(null)
+  const [addingCategory, setAddingCategory] = useState(false)
+  const [newCategoryLabel, setNewCategoryLabel] = useState('')
+  const [newCategoryColor, setNewCategoryColor] = useState('#00d4ff')
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
+  const [editCategoryLabel, setEditCategoryLabel] = useState('')
+  const [editCategoryColor, setEditCategoryColor] = useState('')
+
+  const refreshCategories = useCallback(() => {
+    getStoryboardCategories().then(({ categories, error }) => {
+      if (categories.length > 0) setCategories(categories)
+      setCategoriesErr(error)
+    })
+  }, [])
+
+  useEffect(() => { refreshCategories() }, [refreshCategories])
+
+  async function addNewCategory() {
+    if (!newCategoryLabel.trim()) return
+    setAddingCategory(true)
+    const { error } = await addStoryboardCategory(newCategoryLabel, newCategoryColor)
+    if (error) setCategoriesErr(error)
+    else { setNewCategoryLabel(''); refreshCategories() }
+    setAddingCategory(false)
+  }
+
+  function startEditCategory(cat: StoryboardCategoryRow) {
+    setEditingCategoryId(cat.id)
+    setEditCategoryLabel(cat.label)
+    setEditCategoryColor(cat.color)
+  }
+
+  async function saveEditCategory() {
+    if (!editingCategoryId) return
+    const { error } = await updateStoryboardCategory(editingCategoryId, { label: editCategoryLabel.trim() || 'UNTITLED', color: editCategoryColor })
+    if (error) setCategoriesErr(error)
+    setEditingCategoryId(null)
+    refreshCategories()
+  }
+
+  async function removeCategory(id: string) {
+    const { error } = await deleteStoryboardCategory(id)
+    if (error) setCategoriesErr(error)
+    else refreshCategories()
+  }
 
   const [applying, setApplying] = useState(false)
   const [applyMsg, setApplyMsg] = useState<string | null>(null)
@@ -494,20 +568,22 @@ export default function ScriptEditorPage() {
     setGenerating(false)
   }
 
-  // Storyboard -- read-only, never touches the doc. Compact {line, category,
-  // visual} shape (line text appears once, not duplicated like the old
-  // edit-card approach) plus a raised token ceiling, specifically to fix
-  // the max_tokens truncation a full-script pass used to hit.
+  // Storyboard -- generates suggestions only; nothing reaches the doc until
+  // Accept. Compact {line, category, visual} shape (line text appears once,
+  // not duplicated like the old edit-card approach) plus a raised token
+  // ceiling, specifically to fix the max_tokens truncation a full-script
+  // pass used to hit. Categories are whatever's currently in the
+  // user-editable list, so the prompt is built fresh each call.
   async function generateStoryboard() {
     if (!snapshot) return
     setGenerating(true)
     setStoryboardMsg(null)
     const userPrompt = 'SCRIPT TEXT:\n"""\n' + snapshot.text + '\n"""'
-    const { text, error } = await consult(STORYBOARD_SYSTEM_PROMPT, userPrompt, model, STORYBOARD_MAX_TOKENS)
+    const { text, error } = await consult(buildStoryboardSystemPrompt(categories), userPrompt, model, STORYBOARD_MAX_TOKENS)
     if (error) {
       setStoryboardMsg(error)
     } else {
-      const { lines, error: parseError } = parseStoryboardLines(text)
+      const { lines, error: parseError } = parseStoryboardLines(text, categories)
       if (parseError) setStoryboardMsg(parseError)
       else if (lines.length === 0) setStoryboardMsg("Claude didn't return any lines.")
       setStoryboard(lines)
@@ -530,7 +606,7 @@ export default function ScriptEditorPage() {
       const res = await fetch('/api/gdocs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'insert_visual_note', url: docUrl, scriptLine: line.line, noteText, colorHex: STORYBOARD_COLORS[line.category], suggest: suggestMode }),
+        body: JSON.stringify({ action: 'insert_visual_note', url: docUrl, scriptLine: line.line, noteText, colorHex: categoryColor(categories, line.category), suggest: suggestMode }),
       })
       const data = await res.json()
       if (data?.error) {
@@ -823,9 +899,38 @@ export default function ScriptEditorPage() {
             {tool === 'storyboard' && (
               <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1rem' }}>
                 <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 0.85rem', lineHeight:1.5 }}>
-                  Walks the whole script and suggests what should be on screen under each line, color-coded by type. Accept writes it into the Google Doc as a new colored line right under the script line; Reject just dismisses it here — nothing is written either way until you click Accept. For a faceless channel: screenshots, animations, on-screen text, images, b-roll, stock footage, AI visuals, memes, or audio cues.
+                  Walks the whole script and suggests what should be on screen under each line, color-coded by type. Accept writes it into the Google Doc as a new colored line right under the script line; Reject just dismisses it here — nothing is written either way until you click Accept.
                 </p>
-                <div style={{ display:'flex', gap:'0.5rem', alignItems:'center', marginBottom:'0.75rem' }}>
+
+                {/* Categories -- editable, deletable, add as many as you want */}
+                <label style={{ display:'block', fontSize:'0.7rem', fontWeight:700, color:C.sec, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.5rem' }}>Categories</label>
+                <div style={{ display:'flex', gap:'0.4rem', flexWrap:'wrap' as const, alignItems:'center', marginBottom:'0.4rem' }}>
+                  {categories.map(cat => editingCategoryId === cat.id ? (
+                    <div key={cat.id} style={{ display:'flex', gap:'0.3rem', alignItems:'center', background:C.surface, border:'1px solid '+C.cyan, borderRadius:'0.5rem', padding:'0.3rem' }}>
+                      <input type="color" value={editCategoryColor} onChange={e => setEditCategoryColor(e.target.value)} style={{ width:26, height:26, padding:0, border:'none', background:'none', cursor:'pointer' }}/>
+                      <input value={editCategoryLabel} onChange={e => setEditCategoryLabel(e.target.value)} placeholder="Label" style={{ ...inputStyle, padding:'0.3rem 0.5rem', fontSize:'0.7rem', width:130 }}/>
+                      <button onClick={saveEditCategory} style={{ background:'none', border:'none', color:C.green, cursor:'pointer', padding:'0.2rem' }}><Check size={14}/></button>
+                      <button onClick={() => setEditingCategoryId(null)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem' }}><X size={14}/></button>
+                    </div>
+                  ) : (
+                    <div key={cat.id} style={{ display:'flex', alignItems:'center', gap:'0.3rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'9999px', padding:'0.15rem 0.3rem 0.15rem 0.5rem' }}>
+                      <span style={{ display:'inline-block', width:10, height:10, borderRadius:'50%', background:cat.color }}/>
+                      <span style={{ fontSize:'0.68rem', color:C.sec }}>{cat.label}</span>
+                      <button onClick={() => startEditCategory(cat)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem', display:'flex' }}><Pencil size={11}/></button>
+                      <button onClick={() => removeCategory(cat.id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', padding:'0.2rem', display:'flex' }}><X size={12}/></button>
+                    </div>
+                  ))}
+                  <div style={{ display:'flex', alignItems:'center', gap:'0.3rem' }}>
+                    <input type="color" value={newCategoryColor} onChange={e => setNewCategoryColor(e.target.value)} style={{ width:26, height:26, padding:0, border:'none', background:'none', cursor:'pointer' }}/>
+                    <input value={newCategoryLabel} onChange={e => setNewCategoryLabel(e.target.value)} placeholder="New category" style={{ ...inputStyle, padding:'0.3rem 0.6rem', fontSize:'0.68rem', width:120 }}/>
+                    <button onClick={addNewCategory} disabled={addingCategory || !newCategoryLabel.trim()} style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.68rem', padding:'0.3rem 0.6rem', background:'rgba(0,212,255,0.08)', border:'1px dashed rgba(0,212,255,0.35)', borderRadius:'9999px', color:C.cyan, cursor: (addingCategory || !newCategoryLabel.trim()) ? 'not-allowed' : 'pointer', fontFamily:'inherit' }}>
+                      <Plus size={11}/> Add
+                    </button>
+                  </div>
+                </div>
+                {categoriesErr && <p style={{ fontSize:'0.7rem', color:C.red, margin:'0 0 0.5rem' }}>{categoriesErr}</p>}
+
+                <div style={{ display:'flex', gap:'0.5rem', alignItems:'center', margin:'0.75rem 0' }}>
                   <select value={model} onChange={e => setModel(e.target.value)} style={{ ...inputStyle, width:'auto', cursor:'pointer' }}>
                     {MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                   </select>
@@ -841,7 +946,7 @@ export default function ScriptEditorPage() {
                       <div key={line.id} style={{
                         background:C.surface,
                         border:'1px solid '+(line.status === 'rejected' ? C.border : line.status === 'accepted' ? 'rgba(0,255,136,0.35)' : C.border),
-                        borderLeft:'3px solid '+STORYBOARD_COLORS[line.category],
+                        borderLeft:'3px solid '+categoryColor(categories, line.category),
                         borderRadius:'0.6rem',
                         padding:'0.7rem 0.85rem',
                         opacity: line.status === 'rejected' ? 0.5 : 1,
@@ -849,7 +954,7 @@ export default function ScriptEditorPage() {
                         <p style={{ fontSize:'0.82rem', color:C.text, margin:'0 0 0.4rem', lineHeight:1.5 }}>{line.line}</p>
                         {/* Visual note sits directly underneath the line it describes. */}
                         <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' as const, marginBottom:'0.6rem' }}>
-                          <span style={{ display:'inline-block', fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.05em', textTransform:'uppercase' as const, color:'#000', background:STORYBOARD_COLORS[line.category], borderRadius:'0.3rem', padding:'0.15rem 0.45rem' }}>
+                          <span style={{ display:'inline-block', fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.05em', textTransform:'uppercase' as const, color:'#000', background:categoryColor(categories, line.category), borderRadius:'0.3rem', padding:'0.15rem 0.45rem' }}>
                             {line.category}
                           </span>
                           {line.visual && <span style={{ fontSize:'0.75rem', color:C.sec }}>{line.visual}</span>}

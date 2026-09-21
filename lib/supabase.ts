@@ -809,3 +809,44 @@ export async function deleteScriptDocLink(id: string): Promise<{ error: string |
   if (error) return { error: explainScriptDocLinksError(error.message) }
   return { error: null }
 }
+
+// Storyboard categories for the Script Editor's "Visual breakdown" tab --
+// user-editable list (label + color), not a fixed enum, so Tom can rename,
+// recolor, add, or remove shot types (screenshot, b-roll, etc.) himself.
+// Requires 047_storyboard_categories.sql.
+export type StoryboardCategoryRow = { id: string; label: string; color: string; sort_order: number; created_at: string }
+
+function explainStoryboardCategoriesError(message: string | undefined): string {
+  if (message && message.toLowerCase().includes('storyboard_categories')) {
+    return 'Setup needed: run supabase/migrations/047_storyboard_categories.sql against your database first.'
+  }
+  return message ?? 'Unknown error loading storyboard categories.'
+}
+
+export async function getStoryboardCategories(): Promise<{ categories: StoryboardCategoryRow[]; error: string | null }> {
+  const { data, error } = await supabase.from('storyboard_categories').select('*').order('sort_order', { ascending: true })
+  if (error) return { categories: [], error: explainStoryboardCategoriesError(error.message) }
+  return { categories: (data as StoryboardCategoryRow[]) ?? [], error: null }
+}
+
+export async function addStoryboardCategory(label: string, color: string): Promise<{ category: StoryboardCategoryRow | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('storyboard_categories')
+    .insert({ label: label.trim().toUpperCase(), color })
+    .select().single()
+  if (error) return { category: null, error: explainStoryboardCategoriesError(error.message) }
+  return { category: data as StoryboardCategoryRow, error: null }
+}
+
+export async function updateStoryboardCategory(id: string, patch: Partial<Pick<StoryboardCategoryRow, 'label' | 'color'>>): Promise<{ error: string | null }> {
+  const cleaned = { ...patch, ...(patch.label ? { label: patch.label.trim().toUpperCase() } : {}) }
+  const { error } = await supabase.from('storyboard_categories').update(cleaned).eq('id', id)
+  if (error) return { error: explainStoryboardCategoriesError(error.message) }
+  return { error: null }
+}
+
+export async function deleteStoryboardCategory(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('storyboard_categories').delete().eq('id', id)
+  if (error) return { error: explainStoryboardCategoriesError(error.message) }
+  return { error: null }
+}
