@@ -75,3 +75,36 @@ export const OUTLIER_SEED_QUERIES = [
   'how to buy gold beginner',
   'money printing explained',
 ]
+
+// ============================================================
+// Default YouTube description template — the standing boilerplate every
+// SoundMoney video's description starts from (chapters, sources, channel
+// blurb, credits, disclaimer). Bracketed [placeholders] are meant to be
+// filled in or deleted per video; everything else (channel description,
+// disclaimer wording) is meant to ship as-is. Used by the "Use default
+// template" button on the SEO description field in both
+// components/ContentItemDetail.tsx and app/content-focus/page.tsx.
+// ============================================================
+export const DEFAULT_DESCRIPTION_TEMPLATE = `[Related video or playlist title and link]
+
+CHAPTERS
+00:00 [Opening]
+[Timestamp] [Section title]
+[Timestamp] [Section title]
+
+SOURCES & DATA
+[Source name — article, report or dataset — link]
+[Source name — article, report or dataset — link]
+[Source name — article, report or dataset — link]
+Data as of: [Relevant date or period]
+
+ABOUT SOUND MONEY HQ
+The world explained through economics.
+Fast-paced breakdowns of money, markets and the forces shaping your financial world. Subscribe to understand what's happening—and why it matters.
+Business enquiries: [Business email]
+
+CREDITS
+[Music, footage and illustration credits, where applicable]
+
+DISCLAIMER
+Sound Money HQ provides information, education and commentary, not personal financial, investment, legal or tax advice. Nothing in this video is a recommendation to buy, sell or hold any investment. The content does not take account of your individual circumstances. Investing involves risk, including loss of capital. Check information independently and seek advice from an appropriately qualified professional where needed. Figures and opinions reflect the information available at the time of production and may change.`

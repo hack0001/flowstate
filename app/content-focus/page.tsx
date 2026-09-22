@@ -5,6 +5,7 @@ import { ArrowLeft, CheckCircle2, Circle, Play, Pause, RefreshCw, SkipForward, W
 import { supabase, getActiveFocusVideos, getContentItemById, getStageNote, saveStageNote, updateContentItemFields, type ActiveFocusVideo } from '@/lib/supabase'
 import { stageAdvance, sopForStage, nextSessionChunk, allSessionChunks } from '@/lib/sops'
 import { buildStageDraftPrompt } from '@/lib/stageDraftPrompt'
+import { DEFAULT_DESCRIPTION_TEMPLATE } from '@/lib/channelBrief'
 import { sounds } from '@/lib/sounds'
 import { usePomodoro } from '@/hooks/usePomodoro'
 import { useCelebration } from '@/hooks/useCelebration'
@@ -906,7 +907,18 @@ function ContentFocusPageInner() {
                         </div>
                       </div>
                       <div>
-                        <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em', marginBottom:'0.3rem' }}>SEO description</label>
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.3rem' }}>
+                          <label style={{ display:'block', fontSize:'0.63rem', fontWeight:700, color:C.muted, textTransform:'uppercase' as const, letterSpacing:'0.06em' }}>SEO description</label>
+                          <button
+                            onClick={() => {
+                              const next = editSeoDescription.trim() ? editSeoDescription.replace(/\s*$/, '') + '\n\n' + DEFAULT_DESCRIPTION_TEMPLATE : DEFAULT_DESCRIPTION_TEMPLATE
+                              setEditSeoDescription(next); saveVideoField('seo_description', next)
+                            }}
+                            title="Insert the standing chapters/sources/about/credits/disclaimer template"
+                            style={{ background:'none', border:'none', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.63rem', fontWeight:700, padding:0 }}>
+                            Use default template
+                          </button>
+                        </div>
                         <textarea
                           value={editSeoDescription}
                           onChange={e => setEditSeoDescription(e.target.value)}

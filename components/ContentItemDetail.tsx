@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { X, ChevronRight, FileText, FolderOpen, Play, Sparkles, Clapperboard } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { SOPS, sopForStage, productionSopIdsFor } from '@/lib/sops'
+import { DEFAULT_DESCRIPTION_TEMPLATE } from '@/lib/channelBrief'
 import YapSession from './YapSession'
 import Storyboard from './Storyboard'
 
@@ -230,7 +231,18 @@ export default function ContentItemDetail({ itemId, onClose }: { itemId: string;
                 </div>
               </div>
               <div>
-                <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, color:C.muted, marginBottom:'0.25rem' }}>SEO description</label>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.25rem' }}>
+                  <label style={{ display:'block', fontSize:'0.62rem', fontWeight:700, color:C.muted }}>SEO description</label>
+                  <button
+                    onClick={() => {
+                      const next = seoDescription.trim() ? seoDescription.replace(/\s*$/, '') + '\n\n' + DEFAULT_DESCRIPTION_TEMPLATE : DEFAULT_DESCRIPTION_TEMPLATE
+                      setSeoDescription(next); saveField('seo_description', next)
+                    }}
+                    title="Insert the standing chapters/sources/about/credits/disclaimer template"
+                    style={{ background:'none', border:'none', color:C.cyan, cursor:'pointer', fontFamily:'inherit', fontSize:'0.62rem', fontWeight:700, padding:0 }}>
+                    Use default template
+                  </button>
+                </div>
                 <textarea value={seoDescription} onChange={e => setSeoDescription(e.target.value)} onBlur={() => saveField('seo_description', seoDescription)}
                   placeholder="Finalised YouTube description, from Thumbnail & SEO" rows={2}
                   style={{ width:'100%', padding:'0.5rem 0.65rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.5rem', color:C.text, fontFamily:'inherit', fontSize:'0.74rem', lineHeight:1.5, resize:'vertical' as const, outline:'none', boxSizing:'border-box' as const }}/>
