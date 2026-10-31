@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { requireUser } from '@/lib/supabaseServer'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 
@@ -80,10 +80,9 @@ function orNull(s: string): string | null {
 }
 
 export async function POST() {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const supabase = auth.supabase
 
   const out: Record<string, { imported: number; error?: string }> = {}
 

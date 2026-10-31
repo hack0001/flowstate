@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireUser } from '@/lib/supabaseServer'
 
 // YouTube comment analyser — pulls real top-level comments for one video via
 // the YouTube Data API and surfaces the ones actually worth reading: enough
@@ -31,6 +32,8 @@ const YT = 'https://www.googleapis.com/youtube/v3'
 const MIN_INSIGHTFUL_LENGTH = 40
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
   const key = process.env.YOUTUBE_API_KEY
   if (!key) {
     return NextResponse.json(

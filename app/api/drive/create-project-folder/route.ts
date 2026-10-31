@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { createProjectFolder } from '@/lib/googleDrive'
+import { requireUser } from '@/lib/supabaseServer'
 
 // Creates a fresh, title-named project folder under 07_PROJECTS/LONGFORM or
 // /SHORTS (replicating the TEMPLATE_TO_COPY_001_XXX subfolder skeleton), and
 // persists the resulting link onto the content item in one round trip.
 //
-// Runs server-side with its own Supabase client (not lib/supabase.ts, which
-// is client-safe but has no reason to import next/server) — same anon key +
-// allow-all RLS policy as the rest of the app, just instantiated locally so
-// this route has no client-component import chain.
+// Runs server-side as the signed-in user (cookie session via
+// lib/supabaseServer.ts), so Row Level Security applies to its queries.
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
   try {
     const body = await req.json().catch(() => ({}))
     const { contentItemId, title, format } = body as { contentItemId?: string; title?: string; format?: string | null }
@@ -19,10 +19,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing contentItemId or title.' }, { status: 400 })
     }
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
-    )
+    const supabase = auth.supabase
     const { data: map, error: mapErr } = await supabase
       .from('drive_folder_map')
       .select('projects_longform_folder_id,projects_shorts_folder_id,project_template_folder_id')

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { listFolderChildren } from '@/lib/googleDrive'
+import { requireUser } from '@/lib/supabaseServer'
 
 // Lists the immediate children of a Drive folder — powers the Brand Assets
 // browser in the Scripting/Storyboard stages. folderId always comes from
@@ -8,6 +9,8 @@ import { listFolderChildren } from '@/lib/googleDrive'
 // what's passed here (see lib/googleDrive.ts header comment).
 
 export async function GET(req: NextRequest) {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
   const folderId = req.nextUrl.searchParams.get('folderId')
   if (!folderId) return NextResponse.json({ error: 'Missing folderId.' }, { status: 400 })
   try {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireUser } from '@/lib/supabaseServer'
 
 // Same pattern as app/api/x/generate/route.ts — server-side call so the
 // Anthropic key never reaches the browser. Used by the Content Pipeline's
@@ -17,6 +18,8 @@ const ALLOWED_MODELS: Record<string, string> = {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
   try {
     const { systemPrompt, userPrompt, model, webSearch, messages, maxTokens } = await req.json()
     const resolvedModel = ALLOWED_MODELS[model] ?? ALLOWED_MODELS['claude-haiku-4-5-20251001']

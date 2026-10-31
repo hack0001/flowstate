@@ -1,8 +1,13 @@
-import { createClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
-export const supabase = createClient(url, key)
+// createBrowserClient (rather than plain createClient) keeps the signed-in
+// session in cookies, so middleware.ts and server routes can see it, and so
+// every query the browser makes carries the user's JWT -- which is what Row
+// Level Security (migration 048) checks. For server-side code use
+// lib/supabaseServer.ts instead; this module is the browser client.
+export const supabase = createBrowserClient(url, key)
 
 // ---- YouTube-Pipeline-driven focus session (Home "Start focus session") ----
 // Up to getMaxFocusItems() content_items pinned via is_active_focus in the

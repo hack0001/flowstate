@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireUser } from '@/lib/supabaseServer'
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 const MODEL = 'claude-haiku-4-5-20251001'
@@ -78,6 +79,8 @@ function parseTweetText(html: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
   try {
     const body = await req.json()
     const { action } = body

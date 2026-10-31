@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireUser } from '@/lib/supabaseServer'
 
 // YouTube Data API v3 outlier scanner — the "OutlierKit" half of the Idea
 // Finder. Where Claude's web search gives judgment with approximate numbers,
@@ -46,6 +47,8 @@ type ScannedOutlier = {
 const YT = 'https://www.googleapis.com/youtube/v3'
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
   const key = process.env.YOUTUBE_API_KEY
   if (!key) {
     return NextResponse.json(

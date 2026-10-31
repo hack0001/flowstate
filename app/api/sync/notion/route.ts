@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server'
 import { getAllTasksForSync, getAllVaultForSync, getAllContentForSync, getAllProjectsForSync } from '@/lib/notion'
-import { supabase } from '@/lib/supabase'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { requireUser } from '@/lib/supabaseServer'
+
+// Each sync runs as the signed-in user (cookie session) so Row Level Security
+// applies -- the old shared anon-key client would be treated as "nobody".
 
 type SyncResult = { synced: number; total: number; error?: string }
 
-async function syncTasks(): Promise<SyncResult> {
+async function syncTasks(db: SupabaseClient): Promise<SyncResult> {
   try {
     const items = await getAllTasksForSync()
     if (items.length === 0) return { synced: 0, total: 0 }
@@ -22,7 +26,7 @@ async function syncTasks(): Promise<SyncResult> {
       notion_url:      t.url,
       updated_at:      new Date().toISOString(),
     }))
-    const { data, error } = await supabase.from('master_tasks').upsert(rows, { onConflict: 'notion_id' }).select('id')
+    const { data, error } = await db.from('master_tasks').upsert(rows, { onConflict: 'notion_id' }).select('id')
     if (error) return { synced: 0, total: items.length, error: error.message }
     return { synced: data?.length ?? rows.length, total: items.length }
   } catch (e) {
@@ -30,7 +34,7 @@ async function syncTasks(): Promise<SyncResult> {
   }
 }
 
-async function syncVault(): Promise<SyncResult> {
+async function syncVault(db: SupabaseClient): Promise<SyncResult> {
   try {
     const items = await getAllVaultForSync()
     if (items.length === 0) return { synced: 0, total: 0 }
@@ -48,7 +52,7 @@ async function syncVault(): Promise<SyncResult> {
       notion_url:    v.url,
       updated_at:    new Date().toISOString(),
     }))
-    const { data, error } = await supabase.from('vault_items').upsert(rows, { onConflict: 'notion_id' }).select('id')
+    const { data, error } = await db.from('vault_items').upsert(rows, { onConflict: 'notion_id' }).select('id')
     if (error) return { synced: 0, total: items.length, error: error.message }
     return { synced: data?.length ?? rows.length, total: items.length }
   } catch (e) {
@@ -56,7 +60,7 @@ async function syncVault(): Promise<SyncResult> {
   }
 }
 
-async function syncContent(): Promise<SyncResult> {
+async function syncContent(db: SupabaseClient): Promise<SyncResult> {
   try {
     const items = await getAllContentForSync()
     if (items.length === 0) return { synced: 0, total: 0 }
@@ -74,7 +78,7 @@ async function syncContent(): Promise<SyncResult> {
       notion_url:     c.url,
       updated_at:     new Date().toISOString(),
     }))
-    const { data, error } = await supabase.from('content_items').upsert(rows, { onConflict: 'notion_id' }).select('id')
+    const { data, error } = await db.from('content_items').upsert(rows, { onConflict: 'notion_id' }).select('id')
     if (error) return { synced: 0, total: items.length, error: error.message }
     return { synced: data?.length ?? rows.length, total: items.length }
   } catch (e) {
@@ -82,7 +86,7 @@ async function syncContent(): Promise<SyncResult> {
   }
 }
 
-async function syncProjects(): Promise<SyncResult> {
+async function syncProjects(db: SupabaseClient): Promise<SyncResult> {
   try {
     const items = await getAllProjectsForSync()
     if (items.length === 0) return { synced: 0, total: 0 }
@@ -98,7 +102,7 @@ async function syncProjects(): Promise<SyncResult> {
       notion_url:  p.url,
       updated_at:  new Date().toISOString(),
     }))
-    const { data, error } = await supabase.from('projects').upsert(rows, { onConflict: 'notion_id' }).select('id')
+    const { data, error } = await db.from('projects').upsert(rows, { onConflict: 'notion_id' }).select('id')
     if (error) return { synced: 0, total: items.length, error: error.message }
     return { synced: data?.length ?? rows.length, total: items.length }
   } catch (e) {
@@ -107,12 +111,16 @@ async function syncProjects(): Promise<SyncResult> {
 }
 
 export async function POST() {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const db = auth.supabase
+
   // Run all syncs independently — one failure does NOT abort the others
   const [tasks, vault, content, projects] = await Promise.all([
-    syncTasks(),
-    syncVault(),
-    syncContent(),
-    syncProjects(),
+    syncTasks(db),
+    syncVault(db),
+    syncContent(db),
+    syncProjects(db),
   ])
 
   const hasError = [tasks, vault, content, projects].some(r => r.error)
@@ -142,12 +150,15 @@ export async function POST() {
 
 // GET: stats across all synced tables
 export async function GET() {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const db = auth.supabase
   try {
     const [tasks, vault, content, projects] = await Promise.all([
-      supabase.from('master_tasks').select('id', { count: 'exact', head: true }).eq('archived', false),
-      supabase.from('vault_items').select('id', { count: 'exact', head: true }).eq('archived', false),
-      supabase.from('content_items').select('id', { count: 'exact', head: true }).eq('archived', false),
-      supabase.from('projects').select('id', { count: 'exact', head: true }).eq('archived', false),
+      db.from('master_tasks').select('id', { count: 'exact', head: true }).eq('archived', false),
+      db.from('vault_items').select('id', { count: 'exact', head: true }).eq('archived', false),
+      db.from('content_items').select('id', { count: 'exact', head: true }).eq('archived', false),
+      db.from('projects').select('id', { count: 'exact', head: true }).eq('archived', false),
     ])
     return NextResponse.json({
       tasks:    tasks.count ?? 0,

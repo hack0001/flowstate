@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireUser } from '@/lib/supabaseServer'
 
 // Public YouTube stats for published videos — one batched call for every
 // pipeline item that has a youtube_url. Uses the same YOUTUBE_API_KEY as the
@@ -10,6 +11,8 @@ import { NextRequest, NextResponse } from 'next/server'
 // now those get read from Studio and typed into the revenue/notes fields.
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
   const key = process.env.YOUTUBE_API_KEY
   if (!key) {
     return NextResponse.json({ error: 'YOUTUBE_API_KEY is not set.' }, { status: 400 })

@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, Plus, Flame, GripVertical, ShoppingCart, Bell, Sparkles, Palette, Disc3, FileEdit } from 'lucide-react'
+import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, Plus, Flame, GripVertical, ShoppingCart, Bell, Sparkles, Palette, Disc3, FileEdit, TrendingUp } from 'lucide-react'
+import SignOutButton from '@/components/SignOutButton'
 import { getActiveFocusVideos } from '@/lib/supabase'
 import { supabase, getPageVisits, recordPageVisit, getEveningReview, getDailyChecklistState, setDailyChecklistItem } from '@/lib/supabase'
 import { SECTION_LABEL, type DailyPlanSection } from '@/lib/dailyPlan'
@@ -1082,7 +1083,7 @@ export default function Home() {
   const [showAddTask, setShowAddTask] = useState(false)
   const [taskRefresh, setTaskRefresh] = useState(0)
 
-  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas','adobe-skills','music','script-editor']
+  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas','adobe-skills','music','script-editor','seo']
 
   const today = toDateStr(new Date())
   const quote = QUOTES[new Date().getDate() % QUOTES.length]
@@ -1496,6 +1497,7 @@ export default function Home() {
             <p style={{ fontSize:'0.9rem', color:C.sec, margin:'0 0 0.75rem' }}>{dateLabel}</p>
             <div style={{ display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap' }}>
               <LiveClock />
+              <SignOutButton />
               {!loading && routineDone && (
                 <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.green, background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem', animation:'fadeInUp 0.35s ease both' }}>
                   &#10003; Morning routine complete
@@ -1552,6 +1554,7 @@ export default function Home() {
               { route:'adobe-skills', icon:<Palette size={14}/>, label:'Adobe Skills', bg:'rgba(145,97,242,0.07)', border:'rgba(145,97,242,0.22)', color:'#9161f2' },
               { route:'music', icon:<Disc3 size={14}/>, label:'Music', bg:'rgba(255,79,163,0.07)', border:'rgba(255,79,163,0.22)', color:'#ff4fa3' },
               { route:'script-editor', icon:<FileEdit size={14}/>, label:'Script Editor', bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
+              { route:'seo', icon:<TrendingUp size={14}/>, label:'SEO Dashboard', bg:'rgba(47,184,172,0.07)', border:'rgba(47,184,172,0.22)', color:'#2fb8ac' },
             ] as { route:string; icon:JSX.Element; label:string; bg:string; border:string; color:string; bold?:boolean }[]).map(({ route, icon, label, bg, border, color, bold }) => {
               const alert = pageAlerts[route]
               const alertBg     = alert === 'red' ? 'rgba(255,68,102,0.15)' : alert === 'orange' ? 'rgba(255,184,0,0.13)' : alert === 'green' ? 'rgba(0,255,136,0.11)' : null

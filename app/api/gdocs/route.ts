@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireUser } from '@/lib/supabaseServer'
 import { getGoogleDocText, patchGoogleDocText, findReplaceInGoogleDoc, appendToGoogleDoc, applyProposedEdit, insertVisualNoteInGoogleDoc } from '@/lib/googleDocs'
 
 // Powers app/script-editor/page.tsx — real in-place Google Docs edits via
@@ -7,6 +8,8 @@ import { getGoogleDocText, patchGoogleDocText, findReplaceInGoogleDoc, appendToG
 // (share the doc with the service account, enable the Docs API).
 
 export async function GET(req: NextRequest) {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
   const url = req.nextUrl.searchParams.get('url')
   if (!url) return NextResponse.json({ error: 'Missing url.' }, { status: 400 })
   try {
@@ -18,6 +21,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
   // Kept lightweight debug info on errors -- the earlier "permission denied"
   // saga turned out to be a wrong doc URL (a stale link saved against a
   // focus-video's script_url), not an auth bug, and having the received

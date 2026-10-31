@@ -29,7 +29,11 @@ const FOLDER_MIME = 'application/vnd.google-apps.folder'
 const IMPERSONATED_SCOPE = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/documents'
 
 let cachedToken: { token: string; expiresAt: number } | null = null
-let cachedImpersonatedToken: { token: string; expiresAt: number } | null = null
+// Cached per scope string -- the Script Editor (drive+documents) and Search
+// Console (webmasters.readonly) each request ONLY the scopes they need, so a
+// scope that hasn't been authorized in the Admin Console yet can only break
+// its own feature, never another one's token.
+const cachedImpersonatedTokens = new Map<string, { token: string; expiresAt: number }>()
 
 function base64url(input: Buffer | string): string {
   return Buffer.from(input).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
@@ -108,8 +112,9 @@ export async function getAccessToken(): Promise<string> {
 // propagating on Google's side, then held in memory by a warm serverless
 // instance for up to its full ~1hr lifetime) without waiting for it to
 // naturally expire or for the app to get redeployed.
-export async function getImpersonatedAccessToken(forceRefresh = false): Promise<string> {
-  if (!forceRefresh && cachedImpersonatedToken && cachedImpersonatedToken.expiresAt > Date.now() + 30_000) return cachedImpersonatedToken.token
+export async function getImpersonatedAccessToken(forceRefresh = false, scope: string = IMPERSONATED_SCOPE): Promise<string> {
+  const cached = cachedImpersonatedTokens.get(scope)
+  if (!forceRefresh && cached && cached.expiresAt > Date.now() + 30_000) return cached.token
 
   const impersonateEmail = process.env.GOOGLE_WORKSPACE_IMPERSONATE_EMAIL
   if (!impersonateEmail) {
@@ -127,7 +132,7 @@ export async function getImpersonatedAccessToken(forceRefresh = false): Promise<
   // The 'sub' claim is what makes this an impersonated token instead of a
   // bare service-account one -- it only works once the Client ID above has
   // been authorized for domain-wide delegation with a matching scope.
-  const claims = { iss: clientEmail, sub: impersonateEmail, scope: IMPERSONATED_SCOPE, aud: TOKEN_URI, iat: now, exp: now + 3600 }
+  const claims = { iss: clientEmail, sub: impersonateEmail, scope, aud: TOKEN_URI, iat: now, exp: now + 3600 }
   const unsigned = base64url(JSON.stringify(header)) + '.' + base64url(JSON.stringify(claims))
   const signature = crypto.sign('RSA-SHA256', Buffer.from(unsigned), privateKey)
   const jwt = unsigned + '.' + base64url(signature)
@@ -139,8 +144,8 @@ export async function getImpersonatedAccessToken(forceRefresh = false): Promise<
   })
   if (!res.ok) throw new Error('Google auth failed (impersonated): ' + (await res.text()))
   const data = await res.json()
-  cachedImpersonatedToken = { token: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 }
-  return cachedImpersonatedToken.token
+  cachedImpersonatedTokens.set(scope, { token: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 })
+  return data.access_token as string
 }
 
 export type DriveFile = {
