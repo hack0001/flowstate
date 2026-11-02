@@ -1,5 +1,5 @@
 // ============================================================
-// Who is allowed into FlowState.
+// Who is allowed into FlowState (the login allow-list).
 //
 // Pure helpers with NO Node/Next-only imports, so they're safe to use from
 // middleware.ts (Edge runtime) as well as server routes.
