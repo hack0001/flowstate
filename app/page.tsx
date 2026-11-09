@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, Plus, Flame, GripVertical, ShoppingCart, Bell, Sparkles, Palette, Disc3, FileEdit, TrendingUp } from 'lucide-react'
+import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, Plus, Flame, GripVertical, ShoppingCart, Bell, Sparkles, Palette, Disc3, FileEdit, TrendingUp, LineChart } from 'lucide-react'
 import SignOutButton from '@/components/SignOutButton'
 import { getActiveFocusVideos } from '@/lib/supabase'
 import { supabase, getPageVisits, recordPageVisit, getEveningReview, getDailyChecklistState, setDailyChecklistItem } from '@/lib/supabase'
@@ -1555,6 +1555,7 @@ export default function Home() {
               { route:'music', icon:<Disc3 size={14}/>, label:'Music', bg:'rgba(255,79,163,0.07)', border:'rgba(255,79,163,0.22)', color:'#ff4fa3' },
               { route:'script-editor', icon:<FileEdit size={14}/>, label:'Script Editor', bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
               { route:'seo', icon:<TrendingUp size={14}/>, label:'SEO Dashboard', bg:'rgba(47,184,172,0.07)', border:'rgba(47,184,172,0.22)', color:'#2fb8ac' },
+              { route:'betfair', icon:<LineChart size={14}/>, label:'Betfair Desk', bg:'rgba(155,140,255,0.07)', border:'rgba(155,140,255,0.22)', color:'#9b8cff' },
             ] as { route:string; icon:JSX.Element; label:string; bg:string; border:string; color:string; bold?:boolean }[]).map(({ route, icon, label, bg, border, color, bold }) => {
               const alert = pageAlerts[route]
               const alertBg     = alert === 'red' ? 'rgba(255,68,102,0.15)' : alert === 'orange' ? 'rgba(255,184,0,0.13)' : alert === 'green' ? 'rgba(0,255,136,0.11)' : null
