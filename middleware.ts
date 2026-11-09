@@ -9,8 +9,9 @@ import { allowedEmails, isAllowedEmail } from '@/lib/authConfig'
 //  - Pages:      redirect to /login (remembering where you were headed)
 //  - /api/*:     401 JSON
 //  - Exceptions: /login, /auth/callback (needed to sign in) and
-//                /api/gsc/cron (Vercel Cron has no session; that route
-//                verifies its own CRON_SECRET bearer token instead)
+//                /api/gsc/cron + /api/betfair/cron (Vercel Cron has no
+//                session; those routes verify their own CRON_SECRET bearer
+//                token instead)
 //
 // This is the first of several layers, not the only one: sensitive API routes
 // re-check via requireUser(), and Row Level Security (migration 048) is what
@@ -18,7 +19,7 @@ import { allowedEmails, isAllowedEmail } from '@/lib/authConfig'
 // ============================================================
 
 const PUBLIC_PATHS = ['/login', '/auth/callback']
-const SELF_AUTHENTICATED_PATHS = ['/api/gsc/cron']
+const SELF_AUTHENTICATED_PATHS = ['/api/gsc/cron', '/api/betfair/cron']
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
