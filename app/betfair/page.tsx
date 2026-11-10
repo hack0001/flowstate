@@ -4,10 +4,16 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
 import type { Snapshot } from '@/lib/betfair/run'
 import { RULES } from '@/lib/betfair/engine'
+import ResearchTab from '@/components/betfair/ResearchTab'
+import StrategiesTab, { type StratData } from '@/components/betfair/StrategiesTab'
 
 // Betfair paper desk: six agents, hard handoffs, paper fills only.
 // While running, this page drives the bot by calling /api/betfair every few
 // seconds (demo every 2s, live every 5s). The server does the Betfair calls.
+//
+// Three tabs: Desk (the racing bot), Research (ideas from the Sports Hacker
+// articles, lib/betfair/playbook.ts) and Strategies (football paper tests,
+// polled through /api/betfair/strategies once a minute in live mode).
 
 const C = {
   bg: '#060914', panel: '#0b1122', panel2: '#0e1630', line: '#1a2547', fg: '#dbe3f7', mut: '#7784a6', dim: '#4b5677',
@@ -146,6 +152,38 @@ export default function BetfairPage() {
   }, [])
 
   useEffect(() => { call() }, [call])
+
+  // --- tabs + the football strategy tests (polled whichever tab is showing)
+  type Tab = 'desk' | 'research' | 'strategies'
+  const [tab, setTab] = useState<Tab>('desk')
+  const [focus, setFocus] = useState<string | null>(null)
+  const [sd, setSd] = useState<StratData | null>(null)
+  const [sErr, setSErr] = useState<string | null>(null)
+  const [sBusy, setSBusy] = useState(false)
+  const sFlight = useRef(false)
+  const sCall = useCallback(async (body?: { action: string; mode?: string }) => {
+    if (sFlight.current && body?.action === 'tick') return
+    sFlight.current = true
+    try {
+      const res = await fetch('/api/betfair/strategies', body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { cache: 'no-store' })
+      const j = await res.json() as StratData
+      if (!res.ok || j.error) setSErr(j.error ?? 'HTTP ' + res.status)
+      else { setSd(j); setSErr(j.tickError ?? null) }
+    } catch (e) { setSErr(e instanceof Error ? e.message : String(e)) }
+    finally { sFlight.current = false }
+  }, [])
+  useEffect(() => { sCall() }, [sCall])
+  useEffect(() => {
+    if (!sd?.running) return
+    const id = setInterval(() => sCall({ action: 'tick' }), sd.mode === 'demo' ? 2500 : 60_000)
+    return () => clearInterval(id)
+  }, [sd?.running, sd?.mode, sCall])
+  const sAct = async (action: string, mode?: string) => {
+    if (action === 'reset' && !confirm(`Delete all ${mode ?? sd?.mode} strategy paper bets and start the tests again?`)) return
+    setSBusy(true); await sCall({ action, mode }); setSBusy(false)
+  }
+  const openConcept = (id: string) => { setFocus(id); setTab('research') }
+  const openStrategy = (id: string) => { setTab('strategies'); setTimeout(() => document.getElementById('strategy-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80) }
   useEffect(() => {
     if (!d) return
     const ms = d.running ? (d.mode === 'demo' ? 2000 : 5000) : 15000
@@ -188,6 +226,20 @@ export default function BetfairPage() {
           <span style={{ border: '1px solid #5a4718', color: C.amb, borderRadius: 6, padding: '2px 7px', fontSize: 10 }}>paper ✓ · real bets ✗</span>
         </div>
 
+        {/* tabs */}
+        <div role="tablist" style={{ display: 'flex', gap: 4, margin: '12px 0 0', borderBottom: '1px solid ' + C.line, flexWrap: 'wrap' }}>
+          {([['desk', 'Desk', d?.running], ['research', 'Research', false], ['strategies', 'Strategies', sd?.running]] as const).map(([id, label, on]) => (
+            <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+              style={{ background: 'none', border: 0, borderBottom: '2px solid ' + (tab === id ? C.vio : 'transparent'), color: tab === id ? '#fff' : C.mut, padding: '8px 14px', cursor: 'pointer', fontFamily: MONO, fontSize: 13, fontWeight: 600, marginBottom: -1 }}>
+              {label}{on && <i style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: C.teal, marginLeft: 6, verticalAlign: 'middle' }} />}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'research' && <ResearchTab focus={focus} onStrategy={openStrategy} />}
+        {tab === 'strategies' && <StrategiesTab d={sd} err={sErr} busy={sBusy} act={sAct} onConcept={openConcept} />}
+
+        {tab === 'desk' && <>
         {/* header */}
         <div className="bf-head" style={{ margin: '14px 0 12px' }}>
           <div aria-hidden="true" style={{ width: 76, height: 76, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#fff 0%,#c9bdff 18%,#8b6cff 55%,#4a2ad1 100%)', boxShadow: '0 0 40px #7b5cff88', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, animation: d?.running ? 'bfPulse 3s ease-out infinite' : 'none' }}>
@@ -325,6 +377,7 @@ export default function BetfairPage() {
             <Panel title="Green-up calculator" note="lock the same profit on every outcome"><GreenUp /></Panel>
           </div>
         </div>
+        </>}
       </div>
     </div>
   )

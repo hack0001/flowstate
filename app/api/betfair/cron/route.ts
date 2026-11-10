@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createSupabaseServiceClient } from '@/lib/supabaseServer'
 import { runOnce } from '@/lib/betfair/run'
+import { runStrategiesOnce } from '@/lib/betfair/stratRun'
 
 // OPTIONAL background runner, so the desk keeps polling with the tab closed.
 //
@@ -9,7 +10,8 @@ import { runOnce } from '@/lib/betfair/run'
 // a day, and adding a per-minute one there makes deployments fail. On Vercel
 // Pro, add this to vercel.json "crons":
 //   { "path": "/api/betfair/cron", "schedule": "* * * * *" }
-// It then polls every 10s for ~50s of each minute.
+// It then polls the racing desk every 10s for ~50s of each minute, and the
+// football strategy tests once a minute.
 //
 // Exempt from the login middleware (cron has no session), so it checks the
 // CRON_SECRET bearer token itself and fails closed without it, like
@@ -32,6 +34,13 @@ export async function GET(req: NextRequest) {
   const started = Date.now()
   let polls = 0
   const errors: string[] = []
+  // Football strategy tests only need one look a minute.
+  try {
+    const s = await runStrategiesOnce(db)
+    if (s.error) errors.push('strategies: ' + s.error)
+  } catch (e) {
+    errors.push('strategies: ' + (e instanceof Error ? e.message : String(e)))
+  }
   while (Date.now() - started < 50_000) {
     const r = await runOnce(db)
     if (r.error) errors.push(r.error)

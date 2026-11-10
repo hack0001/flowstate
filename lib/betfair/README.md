@@ -44,3 +44,13 @@ Edit `CONFIG` in `engine.ts`: stake %, stop/target/trail in ticks, commission (s
 ## Reading the results honestly
 
 Paper fills assume you get the price shown. With a delayed key that price may already be gone, so real results will usually be worse. Judge it on hundreds of trades and a positive expectancy after commission, not a good night.
+
+## Research and Strategies tabs
+
+- **Research** (`lib/betfair/playbook.ts`, `components/betfair/ResearchTab.tsx`): 24 betting ideas from the archived Sports Hacker articles, in plain English, each naming its article and script.
+- **Strategies** (`lib/betfair/strategies.ts`, `stratRun.ts`, `football.ts`, `components/betfair/StrategiesTab.tsx`, `app/api/betfair/strategies`): three football paper tests with fixed rules and a pass/fail verdict.
+  - Cross-market value: Dixon-Coles grid fitted to Match Odds + Over/Under 2.5, checked against other goals markets.
+  - Favourite vs longshot: returns by price band.
+  - Bounce-back: back teams under-performing market expectations, draw covered.
+
+Run `supabase/migrations/051_betfair_strategies.sql` before first use. Settings are in `STRAT` at the top of `strategies.ts`. Live mode looks once a minute while the page is open (or via the cron on Vercel Pro) and only reads prices.

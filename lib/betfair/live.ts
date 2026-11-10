@@ -113,3 +113,20 @@ export class LiveFeed implements Feed {
     return out
   }
 }
+
+// Generic read-only access for the football strategies (lib/betfair/stratRun.ts).
+// Only the two read operations are allowed through, so this can't be used to
+// place, change or cancel a bet even by mistake.
+const READ_ONLY_OPS = ['listMarketCatalogue', 'listMarketBook'] as const
+export class BetfairReader {
+  constructor(private getToken: (forceNew?: boolean) => Promise<string>) {}
+  async read<T>(op: (typeof READ_ONLY_OPS)[number], body: unknown): Promise<T> {
+    if (!READ_ONLY_OPS.includes(op)) throw new BetfairError('Operation not allowed: ' + op)
+    try {
+      return await call<T>(op, body, await this.getToken())
+    } catch (e) {
+      if (e instanceof BetfairError && /INVALID_SESSION|NO_SESSION/.test(e.code ?? '')) return call<T>(op, body, await this.getToken(true))
+      throw e
+    }
+  }
+}
