@@ -1083,7 +1083,7 @@ export default function Home() {
   const [showAddTask, setShowAddTask] = useState(false)
   const [taskRefresh, setTaskRefresh] = useState(0)
 
-  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas','adobe-skills','music','script-editor','seo']
+  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas','adobe-skills','motion','music','script-editor','seo']
 
   const today = toDateStr(new Date())
   const quote = QUOTES[new Date().getDate() % QUOTES.length]
@@ -1552,6 +1552,7 @@ export default function Home() {
               { route:'tabs', icon:<Layers size={14}/>, label:'Tab Sheet', bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
               { route:'ideas', icon:<Lightbulb size={14}/>, label:'Ideas', bg:'rgba(139,92,246,0.06)', border:'rgba(139,92,246,0.18)', color:'#8b5cf6' },
               { route:'adobe-skills', icon:<Palette size={14}/>, label:'Adobe Skills', bg:'rgba(145,97,242,0.07)', border:'rgba(145,97,242,0.22)', color:'#9161f2' },
+              { route:'motion', icon:<Film size={14}/>, label:'Motion Studio', bg:'rgba(47,184,172,0.07)', border:'rgba(47,184,172,0.22)', color:'#2FB8AC' },
               { route:'music', icon:<Disc3 size={14}/>, label:'Music', bg:'rgba(255,79,163,0.07)', border:'rgba(255,79,163,0.22)', color:'#ff4fa3' },
               { route:'script-editor', icon:<FileEdit size={14}/>, label:'Script Editor', bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
               { route:'seo', icon:<TrendingUp size={14}/>, label:'SEO Dashboard', bg:'rgba(47,184,172,0.07)', border:'rgba(47,184,172,0.22)', color:'#2fb8ac' },
