@@ -5,9 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "motion:studio": "remotion studio motion/remotion/index.ts",
+    "motion:render": "remotion render motion/remotion/index.ts"
   },
   "dependencies": {
+    "@remotion/fonts": "^4.0.542",
+    "@remotion/player": "^4.0.542",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.39.0",
     "@types/diff": "^5.2.3",
@@ -17,9 +21,11 @@
     "next": "14.2.35",
     "react": "^18",
     "react-dom": "^18",
-    "react-icons": "^5.2.1"
+    "react-icons": "^5.2.1",
+    "remotion": "^4.0.542"
   },
   "devDependencies": {
+    "@remotion/cli": "^4.0.542",
     "@types/canvas-confetti": "^1.6.4",
     "@types/node": "^20",
     "@types/react": "^18",
