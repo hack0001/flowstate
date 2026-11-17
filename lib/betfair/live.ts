@@ -82,7 +82,7 @@ async function call<T>(op: string, body: unknown, token: string): Promise<T> {
   return j as T
 }
 
-type RawCatalogue = { marketId: string; marketStartTime: string; event: { name: string; venue?: string } }
+type RawCatalogue = { marketId: string; marketStartTime: string; event: { id?: string; name: string; venue?: string }; runners?: { selectionId: number; runnerName: string }[] }
 
 export class LiveFeed implements Feed {
   constructor(private getToken: (forceNew?: boolean) => Promise<string>) {}
@@ -102,12 +102,14 @@ export class LiveFeed implements Feed {
     const cats = await this.withSession(t => call<RawCatalogue[]>('listMarketCatalogue', {
       filter: { eventTypeIds: ['7'], marketCountries: ['GB', 'IE'], marketTypeCodes: ['WIN'],
         marketStartTime: { from: now.toISOString(), to: to.toISOString() } },
-      marketProjection: ['EVENT', 'MARKET_START_TIME'], sort: 'FIRST_TO_START', maxResults: 50,
+      marketProjection: ['EVENT', 'MARKET_START_TIME', 'RUNNER_DESCRIPTION'], sort: 'FIRST_TO_START', maxResults: 50,
     }, t))
     return cats.map(c => ({
       id: c.marketId,
       name: `${c.event.venue ?? c.event.name} ${new Date(c.marketStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}`,
       start: c.marketStartTime,
+      eventId: c.event.id, venue: c.event.venue,
+      runnerNames: (c.runners ?? []).map(r => ({ id: r.selectionId, name: r.runnerName })),
     }))
   }
 

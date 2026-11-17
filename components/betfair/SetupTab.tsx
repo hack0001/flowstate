@@ -41,7 +41,7 @@ export default function SetupTab({ liveReady }: { liveReady: boolean | undefined
         <p style={{ margin: '0 0 6px', color: C.mut }}>Nothing is collected until you press Start. Once the key is in Vercel:</p>
         <ol style={{ margin: 0, paddingLeft: 20 }}>
           <li><b>Redeploy</b> in Vercel so the new key is picked up. The line at the top of this tab turns green when all three settings are found.</li>
-          <li>Make sure both database scripts have been run once in the Supabase SQL editor: <span style={code}>050_betfair_paper.sql</span> and <span style={code}>051_betfair_strategies.sql</span>.</li>
+          <li>Make sure all three database scripts have been run once in the Supabase SQL editor: <span style={code}>050_betfair_paper.sql</span> , <span style={code}>051_betfair_strategies.sql</span> and <span style={code}>052_betfair_prices.sql</span> (the price recorder).</li>
           <li>Open the <b>Strategies</b> tab, press <b>Live prices</b>, then <b>Start</b>. The football tests begin with the next matches kicking off in the next 12 minutes.</li>
           <li>Optionally, open the <b>Desk</b> tab, press <b>Live prices</b>, then <b>Start</b> to run the horse-racing bot too.</li>
           <li><b>Keep this page open</b> in a browser tab. It only collects while open (unless you have Vercel Pro and the cron). Weekend afternoons and midweek evenings have the most football.</li>

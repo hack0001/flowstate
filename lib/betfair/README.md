@@ -54,3 +54,12 @@ Paper fills assume you get the price shown. With a delayed key that price may al
   - Bounce-back: back teams under-performing market expectations, draw covered.
 
 Run `supabase/migrations/051_betfair_strategies.sql` before first use. Settings are in `STRAT` at the top of `strategies.ts`. Live mode looks once a minute while the page is open (or via the cron on Vercel Pro) and only reads prices.
+
+## Price recorder and Data tab
+
+In live mode both bots save what they see to Supabase (`lib/betfair/recorder.ts`, migration `052_betfair_prices.sql`):
+
+- `bf_markets`: every market looked at, with runner names and, once settled, the winners.
+- `bf_snaps`: price snapshots (best back/lay, sizes, last traded). Racing every 30s from ~25 min before the off; football once per match, a few minutes before kick-off, for all five markets.
+
+The **Data** tab (`components/betfair/DataTab.tsx`, `app/api/betfair/data`) shows what has been saved, downloads it as CSV, and replays the bots over it in the browser (`lib/betfair/replay.ts`) using the current `CONFIG` and `STRAT`. Recording failures are logged and never stop the bots.

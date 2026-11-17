@@ -44,9 +44,9 @@ export const RULES = [
 
 // ---------------------------------------------------------------- types
 export type PriceSize = { price: number; size: number }
-export type Runner = { selectionId: number; status: string; ex?: { availableToBack?: PriceSize[]; availableToLay?: PriceSize[] } }
+export type Runner = { selectionId: number; status: string; lastPriceTraded?: number; ex?: { availableToBack?: PriceSize[]; availableToLay?: PriceSize[] } }
 export type Book = { marketId: string; status: string; inplay: boolean; totalMatched: number; runners: Runner[] }
-export type Market = { id: string; name: string; start: string }
+export type Market = { id: string; name: string; start: string; eventId?: string; venue?: string; runnerNames?: { id: number; name: string }[] }
 export type Side = 'BACK' | 'LAY'
 export type Signals = { weight_of_money: number; momentum: number; spread: number; volume: number; depth: number }
 
@@ -76,6 +76,8 @@ export type BotState = {
   counts: { scanned: number; killed: number; scored: number; traded: number; stops: number; logged: number }
   ruleKills: number[]
   lastScore: ({ market: string; score: number; stage: 'traded' | 'dropped' } & Signals) | null
+  recAt?: Record<string, string>   // live only: when each market's prices were last recorded
+  resultsAt?: string               // live only: when results were last collected
 }
 
 export type TradeOut = {
