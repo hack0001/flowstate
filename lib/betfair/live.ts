@@ -42,6 +42,16 @@ export async function login(): Promise<string> {
     cache: 'no-store',
   })
   const j = await res.json().catch(() => ({})) as { token?: string; status?: string; error?: string }
+  if (res.status === 403 && !j.status) {
+    // Betfair's firewall answered, not its login service: the request came from somewhere it blocks.
+    const region = process.env.VERCEL_REGION ?? 'unknown'
+    throw new BetfairError(
+      `Betfair login failed: refused from this server (HTTP 403). It ran in Vercel region "${region}". ` +
+      (region.startsWith('lhr') || region.startsWith('dub')
+        ? 'That region should be allowed, so Betfair may be blocking this server\'s address: see the Setup tab.'
+        : 'Betfair blocks the US and some other countries. In Vercel → Settings → Functions → Function Regions, choose London (lhr1), save, then redeploy.'),
+      'BLOCKED_LOCATION')
+  }
   if (j.status !== 'SUCCESS' || !j.token) {
     const hint: Record<string, string> = {
       INVALID_USERNAME_OR_PASSWORD: 'username or password is wrong',

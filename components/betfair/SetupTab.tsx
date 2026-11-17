@@ -90,6 +90,17 @@ export default function SetupTab({ liveReady }: { liveReady: boolean | undefined
         </ol>
       </Section>
 
+      <Section title="If the login fails with HTTP 403">
+        <p style={{ margin: '0 0 6px' }}>Betfair turns away logins from the US and some other countries. Vercel runs functions in Washington DC unless told otherwise, so the fix is usually to move them:</p>
+        <ol style={{ margin: 0, paddingLeft: 20 }}>
+          <li>In Vercel, open your FlowState project → <b>Settings</b> → <b>Functions</b>.</li>
+          <li>Under <b>Function Regions</b>, choose <b>London (lhr1)</b> and save. On the free plan this moves all of FlowState&apos;s server code to London, which is fine.</li>
+          <li><b>Redeploy</b> (Deployments → the latest one → ⋯ → Redeploy). The region change only applies to new deployments.</li>
+          <li>Press Start again. The error message now says which region the login came from, so you can confirm it reads <span style={code}>lhr1</span>.</li>
+        </ol>
+        <p style={{ margin: '8px 0 0', color: C.mut, fontSize: 13 }}>If it still fails from <span style={code}>lhr1</span>, Betfair is blocking the server itself rather than the country. Contact Betfair Developer Support with the error text.</p>
+      </Section>
+
       <Section title="Where the settings go">
         <p style={{ margin: '0 0 6px' }}>In Vercel → your FlowState project → Settings → Environment Variables, set all three, then redeploy:</p>
         <ul style={{ margin: 0, paddingLeft: 20 }}>
