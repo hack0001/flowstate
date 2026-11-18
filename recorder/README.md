@@ -18,6 +18,25 @@ A small always-on program that runs on its own server in London. It:
 - If the program crashes or the server reboots, systemd starts it again within 10 seconds.
 - Each minute it records how many checks worked and failed, so FlowState can show where prices are missing.
 
+## Costs, and what stops a bug running them up
+
+| Service | What a bug could cost | Why |
+|---|---|---|
+| AWS Lightsail | Nothing beyond the monthly price | Fixed price; CPU is included. Only outbound data past the plan's allowance (1 to 2 TB a month) is charged, and the recorder uses a few GB. |
+| Betfair | Nothing | Reading prices is free. Too many requests get refused for a while, not charged. |
+| Supabase (free plan) | Nothing | Free projects aren't billed; going over a limit restricts the project instead. On a paid plan, keep the spend cap switched on. |
+| Vercel | Nothing | The recorder never calls your Vercel app. |
+
+Built-in limits on top of that (`src/guard.ts`):
+
+- **Only Betfair and your Supabase project can be contacted.** Any other address is refused.
+- **At most 8 requests a second to Betfair and 15 to Supabase.** Extra requests wait their turn instead of bursting.
+- **At most 100,000 Betfair and 200,000 Supabase requests a day**, about three times a busy day. If a bug ever hits a limit, the recorder stops contacting that service until midnight UK time, and FlowState's Data and Setup tabs show why.
+- **Logins are spaced at least a minute apart, even across restarts**, and a refused login pauses logins for 30 minutes.
+- **Disk use is capped:** pending writes are limited, and system logs are size-limited by Ubuntu.
+
+For peace of mind, add an AWS budget alert (free): AWS console → **Billing and Cost Management → Budgets → Create budget → Monthly cost budget**, set $10, and add your email. AWS then emails you if the month's bill heads past it.
+
 ## Set it up (about 20 minutes)
 
 ### 1. Supabase

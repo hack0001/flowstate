@@ -6,6 +6,8 @@
 // rate-limited, and a wrong username, password or key pauses logins for 30
 // minutes so the account is never locked by repeated attempts.
 
+import fs from 'fs'
+import path from 'path'
 import { REQUEST_TIMEOUT_MS } from './config'
 import { errText, log } from './log'
 
@@ -32,7 +34,27 @@ export class Betfair {
   private pausedUntil = 0
   private loggingIn: Promise<string> | null = null
 
-  constructor(private creds: { username: string; password: string; appKey: string }) {}
+  private sessionFile: string
+
+  // The session and the time of the last login attempt are kept on disk (readable
+  // only by the recorder), so restarts reuse the session and still respect the
+  // gap between logins: a crash loop can never turn into a login every few seconds.
+  constructor(private creds: { username: string; password: string; appKey: string }, stateDir: string) {
+    this.sessionFile = path.join(stateDir, 'betfair-session.json')
+    try {
+      const s = JSON.parse(fs.readFileSync(this.sessionFile, 'utf8')) as { token?: string; tokenAt?: number; lastLoginTry?: number; pausedUntil?: number }
+      if (s.token && s.tokenAt) { this.token = s.token; this.tokenAt = s.tokenAt }
+      this.lastLoginTry = s.lastLoginTry ?? 0
+      this.pausedUntil = s.pausedUntil ?? 0
+    } catch { /* first run */ }
+  }
+
+  private save() {
+    try {
+      fs.mkdirSync(path.dirname(this.sessionFile), { recursive: true })
+      fs.writeFileSync(this.sessionFile, JSON.stringify({ token: this.token, tokenAt: this.tokenAt, lastLoginTry: this.lastLoginTry, pausedUntil: this.pausedUntil }), { mode: 0o600 })
+    } catch { /* not fatal */ }
+  }
 
   get paused() { return Date.now() < this.pausedUntil }
 
@@ -41,6 +63,7 @@ export class Betfair {
     const wait = this.lastLoginTry + MIN_LOGIN_GAP_MS - Date.now()
     if (wait > 0) await sleep(wait)
     this.lastLoginTry = Date.now()
+    this.save()
     let res: Response
     try {
       res = await fetch(SSO, {
@@ -55,12 +78,14 @@ export class Betfair {
     const j = await res.json().catch(() => ({})) as { token?: string; status?: string; error?: string }
     if (j.status === 'SUCCESS' && j.token) {
       this.token = j.token; this.tokenAt = Date.now()
+      this.save()
       log.info('Logged in to Betfair')
       return j.token
     }
     const code = j.error ?? (res.status === 403 ? 'BLOCKED' : 'HTTP_' + res.status)
     if (CREDENTIAL_ERRORS.test(code)) {
       this.pausedUntil = Date.now() + CREDENTIAL_PAUSE_MS
+      this.save()
       throw new BetfairError(`Betfair login refused (${code}). Pausing logins for 30 minutes. Check the username, password and app key in /etc/flowstate-recorder.env.`, code)
     }
     throw new BetfairError(`Betfair login failed (${code})`, code, true)

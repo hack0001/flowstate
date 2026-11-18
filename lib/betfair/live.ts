@@ -105,14 +105,13 @@ export class LiveFeed implements Feed {
     const cats = await this.withSession(t => call<RawCatalogue[]>('listMarketCatalogue', {
       filter: { eventTypeIds: ['7'], marketCountries: ['GB', 'IE'], marketTypeCodes: ['WIN'],
         marketStartTime: { from: now.toISOString(), to: to.toISOString() } },
-      marketProjection: ['EVENT', 'MARKET_START_TIME', 'RUNNER_DESCRIPTION'], sort: 'FIRST_TO_START', maxResults: 50,
+      marketProjection: ['EVENT', 'MARKET_START_TIME'], sort: 'FIRST_TO_START', maxResults: 50,
     }, t))
     return cats.map(c => ({
       id: c.marketId,
       name: `${c.event.venue ?? c.event.name} ${new Date(c.marketStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}`,
       start: c.marketStartTime,
       eventId: c.event.id, venue: c.event.venue,
-      runnerNames: (c.runners ?? []).map(r => ({ id: r.selectionId, name: r.runnerName })),
       matched: c.totalMatched,
     }))
   }

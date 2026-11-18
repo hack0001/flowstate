@@ -6,6 +6,8 @@ import { loadConfig } from './config'
 import { Betfair } from './betfair'
 import { BUCKET } from './archive'
 import { errText } from './log'
+import { installGuard } from './guard'
+import os from 'os'
 
 const ok = (m: string) => console.log('  ✓ ' + m)
 const bad = (m: string) => { console.log('  ✗ ' + m); failed = true }
@@ -15,10 +17,11 @@ let failed = false
   console.log('FlowState recorder: setup check\n')
   let cfg
   try { cfg = loadConfig(); ok('Settings file has all five values') } catch (e) { bad(errText(e)); process.exit(1) }
+  installGuard(cfg.supabase.url)
 
   // Betfair: log in and list today's races
   try {
-    const bf = new Betfair(cfg.betfair)
+    const bf = new Betfair(cfg.betfair, os.tmpdir())
     const now = Date.now()
     const races = await bf.read<{ marketId: string; totalMatched?: number }[]>('listMarketCatalogue', {
       filter: { eventTypeIds: ['7'], marketCountries: ['GB', 'IE'], marketTypeCodes: ['WIN'],

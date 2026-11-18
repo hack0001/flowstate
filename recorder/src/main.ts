@@ -18,13 +18,15 @@ import { Store } from './store'
 import { RacingRecorder, type Counters } from './racing'
 import { runArchive } from './archive'
 import { errText, log } from './log'
+import { installGuard, guardMessage } from './guard'
 import { runOnce } from '../../lib/betfair/run'
 import { runStrategiesOnce } from '../../lib/betfair/stratRun'
 import { unresolved } from '../../lib/betfair/recorder'
 
 const cfg = loadConfig()
+installGuard(cfg.supabase.url)      // safety limits on every request, before anything else runs
 const db = createClient(cfg.supabase.url, cfg.supabase.key, { auth: { persistSession: false, autoRefreshToken: false } })
-const bf = new Betfair(cfg.betfair)
+const bf = new Betfair(cfg.betfair, cfg.spoolDir)
 const store = new Store(db, cfg.spoolDir)
 const count: Counters = { checksOk: 0, checksFailed: 0, snaps: 0 }
 const racing = new RacingRecorder(bf, store, count)
@@ -73,11 +75,18 @@ every('save', 3_000, () => store.flush())
 
 // ---------------------------------------------------------------- paper bots
 if (cfg.runBots) {
+  // A tiny check first, so a stopped bot costs one small read, not a full state load.
+  const isRunning = async (table: string) => {
+    const { data } = await db.from(table).select('running').eq('id', 1).abortSignal(AbortSignal.timeout(10_000)).maybeSingle()
+    return !!data?.running
+  }
   every('desk bot', 5_000, async () => {
+    if (!(await isRunning('bf_bot'))) return
     const r = await limit(runOnce(db), 25_000, 'Desk bot')
     if (r.error) log.warn('Desk bot:', r.error)
   }, 15_000)
   every('strategy bot', 60_000, async () => {
+    if (!(await isRunning('bf_strat'))) return
     const r = await limit(runStrategiesOnce(db), 50_000, 'Strategy bot')
     if (r.error) log.warn('Strategy bot:', r.error)
   }, 30_000)
@@ -105,7 +114,7 @@ every('coverage', 2_000, async () => {
   minute = nowMin
 })
 every('heartbeat', 30_000, async () => {
-  const lastError = racing.lastError ?? store.lastError ?? (bf.paused ? 'Betfair logins paused after a login problem' : null)
+  const lastError = guardMessage() ?? racing.lastError ?? store.lastError ?? (bf.paused ? 'Betfair logins paused after a login problem' : null)
   const { error } = await db.from('bf_recorder').update({
     version: VERSION, started_at: startedAt, last_beat: new Date().toISOString(),
     last_ok: racing.lastOkAt ? new Date(racing.lastOkAt).toISOString() : null,
