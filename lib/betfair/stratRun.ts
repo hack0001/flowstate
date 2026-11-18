@@ -114,7 +114,8 @@ async function liveSnapshots(bf: BetfairReader, state: State, now: Date, recorde
       const bb = q?.status === 'ACTIVE' ? q.ex?.availableToBack?.[0] : undefined, ll = q?.status === 'ACTIVE' ? q.ex?.availableToLay?.[0] : undefined
       return { id: r.selectionId, name: r.runnerName, back: bb?.price ?? null, backSize: bb?.size ?? 0, lay: ll?.price ?? null, laySize: ll?.size ?? 0 }
     })
-    return { marketId: c.marketId, type, matched: b.totalMatched ?? 0, runners }
+    // Betfair's free delayed key leaves total matched out of price data; the market list has it.
+    return { marketId: c.marketId, type, matched: Math.max(b.totalMatched ?? 0, c.totalMatched ?? 0), runners }
   }
 
   const snaps: MatchSnap[] = []

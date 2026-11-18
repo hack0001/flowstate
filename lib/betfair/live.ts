@@ -16,6 +16,7 @@ import type { Book, Feed, Market } from './engine'
 
 const SSO = 'https://identitysso.betfair.com/api/login'
 const API = 'https://api.betfair.com/exchange/betting/rest/v1.0/'
+const REQUEST_TIMEOUT_MS = 15_000   // never wait on Betfair longer than this
 
 export class BetfairError extends Error {
   constructor(message: string, public code?: string) { super(message) }
@@ -40,6 +41,7 @@ export async function login(): Promise<string> {
     headers: { 'X-Application': appKey, Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ username, password }).toString(),
     cache: 'no-store',
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
   const j = await res.json().catch(() => ({})) as { token?: string; status?: string; error?: string }
   if (res.status === 403 && !j.status) {
@@ -73,6 +75,7 @@ async function call<T>(op: string, body: unknown, token: string): Promise<T> {
     headers: { 'X-Application': appKey, 'X-Authentication': token, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(body),
     cache: 'no-store',
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
   const j = await res.json().catch(() => null)
   if (!res.ok) {
@@ -82,7 +85,7 @@ async function call<T>(op: string, body: unknown, token: string): Promise<T> {
   return j as T
 }
 
-type RawCatalogue = { marketId: string; marketStartTime: string; event: { id?: string; name: string; venue?: string }; runners?: { selectionId: number; runnerName: string }[] }
+type RawCatalogue = { marketId: string; marketStartTime: string; totalMatched?: number; event: { id?: string; name: string; venue?: string }; runners?: { selectionId: number; runnerName: string }[] }
 
 export class LiveFeed implements Feed {
   constructor(private getToken: (forceNew?: boolean) => Promise<string>) {}
@@ -110,6 +113,7 @@ export class LiveFeed implements Feed {
       start: c.marketStartTime,
       eventId: c.event.id, venue: c.event.venue,
       runnerNames: (c.runners ?? []).map(r => ({ id: r.selectionId, name: r.runnerName })),
+      matched: c.totalMatched,
     }))
   }
 

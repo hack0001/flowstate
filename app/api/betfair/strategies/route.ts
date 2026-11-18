@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireUser } from '@/lib/supabaseServer'
 import { runStrategiesOnce, setStrategies, strategiesSnapshot } from '@/lib/betfair/stratRun'
 import { hasCredentials } from '@/lib/betfair/live'
+import { recorderStatus } from '@/lib/betfair/recorderStatus'
 
 // Football strategy paper tests (the Strategies tab of /betfair).
 //   GET                         -> scoreboard snapshot
@@ -17,7 +18,7 @@ export async function GET() {
   const auth = await requireUser()
   if (!auth.ok) return auth.response
   try {
-    return NextResponse.json({ ...(await strategiesSnapshot(auth.supabase)), liveReady: hasCredentials() })
+    return NextResponse.json({ ...(await strategiesSnapshot(auth.supabase)), liveReady: hasCredentials(), server: await recorderStatus(auth.supabase) })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }
@@ -32,6 +33,7 @@ export async function POST(req: NextRequest) {
   try {
     switch (body.action) {
       case 'tick':
+        if ((await recorderStatus(auth.supabase))?.alive) break   // the recorder server is running the tests
         tickError = (await runStrategiesOnce(auth.supabase)).error
         break
       case 'start':
@@ -53,7 +55,7 @@ export async function POST(req: NextRequest) {
       default:
         return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
     }
-    return NextResponse.json({ ...(await strategiesSnapshot(auth.supabase)), liveReady: hasCredentials(), tickError })
+    return NextResponse.json({ ...(await strategiesSnapshot(auth.supabase)), liveReady: hasCredentials(), server: await recorderStatus(auth.supabase), tickError })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }

@@ -1,0 +1,20 @@
+{
+  "name": "flowstate-betfair-recorder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Always-on Betfair price recorder and paper-bot runner for FlowState. Paper only: never places bets.",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "check": "tsx src/check.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}

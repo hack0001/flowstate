@@ -14,9 +14,17 @@
 import { freshState, tick, type Book, type Feed, type Market, type TradeOut } from './engine'
 import { evaluateMatch, scoreStrategies, settleBet, updateForm, MARKET_TYPES, type Form, type MarketSnap, type MarketType, type MatchSnap, type Row, type SettledBet } from './strategies'
 
+export type RunnerInfo = {
+  id: number; name: string; sort?: number | null; jockey?: string | null; trainer?: string | null; age?: number | null; sex?: string | null
+  weight_lbs?: number | null; official_rating?: number | null; stall?: number | null; cloth?: number | null; days_since_run?: number | null
+  form?: string | null; forecast?: number | null
+}
 export type MarketRow = {
   market_id: string; sport: 'racing' | 'football'; market_type: string; event_id: string | null; event: string; venue: string | null
-  start_at: string; runners: { id: number; name: string }[]; status: string | null; winners: number[] | null; removed: number[] | null
+  start_at: string; runners: RunnerInfo[]; status: string | null; winners: number[] | null; removed: number[] | null
+  // recorded by the recorder server (migration 053); missing on older rows
+  market_name?: string | null; country?: string | null; race_type?: string | null; total_matched?: number | null
+  off_at?: string | null; bsp?: Record<string, number> | null; archived_at?: string | null
 }
 export type SnapRow = { market_id: string; at: string; inplay: boolean; matched: number | null; runners: [number, number | null, number, number | null, number, number | null][] }
 
@@ -134,20 +142,26 @@ const csvCell = (v: unknown) => {
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
 }
 
-// One row per runner per snapshot, with the market's details and result.
+// One row per runner per snapshot, with the market's details, the runner's
+// details and the result. secs_to_off counts to the actual off when it was
+// recorded, otherwise to the scheduled start.
 export function toCsv(markets: MarketRow[], snaps: SnapRow[]): string {
   const byId = new Map(markets.map(m => [m.market_id, m]))
-  const head = ['sport', 'market_id', 'market_type', 'event', 'venue', 'start_at', 'captured_at', 'secs_to_off', 'inplay', 'total_matched',
-    'selection_id', 'selection', 'back', 'back_size', 'lay', 'lay_size', 'last_traded', 'result']
+  const head = ['sport', 'market_id', 'market_type', 'event', 'market_name', 'race_type', 'venue', 'country', 'runners_in_race', 'start_at', 'off_at',
+    'captured_at', 'secs_to_off', 'inplay', 'total_matched', 'selection_id', 'selection', 'back', 'back_size', 'lay', 'lay_size', 'last_traded',
+    'bsp', 'result', 'jockey', 'trainer', 'age', 'weight_lbs', 'official_rating', 'stall', 'days_since_run', 'forecast']
   const lines = [head.join(',')]
   for (const s of [...snaps].sort((a, b) => a.market_id.localeCompare(b.market_id) || a.at.localeCompare(b.at))) {
     const m = byId.get(s.market_id)
     if (!m) continue
-    const secs = Math.round((new Date(m.start_at).getTime() - new Date(s.at).getTime()) / 1000)
+    const secs = Math.round((new Date(m.off_at ?? m.start_at).getTime() - new Date(s.at).getTime()) / 1000)
+    const starters = m.runners.length - (m.removed?.length ?? 0)
     for (const [id, b, bs, l, ls, ltp] of s.runners) {
       const result = !m.status ? '' : m.removed?.includes(id) ? 'REMOVED' : m.winners?.includes(id) ? 'WINNER' : 'LOSER'
-      lines.push([m.sport, m.market_id, m.market_type, m.event, m.venue, m.start_at, s.at, secs, s.inplay, s.matched,
-        id, m.runners.find(r => r.id === id)?.name ?? '', b, bs, l, ls, ltp, result].map(csvCell).join(','))
+      const r = m.runners.find(x => x.id === id)
+      lines.push([m.sport, m.market_id, m.market_type, m.event, m.market_name, m.race_type, m.venue, m.country, starters, m.start_at, m.off_at,
+        s.at, secs, s.inplay, s.matched ?? m.total_matched, id, r?.name ?? '', b, bs, l, ls, ltp,
+        m.bsp?.[id] ?? '', result, r?.jockey, r?.trainer, r?.age, r?.weight_lbs, r?.official_rating, r?.stall, r?.days_since_run, r?.forecast].map(csvCell).join(','))
     }
   }
   return lines.join('\n') + '\n'
