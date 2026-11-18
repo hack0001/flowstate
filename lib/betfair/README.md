@@ -29,10 +29,10 @@ The API routes are pinned to London (`preferredRegion = 'lhr1'`) because Betfair
 
 While the page is open and running, it asks the server for one poll every 5 seconds (2s in demo). Close the tab and it pauses; open it again and it carries on from where it was. State lives in Supabase.
 
-To keep it running with the tab closed you need Vercel Pro (Hobby allows one cron a day). Add to `vercel.json`:
+To keep it running with the tab closed, call `/api/betfair/cron` once a minute with the `CRON_SECRET` bearer token. Free: Supabase Cron (pg_cron + pg_net); the SQL is on the Setup tab and uses `?polls=1`. On Vercel Pro you can instead add this to `vercel.json` (Hobby allows only daily crons):
 
 ```json
-{ "path": "/api/betfair/cron", "schedule": "* * * * *" }
+{ "path": "/api/betfair/cron?polls=5", "schedule": "* * * * *" }
 ```
 
 It uses the existing `CRON_SECRET` and `SUPABASE_SERVICE_ROLE_KEY`.

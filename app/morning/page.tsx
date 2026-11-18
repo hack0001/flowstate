@@ -31,6 +31,13 @@ const CAT_COLORS: Record<string,string> = {
   Movement: C.cyan, Health: C.green, Fuel: C.amber, Mind: C.purple,
 }
 
+// The routine is shown as these groups, each ticked off with ONE click,
+// instead of stepping through every task one at a time. Anything with a
+// category outside this list (or none) lands in a trailing "Routine" group so
+// no task can silently disappear from the page.
+const CATEGORY_ORDER = ['Movement', 'Health', 'Fuel', 'Mind']
+const OTHER_GROUP = 'Routine'
+
 const MORNING_TIPS = [
   { icon:'&#128640;', tip:'Take action within 5 seconds. If you have the impulse, count 5-4-3-2-1 and move. Your brain kills ideas after 5 seconds of hesitation.' },
   { icon:'&#128203;', tip:'Write tomorrow\'s 3 priorities tonight. Decisions made by a rested brain remove all morning friction. Takes 3 minutes.' },
@@ -291,16 +298,28 @@ export default function MorningPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const pending   = items.filter(i => !completed.includes(i.id))
-  const current   = pending[0] ?? null
   const doneCount = completed.length
   const totalCount = items.length
-  const catColor  = current ? (CAT_COLORS[current.category??'']??C.muted) : C.cyan
 
-  async function markComplete(id:string) {
-    const next = [...completed, id]
+  // Items bucketed by category, in the fixed Movement/Health/Fuel/Mind order
+  // (empty groups are dropped). Order within a group is the routine's own
+  // sort order, so reordering in the Edit panel still works.
+  const groups = (() => {
+    const known = new Set(CATEGORY_ORDER)
+    const named = CATEGORY_ORDER.map(name => ({ name, items: items.filter(i => i.category === name) }))
+    const other = items.filter(i => !i.category || !known.has(i.category))
+    return [...named, { name: OTHER_GROUP, items: other }].filter(g => g.items.length > 0)
+  })()
+
+  // Marks every not-yet-done item in a group complete in one go -- the single
+  // click per category. If that finishes the whole routine, same completion
+  // handling as before (streak, habit tick, celebration, Home event).
+  async function markGroupComplete(groupItems:MorningRoutineItem[]) {
+    const ids = groupItems.map(i => i.id).filter(id => !completed.includes(id))
+    if (ids.length === 0) return
+    const next = [...completed, ...ids]
     setCompleted(next)
-    markMorningItemComplete(id, today)
+    ids.forEach(id => markMorningItemComplete(id, today))
     if (next.length >= items.length) {
       const { error } = await supabase.from('routine_completions').upsert({ routine_date:today }, { onConflict:'routine_date' })
       if (error) console.error('[routine_completions upsert failed]', error.message)
@@ -317,8 +336,6 @@ export default function MorningPage() {
       try { window.dispatchEvent(new Event('flowstate:routine-complete')) } catch {}
     }
   }
-
-  function skip(id:string) { markComplete(id) }
 
   async function handleSaveItems(newItems:MorningRoutineItem[]) {
     setItems(newItems)
@@ -401,16 +418,14 @@ export default function MorningPage() {
           </div>
         ) : (
           <>
-            {/* Progress dots */}
-            <div style={{ display:'flex', alignItems:'center', gap:'0.3rem', marginBottom:'2rem' }}>
-              {items.map(item => {
-                const done   = completed.includes(item.id)
-                const active = current?.id === item.id
+            {/* Progress: one segment per category, filled when it's done */}
+            <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', marginBottom:'2rem' }}>
+              {groups.map(g => {
+                const done = g.items.every(i => completed.includes(i.id))
                 return (
-                  <div key={item.id} style={{
-                    height:'8px', borderRadius:'4px',
-                    width:active?'26px':'8px',
-                    background:done ? C.green : active ? C.cyan : '#2a2a3a',
+                  <div key={g.name} title={g.name} style={{
+                    height:'8px', width:'38px', borderRadius:'4px',
+                    background: done ? (CAT_COLORS[g.name] ?? C.green) : '#2a2a3a',
                     transition:'all 0.4s ease',
                     flexShrink:0,
                   }}/>
@@ -453,92 +468,92 @@ export default function MorningPage() {
               </div>
             </div>
 
-            {/* Task card */}
-            {current ? (
-              <div style={{ width:'100%', maxWidth:'26rem', animation:'fadeInUp 0.35s ease both' }}>
-                <div style={{
-                  background:'rgba(18,18,26,0.75)', border:'1px solid #2a2a3a',
-                  borderRadius:'1.25rem', padding:'1.5rem 1.5rem 1.25rem',
-                  backdropFilter:'blur(16px)',
-                  boxShadow:'0 8px 40px rgba(0,0,0,0.4)',
-                  borderTop:'1px solid '+catColor+'44',
-                  marginBottom:'1.75rem',
-                }}>
-                  {/* Category row */}
-                  <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.875rem' }}>
-                    <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:catColor, flexShrink:0 }}/>
-                    <span style={{ fontSize:'0.6rem', fontWeight:800, letterSpacing:'0.15em', textTransform:'uppercase', color:catColor }}>
-                      {current.category ?? 'Routine'}
-                    </span>
-                  </div>
-
-                  {/* Task title */}
-                  <p style={{ fontSize:'clamp(1rem,2.5vw,1.25rem)', fontWeight:800, color:C.text, lineHeight:1.35, margin:'0 0 0.625rem', textAlign:'left' }}>
-                    {current.title}
-                  </p>
-
-                  {current.id === 'mr-mobility' && mobilityPlan ? (
-                    <div style={{ textAlign:'left', marginBottom:'0.375rem' }}>
-                      <p style={{ fontSize:'0.72rem', fontWeight:700, color:C.purple, margin:'0 0 0.5rem' }}>
-                        Week {mobilityPlan.weekNumber} &#8212; {mobilityPlan.focus}
-                      </p>
-                      <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
-                        {mobilityPlan.exercises.map(ex => (
-                          <div key={ex.id} style={{ fontSize:'0.78rem', color:C.sec, lineHeight:1.5 }}>
-                            <span style={{ color:C.text, fontWeight:600 }}>{ex.name}</span>
-                            {ex.cue && <span style={{ color:C.muted }}> &#8212; {ex.cue}</span>}
-                          </div>
-                        ))}
+            {/* Category cards -- one click completes everything in a group */}
+            {groups.length > 0 ? (
+              <div style={{ width:'100%', maxWidth:'26rem', display:'flex', flexDirection:'column', gap:'1rem', animation:'fadeInUp 0.35s ease both' }}>
+                {groups.map(g => {
+                  const color = CAT_COLORS[g.name] ?? C.muted
+                  const pendingInGroup = g.items.filter(i => !completed.includes(i.id))
+                  const groupDone = pendingInGroup.length === 0
+                  const minutes = g.items.reduce((sum, i) => sum + (i.minutes ?? 0), 0)
+                  return (
+                    <div key={g.name} style={{
+                      background:'rgba(18,18,26,0.75)', border:'1px solid '+(groupDone ? color+'55' : '#2a2a3a'),
+                      borderTop:'1px solid '+color+'66',
+                      borderRadius:'1.25rem', padding:'1.1rem 1.25rem 1.1rem',
+                      backdropFilter:'blur(16px)', boxShadow:'0 8px 40px rgba(0,0,0,0.4)',
+                      opacity: groupDone ? 0.7 : 1, transition:'opacity 0.3s',
+                      textAlign:'left',
+                    }}>
+                      {/* Header */}
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                          <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:color, flexShrink:0 }}/>
+                          <span style={{ fontSize:'0.72rem', fontWeight:800, letterSpacing:'0.15em', textTransform:'uppercase', color }}>{g.name}</span>
+                        </div>
+                        <span style={{ fontSize:'0.66rem', color:C.muted }}>
+                          {g.items.length} task{g.items.length === 1 ? '' : 's'}{minutes > 0 ? ' · ~'+minutes+' min' : ''}
+                        </span>
                       </div>
-                      <p style={{ fontSize:'0.68rem', color:C.muted, margin:'0.6rem 0 0', fontStyle:'italic' }}>Full checklist &amp; program structure on the Physical page.</p>
-                      <p style={{ fontSize:'0.7rem', color:C.amber, margin:'0.5rem 0 0', lineHeight:1.5, fontStyle:'italic' }}>
-                        Muscle building &#8212; Grease the Groove: ~2/3 max reps per set, 2&#8211;3 sessions a week, add weight/reps gradually and track it.
-                      </p>
+
+                      {/* Tasks in this group (read-only -- the one button below ticks them all) */}
+                      <div style={{ display:'flex', flexDirection:'column', gap:'0.55rem', marginBottom:'1rem' }}>
+                        {g.items.map(item => {
+                          const done = completed.includes(item.id)
+                          return (
+                            <div key={item.id} style={{ display:'flex', gap:'0.6rem', alignItems:'flex-start' }}>
+                              <div style={{ width:'14px', height:'14px', borderRadius:'50%', flexShrink:0, marginTop:'2px', border:'1.5px solid '+(done ? color : '#3a3a4a'), background: done ? color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                {done && <Check size={9} strokeWidth={4} color="#000"/>}
+                              </div>
+                              <div style={{ minWidth:0 }}>
+                                <p style={{ fontSize:'0.85rem', fontWeight:700, color: done ? C.muted : C.text, lineHeight:1.4, margin:0, textDecoration: done ? 'line-through' : 'none' }}>{item.title}</p>
+
+                                {item.id === 'mr-mobility' && mobilityPlan ? (
+                                  <div style={{ marginTop:'0.3rem' }}>
+                                    <p style={{ fontSize:'0.7rem', fontWeight:700, color:C.purple, margin:'0 0 0.3rem' }}>
+                                      Week {mobilityPlan.weekNumber} &#8212; {mobilityPlan.focus}
+                                    </p>
+                                    <div style={{ display:'flex', flexDirection:'column', gap:'0.2rem' }}>
+                                      {mobilityPlan.exercises.map(ex => (
+                                        <div key={ex.id} style={{ fontSize:'0.74rem', color:C.sec, lineHeight:1.45 }}>
+                                          <span style={{ color:C.text, fontWeight:600 }}>{ex.name}</span>
+                                          {ex.cue && <span style={{ color:C.muted }}> &#8212; {ex.cue}</span>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <p style={{ fontSize:'0.66rem', color:C.muted, margin:'0.4rem 0 0', fontStyle:'italic' }}>Full checklist &amp; program structure on the Physical page.</p>
+                                    <p style={{ fontSize:'0.68rem', color:C.amber, margin:'0.3rem 0 0', lineHeight:1.5, fontStyle:'italic' }}>
+                                      Muscle building &#8212; Grease the Groove: ~2/3 max reps per set, 2&#8211;3 sessions a week, add weight/reps gradually and track it.
+                                    </p>
+                                  </div>
+                                ) : item.note && (
+                                  <p style={{ fontSize:'0.74rem', color:C.sec, margin:'0.15rem 0 0', fontStyle:'italic', lineHeight:1.45 }}>{item.note}</p>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* The one click */}
+                      <button onClick={() => markGroupComplete(g.items)} disabled={groupDone} style={{
+                        display:'flex', alignItems:'center', justifyContent:'center', gap:'0.5rem',
+                        width:'100%', padding:'0.8rem',
+                        background: groupDone ? 'transparent' : 'linear-gradient(135deg,'+color+','+color+'cc)',
+                        border: groupDone ? '1px solid '+color+'55' : 'none',
+                        borderRadius:'9999px', cursor: groupDone ? 'default' : 'pointer', fontFamily:'inherit',
+                        fontWeight:900, fontSize:'0.95rem', color: groupDone ? color : '#000',
+                        boxShadow: groupDone ? 'none' : '0 4px 24px '+color+'44',
+                      }}>
+                        <Check size={17} strokeWidth={3}/>{groupDone ? g.name + ' done' : 'Done with ' + g.name}
+                      </button>
                     </div>
-                  ) : current.note && (
-                    <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 0.375rem', fontStyle:'italic', textAlign:'left' }}>{current.note}</p>
-                  )}
-                  {current.minutes && (
-                    <p style={{ fontSize:'0.68rem', color:C.muted, margin:0, textAlign:'left' }}>~{current.minutes} min</p>
-                  )}
-                </div>
-
-                {/* Up next preview */}
-                {pending.length > 1 && (
-                  <div style={{ display:'flex', alignItems:'center', gap:'1rem', justifyContent:'center', marginBottom:'1.75rem' }}>
-                    <span style={{ fontSize:'0.62rem', fontWeight:600, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em' }}>Up next:</span>
-                    {pending.slice(1,3).map((item) => (
-                      <span key={item.id} style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', color:C.sec }}>
-                        <div style={{ width:'5px', height:'5px', borderRadius:'50%', background:CAT_COLORS[item.category??'']??C.muted }}/>
-                        {item.title.length > 22 ? item.title.slice(0,22)+'...' : item.title}
-                      </span>
-                    ))}
-                    {pending.length > 3 && <span style={{ fontSize:'0.7rem', color:C.muted }}>+{pending.length-3} more</span>}
-                  </div>
-                )}
-
-                {/* Controls */}
-                <button onClick={() => markComplete(current.id)} style={{
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:'0.5rem',
-                  width:'100%', padding:'0.9rem',
-                  background:'linear-gradient(135deg,'+catColor+','+catColor+'cc)',
-                  border:'none', borderRadius:'9999px', cursor:'pointer', fontFamily:'inherit',
-                  fontWeight:900, fontSize:'1rem', color:'#000',
-                  boxShadow:'0 4px 24px '+catColor+'44',
-                  transition:'transform 0.15s',
-                }}>
-                  <Check size={19} strokeWidth={3}/>Done
-                </button>
-
-                <div style={{ marginTop:'0.875rem' }}>
-                  <button onClick={() => skip(current.id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', textDecoration:'underline' }}>
-                    Skip for today
-                  </button>
-                </div>
+                  )
+                })}
               </div>
             ) : (
               <div style={{ textAlign:'center' }}>
-                <p style={{ color:C.sec }}>All tasks complete for today.</p>
+                <p style={{ color:C.sec }}>No routine tasks set up yet — use Edit to add some.</p>
                 <button onClick={() => router.push('/')} style={{ marginTop:'1rem', padding:'0.75rem 2rem', background:C.cyan, border:'none', borderRadius:'9999px', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>Go home</button>
               </div>
             )}

@@ -142,8 +142,8 @@ export default function StrategiesTab({ d, err, busy, act, onConcept }: { d: Str
           <summary style={{ cursor: 'pointer', color: C.blu, fontSize: 13 }}>How to run the test, step by step</summary>
           <ol style={{ margin: '8px 0 0', paddingLeft: 20 }}>
             <li>Press <b>Start demo</b> and give it about ten minutes. Check the verdicts settle on “Fail” or “Inconclusive”. Then press <b>Reset</b>.</li>
-            <li>Switch to <b>Live prices</b> and press <b>Start</b>. Leave this page open in a tab around kick-off times (weekend afternoons and midweek evenings give the most matches).</li>
-            <li>The desk looks once a minute. It takes each match 1–12 minutes before kick-off, and collects results about two hours later. If the tab is closed at kick-off, that match is simply missed; open bets still settle next time you open the page.</li>
+            <li>Switch to <b>Live prices</b> and press <b>Start</b>. Leave this page open around kick-off times, or set up the free once-a-minute schedule on the Setup tab so it runs with the tab closed. Weekend afternoons and midweek evenings give the most matches.</li>
+            <li>The desk looks once a minute. It takes each match 1–12 minutes before kick-off, and collects results about two hours later. Without the schedule, a match kicking off while the tab is closed is simply missed; open bets still settle next time the page is open.</li>
             <li>Don&apos;t change the rules mid-test. If you want different settings, edit <code style={{ fontFamily: MONO, fontSize: 12 }}>STRAT</code> in <code style={{ fontFamily: MONO, fontSize: 12 }}>lib/betfair/strategies.ts</code>, press <b>Reset</b> and start again.</li>
             <li>Read the verdict only when a card stops saying “Collecting”. “Margin of error” is how far the return could be from the truth by luck alone; while it is wider than the return itself, the number means nothing yet.</li>
             <li>A “Pass” earns a second run on fresh matches, not real money. Paper fills are kinder than real ones.</li>

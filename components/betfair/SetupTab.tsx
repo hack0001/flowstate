@@ -23,6 +23,29 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     </section>
   )
 }
+const CRON_SQL = `-- Run once in the Supabase SQL editor. Safe to re-run.
+create extension if not exists pg_cron with schema pg_catalog;
+create extension if not exists pg_net with schema extensions;
+
+-- your app's address and cron secret, kept in Supabase's encrypted Vault
+select vault.create_secret('https://YOUR-APP-ADDRESS', 'flowstate_url')
+where not exists (select 1 from vault.secrets where name = 'flowstate_url');
+select vault.create_secret('YOUR-CRON-SECRET', 'flowstate_cron_secret')
+where not exists (select 1 from vault.secrets where name = 'flowstate_cron_secret');
+-- on a re-run, these two lines update the values if you've changed them
+select vault.update_secret(id, 'https://YOUR-APP-ADDRESS') from vault.secrets where name = 'flowstate_url';
+select vault.update_secret(id, 'YOUR-CRON-SECRET') from vault.secrets where name = 'flowstate_cron_secret';
+
+-- call the bots every minute (replaces any earlier version of this job)
+select cron.schedule('betfair-bots', '* * * * *', $$
+  select net.http_post(
+    url := (select decrypted_secret from vault.decrypted_secrets where name = 'flowstate_url')
+           || '/api/betfair/cron?polls=1',
+    headers := jsonb_build_object('Authorization', 'Bearer ' ||
+           (select decrypted_secret from vault.decrypted_secrets where name = 'flowstate_cron_secret')),
+    timeout_milliseconds := 30000
+  );
+$$);`
 const code: React.CSSProperties = { fontFamily: MONO, fontSize: 12, background: C.panel2, border: '1px solid ' + C.line, borderRadius: 4, padding: '1px 5px' }
 
 export default function SetupTab({ liveReady }: { liveReady: boolean | undefined }) {
@@ -44,9 +67,23 @@ export default function SetupTab({ liveReady }: { liveReady: boolean | undefined
           <li>Make sure all three database scripts have been run once in the Supabase SQL editor: <span style={code}>050_betfair_paper.sql</span> , <span style={code}>051_betfair_strategies.sql</span> and <span style={code}>052_betfair_prices.sql</span> (the price recorder).</li>
           <li>Open the <b>Strategies</b> tab, press <b>Live prices</b>, then <b>Start</b>. The football tests begin with the next matches kicking off in the next 12 minutes.</li>
           <li>Optionally, open the <b>Desk</b> tab, press <b>Live prices</b>, then <b>Start</b> to run the horse-racing bot too.</li>
-          <li><b>Keep this page open</b> in a browser tab. It only collects while open (unless you have Vercel Pro and the cron). Weekend afternoons and midweek evenings have the most football.</li>
+          <li><b>Keep this page open</b> in a browser tab, or set up the free once-a-minute schedule below so it runs with the tab closed. Weekend afternoons and midweek evenings have the most football.</li>
         </ol>
         <p style={{ margin: '8px 0 0', color: C.mut, fontSize: 13 }}>First signs it is working: “matches seen” on the Strategies tab goes up within a few minutes of a kick-off, and the first results settle about two hours later. If a red error box appears instead, copy its text into a chat with Claude.</p>
+      </Section>
+
+      <Section title="Run the bots with the tab closed">
+        <p style={{ margin: '0 0 6px' }}>Vercel only runs the bots when something calls them. With the tab open, the page does that. To keep them going with it closed, your Supabase project can call them once a minute for free. Set it up once:</p>
+        <ol style={{ margin: 0, paddingLeft: 20 }}>
+          <li>In Vercel → Settings → Environment Variables, check <span style={code}>CRON_SECRET</span> exists. If not, add it with any long random string (a password generator is fine) and redeploy.</li>
+          <li>In the Supabase SQL editor, paste the script below. Replace <span style={code}>YOUR-APP-ADDRESS</span> with your FlowState web address and <span style={code}>YOUR-CRON-SECRET</span> with the same value as in Vercel. Click <b>Run</b>.</li>
+          <li>Press <b>Start</b> on the Desk and/or Strategies tab as usual. You can then close the tab: the bots keep running until you press <b>Stop</b>.</li>
+        </ol>
+        <pre style={{ margin: '10px 0 0', background: C.panel2, border: '1px solid ' + C.line, borderRadius: 8, padding: 12, overflowX: 'auto', fontFamily: MONO, fontSize: 12, lineHeight: 1.5, color: C.fg, whiteSpace: 'pre' }}>{CRON_SQL}</pre>
+        <p style={{ margin: '8px 0 0', color: C.mut, fontSize: 13 }}>
+          With the tab closed the racing bot checks once a minute instead of every 5 seconds, so its entries and exits are less precise; open the tab when you want it at full speed. Each call takes a couple of seconds, so it uses little of Vercel&apos;s free allowance; check Vercel → Usage after the first day to be sure.
+          To stop the schedule: <span style={code}>select cron.unschedule(&apos;betfair-bots&apos;);</span>. To see it working: <span style={code}>select status_code, created from net._http_response order by created desc limit 5;</span> should show 200s.
+        </p>
       </Section>
 
       <Section title="Quick links">
