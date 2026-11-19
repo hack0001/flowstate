@@ -4,6 +4,7 @@ import { replayFootball, replayRacing, toCsv, type FootballReplay, type MarketRo
 import { STRATEGIES } from '@/lib/betfair/playbook'
 import type { RecorderStatus } from '@/lib/betfair/recorderStatus'
 import RecorderStatusCard from './RecorderStatusCard'
+import RecentRaces from './RecentRaces'
 
 // Data tab of /betfair: what the price recorder has saved, CSV downloads,
 // and replays of the bots over the recorded prices.
@@ -110,6 +111,10 @@ export default function DataTab() {
       <Section title="Recorder">
         <RecorderStatusCard s={sum ? sum.server ?? null : undefined} />
         {!!sum?.failedMinutes24h && <p style={{ margin: '8px 0 0', color: C.amb, fontSize: 13 }}>In the last 24 hours there were {sum.failedMinutes24h} minutes where every Betfair check failed. Prices from those minutes are missing.</p>}
+      </Section>
+
+      <Section title="Today's recording" note="Races from the last 6 hours and the next 3. Prices are saved from 75 minutes before each race until the off.">
+        <RecentRaces />
       </Section>
 
       <Section title="What's been saved" note={sum?.first ? `From ${when(sum.first)} to ${when(sum.last)}. Updates every minute.` : 'Nothing yet. Start a bot on Live prices and this fills up.'}>
