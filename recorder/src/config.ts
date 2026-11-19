@@ -7,7 +7,7 @@ function need(name: string): string {
   return v
 }
 
-export const VERSION = '1.0.0'
+export const VERSION = '1.1.0'
 
 export function loadConfig() {
   return {
@@ -31,7 +31,7 @@ export const SAVE_UNCHANGED_EVERY_MS = 60_000   // save a snapshot at least this
 export const CATALOGUE_EVERY_MS = 5 * 60_000    // refresh the race list
 export const MATCHED_EVERY_MS = 60_000          // refresh total matched for races in the window
 export const RESULTS_EVERY_MS = 2 * 60_000      // look for results
-export const ARCHIVE_AFTER_DAYS = 7             // move days older than this to compressed files
+export const ARCHIVE_AFTER_DAYS = 3             // move days older than this to compressed files (keeps the database small)
 export const ARCHIVE_HOUR_UK = 4                // run the archive at about 4am UK time
 
 export const REQUEST_TIMEOUT_MS = 15_000        // never wait on Betfair or Supabase longer than this

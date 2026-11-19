@@ -53,6 +53,6 @@ Prices are saved to Supabase (migrations `052_betfair_prices.sql` and `053_betfa
 
 - `bf_markets`: every market, with race and runner details, the time of the off and, once settled, winners and Starting Prices.
 - `bf_snaps`: price snapshots (best back/lay, sizes, last traded, total matched). Racing is recorded by the recorder server (every 5 s in the last 10 minutes); football by the strategy tests, once per match before kick-off, for all five markets.
-- Days older than a week are moved to compressed files in the `betfair-archive` storage bucket.
+- Days older than three days are moved to compressed files in the `betfair-archive` storage bucket.
 
 The **Data** tab (`components/betfair/DataTab.tsx`, `app/api/betfair/data`) shows what has been saved, downloads it as CSV, and replays the bots over it in the browser (`lib/betfair/replay.ts`) using the current `CONFIG` and `STRAT`. Recording failures are logged and never stop the bots. The Data tab reads archived days transparently.

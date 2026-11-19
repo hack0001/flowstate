@@ -45,7 +45,7 @@ export default function SetupTab({ liveReady, server }: { liveReady: boolean | u
         <RecorderStatusCard s={server} />
         <p style={{ margin: '10px 0 6px' }}>A small always-on server in London records racing prices (every 5 seconds near the off), keeps the Desk and Strategies bots running with this tab closed, and archives old days to compressed files. It only reads Betfair: it cannot place bets.</p>
         <ol style={{ margin: 0, paddingLeft: 20 }}>
-          <li>Run <span style={code}>053_betfair_recorder.sql</span> in the Supabase SQL editor.</li>
+          <li>Run <span style={code}>053_betfair_recorder.sql</span>, then <span style={code}>054_betfair_more_sports.sql</span> (football, tennis and golf), in the Supabase SQL editor.</li>
           <li>Create the server and run the setup script: full steps in <span style={code}>recorder/README.md</span> in your FlowState folder.</li>
           <li>The line above turns green within a minute of it starting.</li>
         </ol>
@@ -56,7 +56,7 @@ export default function SetupTab({ liveReady, server }: { liveReady: boolean | u
         <p style={{ margin: '0 0 6px', color: C.mut }}>Nothing is collected until you press Start. Once the key is in Vercel:</p>
         <ol style={{ margin: 0, paddingLeft: 20 }}>
           <li><b>Redeploy</b> in Vercel so the new key is picked up. The line at the top of this tab turns green when all three settings are found.</li>
-          <li>Make sure the database scripts <span style={code}>050</span> to <span style={code}>053</span> in <span style={code}>supabase/migrations</span> have each been run once in the Supabase SQL editor.</li>
+          <li>Make sure the database scripts <span style={code}>050</span> to <span style={code}>054</span> in <span style={code}>supabase/migrations</span> have each been run once in the Supabase SQL editor.</li>
           <li>Open the <b>Strategies</b> tab, press <b>Live prices</b>, then <b>Start</b>. The football tests begin with the next matches kicking off in the next 12 minutes.</li>
           <li>Optionally, open the <b>Desk</b> tab, press <b>Live prices</b>, then <b>Start</b> to run the horse-racing bot too.</li>
           <li>With the recorder server online you can close this tab: the bots keep running until you press <b>Stop</b>. Without it, keep this page open. Weekend afternoons and midweek evenings have the most football.</li>

@@ -20,10 +20,10 @@ export type RunnerInfo = {
   form?: string | null; forecast?: number | null
 }
 export type MarketRow = {
-  market_id: string; sport: 'racing' | 'football'; market_type: string; event_id: string | null; event: string; venue: string | null
+  market_id: string; sport: 'racing' | 'football' | 'tennis' | 'golf'; market_type: string; event_id: string | null; event: string; venue: string | null
   start_at: string; runners: RunnerInfo[]; status: string | null; winners: number[] | null; removed: number[] | null
   // recorded by the recorder server (migration 053); missing on older rows
-  market_name?: string | null; country?: string | null; race_type?: string | null; total_matched?: number | null
+  market_name?: string | null; country?: string | null; race_type?: string | null; total_matched?: number | null; competition?: string | null
   off_at?: string | null; bsp?: Record<string, number> | null; archived_at?: string | null
 }
 export type SnapRow = { market_id: string; at: string; inplay: boolean; matched: number | null; runners: [number, number | null, number, number | null, number, number | null][] }
@@ -96,8 +96,18 @@ export type FootballReplay = { matches: number; usable: number; bets: SettledBet
 
 export function replayFootball(markets: MarketRow[], snaps: SnapRow[]): FootballReplay {
   const football = markets.filter(m => m.sport === 'football' && m.event_id)
+  // The live bot looks at a match once, 1 to 12 minutes before kick-off. The recorder
+  // server saves prices for hours, so use the first snapshot in that window, as the
+  // bot would have; failing that, the earliest one (older data has only one).
+  const startOf = new Map(football.map(m => [m.market_id, new Date(m.start_at).getTime()]))
   const firstSnap = new Map<string, SnapRow>()
-  for (const s of [...snaps].sort((a, b) => a.at.localeCompare(b.at))) if (!firstSnap.has(s.market_id)) firstSnap.set(s.market_id, s)
+  const inWindow = new Map<string, SnapRow>()
+  for (const s of [...snaps].sort((a, b) => a.at.localeCompare(b.at))) {
+    if (!firstSnap.has(s.market_id)) firstSnap.set(s.market_id, s)
+    const start = startOf.get(s.market_id), t = new Date(s.at).getTime()
+    if (start !== undefined && !s.inplay && !inWindow.has(s.market_id) && t >= start - 12 * 60_000 && t <= start - 60_000) inWindow.set(s.market_id, s)
+  }
+  for (const [id, s] of inWindow) firstSnap.set(id, s)
 
   const events = new Map<string, MarketRow[]>()
   for (const m of football) events.set(m.event_id as string, [...(events.get(m.event_id as string) ?? []), m])

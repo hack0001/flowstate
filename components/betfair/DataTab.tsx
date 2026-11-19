@@ -4,7 +4,7 @@ import { replayFootball, replayRacing, toCsv, type FootballReplay, type MarketRo
 import { STRATEGIES } from '@/lib/betfair/playbook'
 import type { RecorderStatus } from '@/lib/betfair/recorderStatus'
 import RecorderStatusCard from './RecorderStatusCard'
-import RecentRaces from './RecentRaces'
+import RecentMarkets from './RecentRaces'
 
 // Data tab of /betfair: what the price recorder has saved, CSV downloads,
 // and replays of the bots over the recorded prices.
@@ -16,8 +16,8 @@ const pct = (v: number) => (v < 0 ? '−' : v > 0 ? '+' : '') + Math.abs(v * 100
 const day = (d: Date) => d.toISOString().slice(0, 10)
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' }) : '—'
 
-type Summary = { racing: { markets: number; results: number }; football: { markets: number; results: number }; snaps: number; archivedMarkets?: number; first: string | null; last: string | null; server?: RecorderStatus | null; failedMinutes24h?: number; error?: string }
-type Sport = 'racing' | 'football'
+type Summary = { racing: { markets: number; results: number }; football: { markets: number; results: number }; tennis?: { markets: number; results: number }; golf?: { markets: number; results: number }; snaps: number; archivedMarkets?: number; first: string | null; last: string | null; server?: RecorderStatus | null; failedMinutes24h?: number; error?: string }
+type Sport = 'racing' | 'football' | 'tennis' | 'golf'
 
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
@@ -103,7 +103,7 @@ export default function DataTab() {
       <div>
         <h2 style={{ fontFamily: SANS, fontSize: 22, fontWeight: 600, color: '#fff', margin: '10px 0 6px' }}>Recorded prices</h2>
         <p style={{ fontFamily: SANS, fontSize: 14, lineHeight: 1.6, color: C.mut, margin: 0 }}>
-          The recorder server saves GB and IE horse racing prices all day, and the football tests save each match they look at: every market, its prices over time, race and runner details, and the result once Betfair settles it. Download it as a spreadsheet or replay the bots over it.
+          The recorder server saves GB and IE horse racing, the big football leagues and cups, ATP and WTA tennis and the main golf tours all day: every market, its prices over time, race and runner details, and the result once Betfair settles it. Download it as a spreadsheet or replay the bots over it (racing and football).
         </p>
       </div>
       {err && <div style={{ border: '1px solid #5c2032', background: '#2a0f1a', color: '#ffb3c0', borderRadius: 8, padding: '8px 12px', fontFamily: SANS, fontSize: 13 }}>{err}</div>}
@@ -113,29 +113,31 @@ export default function DataTab() {
         {!!sum?.failedMinutes24h && <p style={{ margin: '8px 0 0', color: C.amb, fontSize: 13 }}>In the last 24 hours there were {sum.failedMinutes24h} minutes where every Betfair check failed. Prices from those minutes are missing.</p>}
       </Section>
 
-      <Section title="Today's recording" note="Races from the last 6 hours and the next 3. Prices are saved from 75 minutes before each race until the off.">
-        <RecentRaces />
+      <Section title="Today's recording" note="What the recorder server is following right now, sport by sport, and how many price snapshots it has saved for each.">
+        <RecentMarkets />
       </Section>
 
-      <Section title="What's been saved" note={sum?.first ? `From ${when(sum.first)} to ${when(sum.last)}. Updates every minute.` : 'Nothing yet. Start a bot on Live prices and this fills up.'}>
+      <Section title="What's been saved" note={sum?.first ? `From ${when(sum.first)} to ${when(sum.last)}. Updates every minute.` : 'Nothing yet. The recorder server fills this up as markets come near their start.'}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 8 }}>
           <Stat k="Races" v={String(sum?.racing.markets ?? 0)} sub={`${sum?.racing.results ?? 0} with results`} />
           <Stat k="Football markets" v={String(sum?.football.markets ?? 0)} sub={`${sum?.football.results ?? 0} with results`} />
+          <Stat k="Tennis matches" v={String(sum?.tennis?.markets ?? 0)} sub={`${sum?.tennis?.results ?? 0} with results`} />
+          <Stat k="Golf markets" v={String(sum?.golf?.markets ?? 0)} sub={`${sum?.golf?.results ?? 0} with results`} />
           <Stat k="Price snapshots" v={(sum?.snaps ?? 0).toLocaleString('en-GB')} sub={`about ${size} MB in the database`} />
           <Stat k="Archived" v={String(sum?.archivedMarkets ?? 0)} sub="markets moved to daily files" />
         </div>
         <p style={{ margin: '10px 0 0', color: C.dim, fontSize: 12 }}>
-          Racing (recorder server): every runner&apos;s best back and lay, money available and last traded price, every minute from 75 minutes out, every 30 seconds from 30 minutes, and every 5 seconds in the last 10 minutes until the off; a snapshot is skipped when nothing moved. Plus race type, class and distance, jockeys, trainers, ratings, the time of the off, the result and Starting Prices. Football: all five markets of each match the tests pick up, once, a few minutes before kick-off. After a week each day is moved into a compressed file (about a tenth of the size); downloads and replays read those automatically.
+          Racing (recorder server): every runner&apos;s best back and lay, money available and last traded price, every minute from 75 minutes out, every 30 seconds from 30 minutes, and every 5 seconds in the last 10 minutes until the off; a snapshot is skipped when nothing moved. Plus race type, class and distance, jockeys, trainers, ratings, the time of the off, the result and Starting Prices. Football (big leagues and cups): Match Odds, Over/Under and Both Teams to Score from 3 hours before kick-off and through the match. Tennis (ATP, WTA, Grand Slams): Match Odds before and during each match. Golf (PGA Tour, DP World Tour, majors, LIV): the Winner market from 3 days out and through the tournament. Results for all of them. After three days each day is moved into a compressed file (about a tenth of the size); downloads and replays read those automatically.
         </p>
       </Section>
 
       <Section title="Download or replay" note="Pick a sport and a date range (by race or kick-off date).">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <select style={inp} value={sport} onChange={e => setSport(e.target.value as Sport)} aria-label="Sport"><option value="racing">Horse racing</option><option value="football">Football</option></select>
+          <select style={inp} value={sport} onChange={e => setSport(e.target.value as Sport)} aria-label="Sport"><option value="racing">Horse racing</option><option value="football">Football</option><option value="tennis">Tennis</option><option value="golf">Golf</option></select>
           <label style={{ color: C.mut, fontSize: 13 }}>From <input style={inp} type="date" value={from} onChange={e => setFrom(e.target.value)} /></label>
           <label style={{ color: C.mut, fontSize: 13 }}>To <input style={inp} type="date" value={to} onChange={e => setTo(e.target.value)} /></label>
           <button style={btn(C.blu)} disabled={!!busy} onClick={download}>⬇ Download CSV</button>
-          <button style={btn(C.teal)} disabled={!!busy} onClick={replay}>▶ Replay</button>
+          {(sport === 'racing' || sport === 'football') && <button style={btn(C.teal)} disabled={!!busy} onClick={replay}>▶ Replay</button>}
         </div>
         {busy && <p style={{ margin: '10px 0 0', color: C.amb, fontFamily: MONO, fontSize: 12 }}>{busy}</p>}
         <p style={{ margin: '10px 0 0', color: C.dim, fontSize: 12 }}>

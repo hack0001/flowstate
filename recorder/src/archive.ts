@@ -1,4 +1,4 @@
-// Daily archive: moves price snapshots older than a week out of the database
+// Daily archive: moves price snapshots older than three days out of the database
 // into one compressed file per day in Supabase Storage (bucket betfair-archive,
 // path YYYY-MM-DD.json.gz). About a tenth of the size.
 //
@@ -36,8 +36,11 @@ async function readFile(db: SupabaseClient, day: string): Promise<ArchiveFile | 
 }
 
 async function archiveDay(db: SupabaseClient, day: string): Promise<number> {
+  // Markets still running (a golf tournament, a match awaiting its result) wait for a later night,
+  // unless they're over a week old.
+  const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString()
   const markets = await all<Row>((a, b) => db.from('bf_markets').select('*').is('archived_at', null)
-    .gte('start_at', dayStart(day)).lt('start_at', dayStart(nextDay(day))).order('market_id').range(a, b))
+    .gte('start_at', dayStart(day)).lt('start_at', dayStart(nextDay(day))).or(`status.not.is.null,start_at.lt.${weekAgo}`).order('market_id').range(a, b))
   if (!markets.length) return 0
   const ids = markets.map(m => m.market_id)
   const snaps: ArchiveFile['snaps'] = []

@@ -3,9 +3,14 @@
 A small always-on program that runs on its own server in London. It:
 
 - **records GB and IE horse racing prices**: every runner's best back and lay prices, the money available and the last traded price. That's every minute from 75 minutes before the off, every 30 seconds from 30 minutes, and every 5 seconds in the last 10 minutes until the race goes off. A snapshot is skipped when nothing moved.
+- **records the big football, tennis and golf markets** (version 1.1):
+  - **Football:** Premier League, Championship, FA Cup, League Cup, Champions League, Europa and Conference League, La Liga, Serie A, Bundesliga, Ligue 1, Scottish Premiership, Eredivisie, Primeira Liga, the main domestic cups and international tournaments, plus any match with £200k or more matched. Match Odds, Over/Under 2.5 and Both Teams to Score every 5 minutes from 3 hours before kick-off, every minute from an hour, every 15 seconds in the last 10 minutes, then every minute in-play. Over/Under 1.5 and 3.5 and Correct Score up to kick-off (the football strategies use them).
+  - **Tennis:** ATP, WTA, Grand Slam and team-event singles Match Odds: every 5 minutes from 2 hours out, every minute from an hour, every 30 seconds in the last 15 minutes and in-play. Start times are only a guide in tennis, so it keeps checking every 2 minutes until the match starts.
+  - **Golf:** the Winner market for the PGA Tour, DP World Tour, majors, LIV and the Ryder and Presidents Cups: every 2 hours from 3 days out, every 30 minutes on the last day, every 10 minutes during the tournament.
+  - Results (the winning selections) once Betfair settles each market. These need migration 054; until it's run they're paused and FlowState says so, while racing carries on.
 - **saves race details for breakdowns**: race type, the race name (distance, class, handicap), venue, country, runners, jockeys, trainers, ages, weights, official ratings, stalls, forecast prices, total matched, the time of the off, winners, non-runners and Betfair Starting Prices (if your key provides them).
 - **keeps the Desk and Strategies paper bots running** after you press Start in FlowState, so the tab can be closed.
-- **archives** each day older than a week into one compressed file in Supabase Storage (about a tenth of the size). Downloads and replays in FlowState read those files automatically.
+- **archives** each day older than three days into one compressed file in Supabase Storage (about a tenth of the size). Downloads and replays in FlowState read those files automatically.
 - **writes a heartbeat**, so FlowState's Data and Setup tabs show whether it's online and flag any gaps.
 
 **Paper only.** It can call only Betfair's two read-only operations (listing markets and reading prices), and there is no bet-placing code anywhere in FlowState.
@@ -31,7 +36,7 @@ Built-in limits on top of that (`src/guard.ts`):
 
 - **Only Betfair and your Supabase project can be contacted.** Any other address is refused.
 - **At most 8 requests a second to Betfair and 15 to Supabase.** Extra requests wait their turn instead of bursting.
-- **At most 100,000 Betfair and 200,000 Supabase requests a day**, about three times a busy day. If a bug ever hits a limit, the recorder stops contacting that service until midnight UK time, and FlowState's Data and Setup tabs show why.
+- **At most 150,000 Betfair and 250,000 Supabase requests a day**, well over twice a busy day with every sport. If a bug ever hits a limit, the recorder stops contacting that service until midnight UK time, and FlowState's Data and Setup tabs show why.
 - **Logins are spaced at least a minute apart, even across restarts**, and a refused login pauses logins for 30 minutes.
 - **Disk use is capped:** pending writes are limited, and system logs are size-limited by Ubuntu.
 
@@ -41,7 +46,7 @@ For peace of mind, add an AWS budget alert (free): AWS console → **Billing and
 
 ### 1. Supabase
 
-1. In the Supabase SQL editor, run `supabase/migrations/053_betfair_recorder.sql`. It adds the recorder's tables and the private `betfair-archive` storage bucket. It also removes the old once-a-minute schedule if you ever ran it.
+1. In the Supabase SQL editor, run `supabase/migrations/053_betfair_recorder.sql`, then `054_betfair_more_sports.sql`. It adds the recorder's tables and the private `betfair-archive` storage bucket. It also removes the old once-a-minute schedule if you ever ran it.
 2. In Supabase, go to **Project Settings → API Keys** and copy:
    - your **Project URL** (`https://xxxx.supabase.co`)
    - the **secret key**, labelled `service_role` on older projects. Not the anon/publishable key. It lets the recorder write without being logged in as you, so it only ever goes on the server.
@@ -100,7 +105,7 @@ Timings are in `src/config.ts` (cadence, archive age, time limits). Bot settings
 
 ## Storage
 
-Each day of GB/IE racing is a few MB in the database. After a week the recorder moves it into `betfair-archive/YYYY-MM-DD.json.gz`, typically a few hundred KB. It writes the file, reads it back to check it, and only then deletes the database copy. Race details and results stay in the database, as they're small. Supabase's free plan includes 500 MB of database and 1 GB of file storage, which is years of archived days at this rate.
+A day of GB/IE racing is a few MB in the database; a busy Saturday of football, tennis and golf is roughly 20 to 40 MB more. After three days the recorder moves each day into `betfair-archive/YYYY-MM-DD.json.gz`, about a tenth of the size. Markets still running (a golf tournament, a match awaiting its result) wait until they've settled. It writes the file, reads it back to check it, and only then deletes the database copy. Race details and results stay in the database, as they're small. Supabase's free plan includes 500 MB of database and 1 GB of file storage: the database stays around 100 to 150 MB, and the archive grows by very roughly 0.5 to 1 GB a year with every sport on. Keep an eye on Storage in the Supabase dashboard after a few months.
 
 ## Limits of the free (delayed) Betfair key
 

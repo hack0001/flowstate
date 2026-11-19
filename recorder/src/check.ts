@@ -39,6 +39,9 @@ let failed = false
     if (error) bad(`Supabase table ${t}: ${error.message} (run the migrations 050 to 053 in the SQL editor)`)
   }
   if (!failed) ok('Supabase tables are there')
+  const { error: cErr } = await db.from('bf_markets').select('competition').limit(1)
+  if (cErr) bad('Football, tennis and golf need migration 054: run supabase/migrations/054_betfair_more_sports.sql in the SQL editor')
+  else ok('Ready for football, tennis and golf (migration 054)')
   const { error: wErr } = await db.from('bf_recorder').update({ version: 'check' }).eq('id', 1)
   if (wErr) bad('Supabase write: ' + wErr.message + ' (is SUPABASE_SERVICE_ROLE_KEY the secret/service key, not the anon key?)')
   else ok('Supabase accepts writes')

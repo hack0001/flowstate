@@ -13,7 +13,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export type Sport = 'racing' | 'football'
+export type Sport = 'racing' | 'football' | 'tennis' | 'golf'
 export type MarketRec = {
   market_id: string; sport: Sport; market_type: string; event_id: string | null; event: string
   venue: string | null; start_at: string; runners: { id: number; name: string }[]

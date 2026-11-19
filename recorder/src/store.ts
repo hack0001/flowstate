@@ -17,6 +17,11 @@ export type Write =
   | { kind: 'upsert'; table: string; rows: Row[]; onConflict: string; ignoreDuplicates?: boolean }
   | { kind: 'update'; table: string; match: Record<string, string>; values: Row }
 
+// A database error that retrying can't fix (a missing column, a value the table
+// refuses). Network trouble and timeouts have no code, so they are retried.
+class WriteError extends Error { constructor(message: string, public code: string) { super(message) } }
+const permanent = (e: unknown) => e instanceof WriteError && /^(22|23|42|PGRST)/.test(e.code)
+
 export class Store {
   private queue: Write[] = []
   private flushing = false
@@ -59,7 +64,7 @@ export class Store {
     const { error } = w.kind === 'upsert'
       ? await this.db.from(w.table).upsert(w.rows, { onConflict: w.onConflict, ignoreDuplicates: !!w.ignoreDuplicates }).abortSignal(signal)
       : await Object.entries(w.match).reduce((q, [k, v]) => q.eq(k, v), this.db.from(w.table).update(w.values)).abortSignal(signal)
-    if (error) throw new Error(error.message)
+    if (error) throw new WriteError(error.message, (error as { code?: string }).code ?? '')
   }
 
   // Send everything waiting, in order. Stops at the first failure and tries again next time.
@@ -82,11 +87,31 @@ export class Store {
       }
     } catch (e) {
       const msg = errText(e)
+      if (permanent(e)) {
+        // Set it aside so one bad write can't hold up everything behind it.
+        const w = this.queue.shift()!
+        this.reject(w, msg)
+        this.dirty = true
+        this.lastError = `A write to ${w.table} was refused and set aside: ${msg}`
+        log.error(this.lastError)
+        return
+      }
       if (msg !== this.lastError) log.warn(`Supabase write failed, will retry (${this.pendingRows} rows waiting): ${msg}`)
       this.lastError = msg
     } finally {
       this.flushing = false
       this.persist()
+    }
+  }
+
+  // Refused writes go to rejected-writes.jsonl next to the spool (capped at 20 MB) so nothing is silently lost.
+  private reject(w: Write, reason: string) {
+    try {
+      const file = path.join(path.dirname(this.spoolFile), 'rejected-writes.jsonl')
+      const size = fs.existsSync(file) ? fs.statSync(file).size : 0
+      if (size < 20 * 1024 * 1024) fs.appendFileSync(file, JSON.stringify({ at: new Date().toISOString(), reason, write: w }) + '\n')
+    } catch (e) {
+      log.error('Could not keep the refused write:', errText(e))
     }
   }
 

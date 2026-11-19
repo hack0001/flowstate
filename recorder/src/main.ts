@@ -1,5 +1,6 @@
 // FlowState Betfair recorder: an always-on program that
-//   1. records GB/IE horse racing prices (see racing.ts),
+//   1. records GB/IE horse racing prices (racing.ts) and the big football,
+//      tennis and golf markets (sports.ts),
 //   2. keeps the Desk and Strategies paper bots running when they've been
 //      started in FlowState (so the tab can be closed),
 //   3. archives old snapshots to compressed daily files (archive.ts),
@@ -17,6 +18,7 @@ import { Betfair } from './betfair'
 import { Store } from './store'
 import { RacingRecorder, type Counters } from './racing'
 import { runArchive } from './archive'
+import { SportsRecorder } from './sports'
 import { errText, log } from './log'
 import { installGuard, guardMessage } from './guard'
 import { runOnce } from '../../lib/betfair/run'
@@ -30,6 +32,7 @@ const bf = new Betfair(cfg.betfair, cfg.spoolDir)
 const store = new Store(db, cfg.spoolDir)
 const count: Counters = { checksOk: 0, checksFailed: 0, snaps: 0 }
 const racing = new RacingRecorder(bf, store, count)
+const sports = new SportsRecorder(bf, store, count)
 const startedAt = new Date().toISOString()
 let stopping = false
 
@@ -69,6 +72,33 @@ every('results', RESULTS_EVERY_MS, async () => {
   }
   await racing.collectResults(Date.now(), extra)
 }, 60_000)
+
+// ---------------------------------------------------------------- football, tennis, golf
+// Needs migration 054 (tennis/golf allowed, competition column). Until it's run,
+// these sports are paused and FlowState says so; racing carries on regardless.
+let sportsReadyError: string | null = null
+every('database check', 10 * 60_000, async () => {
+  const { error } = await db.from('bf_markets').select('competition').limit(1).abortSignal(AbortSignal.timeout(10_000))
+  if (!error) { if (!sports.enabled || sportsReadyError) log.info('Football, tennis and golf recording on'); sports.enabled = true; sportsReadyError = null; return }
+  if (/competition|does not exist|schema cache/i.test(error.message)) {
+    if (!sportsReadyError) log.warn('Football, tennis and golf paused: run supabase/migrations/054_betfair_more_sports.sql in the Supabase SQL editor')
+    sports.enabled = false
+    sportsReadyError = 'Football, tennis and golf paused: run migration 054 in Supabase'
+  }
+})
+every('sports list', 60_000, () => sports.refreshCatalogue(), 30_000)
+every('sports prices', 5_000, () => sports.pollPrices(), 40_000)
+let lastSportsDbCheck = 0
+every('sports results', RESULTS_EVERY_MS, async () => {
+  let extra: string[] = []
+  if (sports.enabled && Date.now() - lastSportsDbCheck > 10 * 60_000) {
+    lastSportsDbCheck = Date.now()
+    const before = new Date(Date.now() - 3 * 3600_000).toISOString()
+    for (const sp of ['football', 'tennis', 'golf'] as const) extra.push(...await unresolved(db, sp, before, 40))
+    extra = extra.filter(id => !sports.markets.has(id))
+  }
+  await sports.collectResults(Date.now(), extra)
+}, 90_000)
 
 // ---------------------------------------------------------------- writes
 every('save', 3_000, () => store.flush())
@@ -115,11 +145,12 @@ every('coverage', 2_000, async () => {
 })
 every('heartbeat', 30_000, async () => {
   const lastError = guardMessage() ?? racing.lastError ?? store.lastError ?? (bf.paused ? 'Betfair logins paused after a login problem' : null)
+    ?? sportsReadyError ?? sports.lastError
   const { error } = await db.from('bf_recorder').update({
     version: VERSION, started_at: startedAt, last_beat: new Date().toISOString(),
     last_ok: racing.lastOkAt ? new Date(racing.lastOkAt).toISOString() : null,
     last_error: lastError, ...(lastError ? { last_error_at: new Date().toISOString() } : {}),
-    markets_tracked: racing.races.size, pending_writes: store.pendingRows,
+    markets_tracked: racing.races.size + sports.markets.size, pending_writes: store.pendingRows,
   }).eq('id', 1).abortSignal(AbortSignal.timeout(10_000))
   if (error) log.warn('Heartbeat not saved:', error.message)
 }, 5_000)
@@ -136,4 +167,4 @@ process.on('SIGINT', () => shutdown(0))
 process.on('unhandledRejection', e => log.error('Unhandled:', errText(e)))
 process.on('uncaughtException', e => { log.error('Crashed:', errText(e)); shutdown(1) })   // systemd restarts it
 
-log.info(`FlowState recorder ${VERSION} started. Paper only: reads Betfair prices, never places bets.${cfg.runBots ? ' Also running the Desk and Strategies bots.' : ''}`)
+log.info(`FlowState recorder ${VERSION} started. Records racing, football, tennis and golf prices. Paper only: reads Betfair prices, never places bets.${cfg.runBots ? ' Also running the Desk and Strategies bots.' : ''}`)

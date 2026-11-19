@@ -18,8 +18,8 @@ type Rule = { name: string; host: (h: string) => boolean; perSecond: number; per
 type Usage = { day: string; today: number; recent: number[]; tripped: boolean }
 
 export const LIMITS = {
-  betfair: { perSecond: 8, perDay: 100_000 },     // a busy day is roughly 20,000 to 40,000
-  supabase: { perSecond: 15, perDay: 200_000 },   // a busy day is roughly 40,000 to 80,000
+  betfair: { perSecond: 8, perDay: 150_000 },     // a busy day with every sport is roughly 30,000 to 60,000
+  supabase: { perSecond: 15, perDay: 250_000 },   // a busy day with every sport is roughly 50,000 to 100,000
 }
 
 const ukDay = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' })
