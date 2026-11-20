@@ -292,6 +292,7 @@ export default function MorningPage() {
   const [completionCounts, setCompletionCounts] = useState<Record<string,number>>({})
   const [streak, setStreak]       = useState(0)
   const [editing, setEditing]     = useState(false)
+  const [viewName, setViewName]   = useState<string | null>(null)
   const [celebrating, setCelebrating] = useState(false)
   const [loaded, setLoaded]       = useState(false)
   const [loadErr, setLoadErr]     = useState<string | null>(null)
@@ -357,6 +358,11 @@ export default function MorningPage() {
     return [...named, { name: OTHER_GROUP, items: other }].filter(g => g.items.length > 0)
   })()
 
+  // One section on screen at a time: the one you picked (tap a progress
+  // segment), otherwise the first section that still has something to do.
+  const isGroupDone = (g:{ items:MorningRoutineItem[] }, ids:string[] = completed) => g.items.every(i => ids.includes(i.id))
+  const current = groups.find(g => g.name === viewName) ?? groups.find(g => !isGroupDone(g)) ?? groups[0]
+
   // Click a task to tick it, click again to un-tick (a mis-click shouldn't be
   // permanent). The "Tick all" button in each section header does a whole
   // category in one click.
@@ -376,7 +382,14 @@ export default function MorningPage() {
     if (ids.length === 0) return
     const next = [...completed, ...ids]
     setCompleted(next)
+    if (current) setViewName(current.name) // hold on this card until the delayed advance
     ids.forEach(id => markMorningItemComplete(id, today))
+    // Section just finished -> after a beat, move on to the next unfinished one.
+    const justDone = groups.find(g => g.items.some(i => ids.includes(i.id)) && isGroupDone(g, next))
+    if (justDone && next.length < items.length) {
+      const nextGroup = groups.find(g => !isGroupDone(g, next))
+      if (nextGroup) setTimeout(() => setViewName(nextGroup.name), 600)
+    }
     if (next.length >= items.length) {
       const { error } = await supabase.from('routine_completions').upsert({ routine_date:today }, { onConflict:'routine_date' })
       if (error) console.error('[routine_completions upsert failed]', error.message)
@@ -482,11 +495,11 @@ export default function MorningPage() {
               {groups.map(g => {
                 const done = g.items.every(i => completed.includes(i.id))
                 return (
-                  <div key={g.name} title={g.name} style={{
+                  <div key={g.name} title={g.name} onClick={() => setViewName(g.name)} style={{
                     height:'8px', width:'38px', borderRadius:'4px',
-                    background: done ? (CAT_COLORS[g.name] ?? C.green) : '#2a2a3a',
+                    background: done ? (CAT_COLORS[g.name] ?? C.green) : (current?.name === g.name ? (CAT_COLORS[g.name] ?? C.cyan)+'66' : '#2a2a3a'),
                     transition:'all 0.4s ease',
-                    flexShrink:0,
+                    flexShrink:0, cursor:'pointer',
                   }}/>
                 )
               })}
@@ -530,7 +543,7 @@ export default function MorningPage() {
             {/* Category cards -- one click completes everything in a group */}
             {groups.length > 0 ? (
               <div style={{ width:'100%', maxWidth:'26rem', display:'flex', flexDirection:'column', gap:'1rem', animation:'fadeInUp 0.35s ease both' }}>
-                {groups.map(g => {
+                {(current ? [current] : []).map(g => {
                   const color = CAT_COLORS[g.name] ?? C.muted
                   const pendingInGroup = g.items.filter(i => !completed.includes(i.id))
                   const groupDone = pendingInGroup.length === 0
