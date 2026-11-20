@@ -9,6 +9,7 @@ import ResearchTab from '@/components/betfair/ResearchTab'
 import StrategiesTab, { type StratData } from '@/components/betfair/StrategiesTab'
 import SetupTab from '@/components/betfair/SetupTab'
 import DataTab from '@/components/betfair/DataTab'
+import BacktestTab from '@/components/betfair/BacktestTab'
 
 // Betfair paper desk: six agents, hard handoffs, paper fills only.
 // While running, this page drives the bot by calling /api/betfair every few
@@ -157,7 +158,7 @@ export default function BetfairPage() {
   useEffect(() => { call() }, [call])
 
   // --- tabs + the football strategy tests (polled whichever tab is showing)
-  type Tab = 'desk' | 'research' | 'strategies' | 'data' | 'setup'
+  type Tab = 'desk' | 'research' | 'strategies' | 'data' | 'backtest' | 'setup'
   const [tab, setTab] = useState<Tab>('desk')
   const [focus, setFocus] = useState<string | null>(null)
   const [sd, setSd] = useState<StratData | null>(null)
@@ -234,7 +235,7 @@ export default function BetfairPage() {
 
         {/* tabs */}
         <div role="tablist" style={{ display: 'flex', gap: 4, margin: '12px 0 0', borderBottom: '1px solid ' + C.line, flexWrap: 'wrap' }}>
-          {([['desk', 'Desk', d?.running], ['research', 'Research', false], ['strategies', 'Strategies', sd?.running], ['data', 'Data', false], ['setup', 'Setup', false]] as const).map(([id, label, on]) => (
+          {([['desk', 'Desk', d?.running], ['research', 'Research', false], ['strategies', 'Strategies', sd?.running], ['data', 'Data', false], ['backtest', 'Backtest', false], ['setup', 'Setup', false]] as const).map(([id, label, on]) => (
             <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
               style={{ background: 'none', border: 0, borderBottom: '2px solid ' + (tab === id ? C.vio : 'transparent'), color: tab === id ? '#fff' : C.mut, padding: '8px 14px', cursor: 'pointer', fontFamily: MONO, fontSize: 13, fontWeight: 600, marginBottom: -1 }}>
               {label}{on && <i style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: C.teal, marginLeft: 6, verticalAlign: 'middle' }} />}
@@ -244,6 +245,7 @@ export default function BetfairPage() {
 
         {tab === 'research' && <ResearchTab focus={focus} onStrategy={openStrategy} />}
         {tab === 'data' && <DataTab />}
+        {tab === 'backtest' && <BacktestTab />}
         {tab === 'setup' && <SetupTab liveReady={d?.liveReady ?? sd?.liveReady} server={sd?.server ?? d?.server} />}
         {tab === 'strategies' && <StrategiesTab d={sd} err={sErr} busy={sBusy} act={sAct} onConcept={openConcept} />}
 
