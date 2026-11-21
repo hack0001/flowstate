@@ -113,7 +113,7 @@ export default function BacktestTab() {
   const cache = useRef(new Map<string, BtMarket[]>())
 
   // remember the last test (this browser only)
-  useEffect(() => { try { const s = localStorage.getItem('bf-backtest'); if (s) setF(v => ({ ...v, ...JSON.parse(s), to: today() })) } catch { /* private window */ } }, [])
+  useEffect(() => { try { const s = localStorage.getItem('bf-backtest'); if (s) { const saved = JSON.parse(s); setF(v => ({ ...v, ...saved, to: saved.to && saved.to < today() ? saved.to : today() })) } } catch { /* private window */ } }, [])
   useEffect(() => { try { localStorage.setItem('bf-backtest', JSON.stringify(f)) } catch { /* private window */ } }, [f])
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF(x => ({ ...x, [k]: v }))
   const num = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement>) => set(k, Number(e.target.value) as never)

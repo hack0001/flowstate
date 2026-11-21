@@ -45,10 +45,15 @@ export async function GET(req: NextRequest) {
 
     // 2. markets still in the database: two snapshots each, picked by the database
     if (markets.some(m => !m.archived_at)) {
-      const { data, error } = await db.rpc('bf_bt_points', { p_sport: sport, p_from: from, p_to: to, p_entry_sec: entrySec, p_tol_sec: tolSec,
-        p_exit_mode: exit, p_exit_sec: exitSec, p_types: types.length ? types : null })
-      if (error) throw new Error(/bf_bt_points|function/i.test(error.message) ? 'The backtester needs migration 055: run supabase/migrations/055_betfair_backtest.sql in the Supabase SQL editor.' : error.message)
-      for (const r of (data ?? []) as { market_id: string; entry_at: string; entry_matched: number | null; entry_runners: BtPoint['runners']; exit_at: string | null; exit_inplay: boolean | null; exit_matched: number | null; exit_runners: BtPoint['runners'] | null }[]) {
+      const data: unknown[] = []
+      for (let i = 0; ; i += 1000) {          // Supabase returns at most 1000 rows per request
+        const { data: page, error } = await db.rpc('bf_bt_points', { p_sport: sport, p_from: from, p_to: to, p_entry_sec: entrySec, p_tol_sec: tolSec,
+          p_exit_mode: exit, p_exit_sec: exitSec, p_types: types.length ? types : null }).order('market_id').range(i, i + 999)
+        if (error) throw new Error(/bf_bt_points|function/i.test(error.message) ? 'The backtester needs migration 055: run supabase/migrations/055_betfair_backtest.sql in the Supabase SQL editor.' : error.message)
+        data.push(...(page ?? []))
+        if (!page || page.length < 1000) break
+      }
+      for (const r of data as { market_id: string; entry_at: string; entry_matched: number | null; entry_runners: BtPoint['runners']; exit_at: string | null; exit_inplay: boolean | null; exit_matched: number | null; exit_runners: BtPoint['runners'] | null }[]) {
         points.set(r.market_id, {
           entry: { at: r.entry_at, matched: r.entry_matched, runners: r.entry_runners },
           exit: r.exit_at ? { at: r.exit_at, inplay: !!r.exit_inplay, matched: r.exit_matched, runners: r.exit_runners ?? [] } : null,

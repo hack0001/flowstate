@@ -10,6 +10,7 @@ import StrategiesTab, { type StratData } from '@/components/betfair/StrategiesTa
 import SetupTab from '@/components/betfair/SetupTab'
 import DataTab from '@/components/betfair/DataTab'
 import BacktestTab from '@/components/betfair/BacktestTab'
+import InsightsTab, { type BacktestPreset } from '@/components/betfair/InsightsTab'
 
 // Betfair paper desk: six agents, hard handoffs, paper fills only.
 // While running, this page drives the bot by calling /api/betfair every few
@@ -158,7 +159,7 @@ export default function BetfairPage() {
   useEffect(() => { call() }, [call])
 
   // --- tabs + the football strategy tests (polled whichever tab is showing)
-  type Tab = 'desk' | 'research' | 'strategies' | 'data' | 'backtest' | 'setup'
+  type Tab = 'desk' | 'research' | 'strategies' | 'data' | 'insights' | 'backtest' | 'setup'
   const [tab, setTab] = useState<Tab>('desk')
   const [focus, setFocus] = useState<string | null>(null)
   const [sd, setSd] = useState<StratData | null>(null)
@@ -189,6 +190,11 @@ export default function BetfairPage() {
     setSBusy(true); await sCall({ action, mode }); setSBusy(false)
   }
   const openConcept = (id: string) => { setFocus(id); setTab('research') }
+  // A rule found on the Insights tab, opened on the Backtest tab (which loads its settings from this browser's storage)
+  const openBacktest = (preset: BacktestPreset) => {
+    try { localStorage.setItem('bf-backtest', JSON.stringify({ ...JSON.parse(localStorage.getItem('bf-backtest') ?? '{}'), ...preset })) } catch { /* private window */ }
+    setTab('backtest')
+  }
   const openStrategy = (id: string) => { setTab('strategies'); setTimeout(() => document.getElementById('strategy-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80) }
   useEffect(() => {
     if (!d) return
@@ -235,7 +241,7 @@ export default function BetfairPage() {
 
         {/* tabs */}
         <div role="tablist" style={{ display: 'flex', gap: 4, margin: '12px 0 0', borderBottom: '1px solid ' + C.line, flexWrap: 'wrap' }}>
-          {([['desk', 'Desk', d?.running], ['research', 'Research', false], ['strategies', 'Strategies', sd?.running], ['data', 'Data', false], ['backtest', 'Backtest', false], ['setup', 'Setup', false]] as const).map(([id, label, on]) => (
+          {([['desk', 'Desk', d?.running], ['research', 'Research', false], ['strategies', 'Strategies', sd?.running], ['data', 'Data', false], ['insights', 'Insights', false], ['backtest', 'Backtest', false], ['setup', 'Setup', false]] as const).map(([id, label, on]) => (
             <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
               style={{ background: 'none', border: 0, borderBottom: '2px solid ' + (tab === id ? C.vio : 'transparent'), color: tab === id ? '#fff' : C.mut, padding: '8px 14px', cursor: 'pointer', fontFamily: MONO, fontSize: 13, fontWeight: 600, marginBottom: -1 }}>
               {label}{on && <i style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: C.teal, marginLeft: 6, verticalAlign: 'middle' }} />}
@@ -245,6 +251,7 @@ export default function BetfairPage() {
 
         {tab === 'research' && <ResearchTab focus={focus} onStrategy={openStrategy} />}
         {tab === 'data' && <DataTab />}
+        {tab === 'insights' && <InsightsTab onOpenBacktest={openBacktest} />}
         {tab === 'backtest' && <BacktestTab />}
         {tab === 'setup' && <SetupTab liveReady={d?.liveReady ?? sd?.liveReady} server={sd?.server ?? d?.server} />}
         {tab === 'strategies' && <StrategiesTab d={sd} err={sErr} busy={sBusy} act={sAct} onConcept={openConcept} />}
