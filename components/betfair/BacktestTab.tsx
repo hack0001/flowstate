@@ -108,6 +108,7 @@ export default function BacktestTab() {
   const [loadedKey, setLoadedKey] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [warn, setWarn] = useState<string[]>([])
   const [dim, setDim] = useState('')
   const [showTrades, setShowTrades] = useState(100)
   const cache = useRef(new Map<string, BtMarket[]>())
@@ -134,6 +135,7 @@ export default function BacktestTab() {
     const all: BtMarket[] = []
     try {
       let done = 0
+      const warns: string[] = []
       const queue = [...days]
       const worker = async () => {
         for (let d = queue.shift(); d; d = queue.shift()) {
@@ -145,7 +147,8 @@ export default function BacktestTab() {
             const j = await res.json()
             if (!res.ok || j.error) throw new Error(j.error ?? 'HTTP ' + res.status)
             ms = j.markets as BtMarket[]
-            cache.current.set(key, ms)
+            if (j.warnings?.length) warns.push(...j.warnings)        // a day with missing archive prices isn't kept, so it's retried next time
+            else cache.current.set(key, ms)
           }
           all.push(...ms)
           setBusy(`Loading prices: ${++done} of ${days.length} days`)
@@ -153,6 +156,7 @@ export default function BacktestTab() {
       }
       setBusy(`Loading prices: 0 of ${days.length} days`)
       await Promise.all([worker(), worker(), worker()])
+      setWarn(Array.from(new Set(warns)))
       setMarkets(all)
       setLoadedKey(fetchKey)
       setShowTrades(100)
@@ -263,6 +267,7 @@ export default function BacktestTab() {
           {stale && !busy && <span style={{ color: C.amb, fontSize: 13 }}>Sport, dates or times changed: press Run test to load the matching prices.</span>}
         </div>
         {err && <p style={{ color: C.red, fontSize: 13, margin: '10px 0 0' }}>{err}</p>}
+        {warn.length > 0 && <p style={{ color: C.amb, fontSize: 13, margin: '10px 0 0' }}>Some days were left out: {warn.length > 1 ? `${warn.length} archived days couldn't be read. ` : ''}{warn[0]}</p>}
       </Section>
 
       {result && s && !stale && (

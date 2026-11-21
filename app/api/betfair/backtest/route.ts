@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import zlib from 'zlib'
-import { createSupabaseServiceClient, requireUser } from '@/lib/supabaseServer'
+import { requireUser } from '@/lib/supabaseServer'
+import { readArchiveDay } from '@/lib/betfair/archiveFile'
 import { pickPoints, type BtPoint } from '@/lib/betfair/backtest'
 
 // Points for the Backtest tab: one day of recorded markets (by start date, UTC),
@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
       if (!data || data.length < 1000) break
     }
     const points = new Map<string, { entry: BtPoint | null; exit: BtPoint | null }>()
+    const warnings: string[] = []
 
     // 2. markets still in the database: two snapshots each, picked by the database
     if (markets.some(m => !m.archived_at)) {
@@ -64,9 +65,9 @@ export async function GET(req: NextRequest) {
     // 3. archived markets: read the day's compressed file (private bucket, so via the server key)
     const archived = markets.filter(m => m.archived_at)
     if (archived.length) {
-      const { data: file, error } = await createSupabaseServiceClient().storage.from('betfair-archive').download(`${day}.json.gz`)
-      if (error || !file) throw new Error(`The archived file for ${day} could not be read: ${error?.message ?? 'missing'}`)
-      const parsed = JSON.parse(zlib.gunzipSync(Buffer.from(await file.arrayBuffer())).toString('utf8')) as { snaps: (BtPoint & { market_id: string })[] }
+      const parsed = await readArchiveDay(db, day)
+      if ('error' in parsed) warnings.push(parsed.error)
+      else {
       const by = new Map<string, BtPoint[]>()
       const want = new Set(archived.map(m => m.market_id))
       for (const s of parsed.snaps) if (want.has(s.market_id)) by.set(s.market_id, [...(by.get(s.market_id) ?? []), s])
@@ -74,10 +75,11 @@ export async function GET(req: NextRequest) {
         const p = pickPoints(m, by.get(m.market_id) ?? [], { entrySec, tolSec, exit, exitSec })
         if (p.entry) points.set(m.market_id, { entry: strip(p.entry), exit: p.exit && strip(p.exit) })
       }
+      }
     }
 
     const out = markets.map(({ archived_at, ...m }) => { void archived_at; return { ...m, entry: points.get(m.market_id)?.entry ?? null, exit: points.get(m.market_id)?.exit ?? null } })
-    return NextResponse.json({ day, markets: out })
+    return NextResponse.json({ day, markets: out, warnings })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }

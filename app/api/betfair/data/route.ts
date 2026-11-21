@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import zlib from 'zlib'
-import { createSupabaseServiceClient, requireUser } from '@/lib/supabaseServer'
+import { requireUser } from '@/lib/supabaseServer'
+import { readArchiveDay } from '@/lib/betfair/archiveFile'
 import { recorderStatus } from '@/lib/betfair/recorderStatus'
 
 // Recorded Betfair prices (the Data tab of /betfair).
@@ -107,18 +107,16 @@ export async function GET(req: NextRequest) {
         snaps.push(...(data ?? []))
         if (!data || data.length < 1000) break
       }
-      // Archived markets: read their day's file (the bucket is private, so via the server key).
+      // Archived markets: read their day's file (see lib/betfair/archiveFile.ts).
       const archivedDays = new Map<string, Set<string>>()
       for (const m of (markets ?? []).filter(x => x.archived_at)) {
         const day = String(m.start_at).slice(0, 10)
         archivedDays.set(day, (archivedDays.get(day) ?? new Set()).add(m.market_id))
       }
       if (archivedDays.size) {
-        const svc = createSupabaseServiceClient()
         for (const [day, ids] of archivedDays) {
-          const { data: file, error: fe } = await svc.storage.from('betfair-archive').download(`${day}.json.gz`)
-          if (fe || !file) throw new Error(`Archived file for ${day} could not be read: ${fe?.message ?? 'missing'}`)
-          const parsed = JSON.parse(zlib.gunzipSync(Buffer.from(await file.arrayBuffer())).toString('utf8')) as { snaps: { market_id: string }[] }
+          const parsed = await readArchiveDay(db, day)
+          if ('error' in parsed) throw new Error(parsed.error)
           snaps.push(...parsed.snaps.filter(x => ids.has(x.market_id)))
         }
       }

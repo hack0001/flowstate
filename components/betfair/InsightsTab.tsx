@@ -51,6 +51,7 @@ export default function InsightsTab({ onOpenBacktest }: { onOpenBacktest: (prese
   const [loaded, setLoaded] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [warn, setWarn] = useState<string[]>([])
   const [copied, setCopied] = useState(false)
   const cache = useRef(new Map<string, PathMarket[]>())
 
@@ -66,6 +67,7 @@ export default function InsightsTab({ onOpenBacktest }: { onOpenBacktest: (prese
     const out: PathMarket[] = []
     try {
       let done = 0
+      const warns: string[] = []
       const queue = [...days]
       const worker = async () => {
         for (let d = queue.shift(); d; d = queue.shift()) {
@@ -77,7 +79,8 @@ export default function InsightsTab({ onOpenBacktest }: { onOpenBacktest: (prese
             const j = await res.json()
             if (!res.ok || j.error) throw new Error(j.error ?? 'HTTP ' + res.status)
             ms = j.markets as PathMarket[]
-            cache.current.set(k, ms)
+            if (j.warnings?.length) warns.push(...j.warnings)        // a day with missing archive prices isn't kept, so it's retried next time
+            else cache.current.set(k, ms)
           }
           out.push(...ms)
           setBusy(`Loading prices: ${++done} of ${days.length} days`)
@@ -85,6 +88,7 @@ export default function InsightsTab({ onOpenBacktest }: { onOpenBacktest: (prese
       }
       setBusy(`Loading prices: 0 of ${days.length} days`)
       await Promise.all([worker(), worker(), worker()])
+      setWarn(Array.from(new Set(warns)))
       out.sort((a, b) => a.start_at.localeCompare(b.start_at))
       setAll(out); setLoaded(key); setPair(0)
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)) } finally { setBusy(null) }
@@ -165,6 +169,7 @@ export default function InsightsTab({ onOpenBacktest }: { onOpenBacktest: (prese
           {all && loaded !== key && !busy && <span style={{ color: C.amb, fontSize: 13 }}>Sport or dates changed: press Analyse.</span>}
         </div>
         {err && <p style={{ color: C.red, fontSize: 13, margin: '10px 0 0' }}>{err}</p>}
+        {warn.length > 0 && <p style={{ color: C.amb, fontSize: 13, margin: '10px 0 0' }}>Some days were left out: {warn.length > 1 ? `${warn.length} archived days couldn't be read. ` : ''}{warn[0]}</p>}
       </Section>
 
       {a && (
