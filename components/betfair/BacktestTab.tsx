@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { PriceSourceField, PriceSourceNote, type Source } from './PriceSource'
 import { simulateStaking, type Outcome, type Plan } from '@/lib/betfair/staking'
 import { DEFAULT_RULE, DIMS, randomBaseline, runBacktest, tradesCsv, type BtMarket, type BtSport, type Pick, type Result, type Rule } from '@/lib/betfair/backtest'
 
@@ -20,7 +21,7 @@ const tone = (v: number) => v > 0.0001 ? C.teal : v < -0.0001 ? C.red : C.mut
 const hold = (s: number) => s < 120 ? `${Math.round(s)}s` : s < 7200 ? `${Math.round(s / 60)} min` : s < 172_800 ? `${(s / 3600).toFixed(1)} h` : `${(s / 86_400).toFixed(1)} days`
 
 type Exit = 'off' | 'before' | 'inplay' | 'bsp'
-type Form = Rule & { from: string; to: string; entryMin: number; exitMin: number; marketType: string }
+type Form = Rule & { from: string; to: string; entryMin: number; exitMin: number; marketType: string; source: Source }
 
 const SPORT_LABEL: Record<BtSport, string> = { racing: 'Horse racing', football: 'Football', tennis: 'Tennis', golf: 'Golf' }
 const RECORDED_FROM_MIN: Record<BtSport, number> = { racing: 75, football: 180, tennis: 120, golf: 3 * 24 * 60 }
@@ -43,7 +44,7 @@ const PRESETS: { label: string; form: Partial<Form> }[] = [
   { label: 'Golf: back the favourite 2 days out, close at the start', form: { sport: 'golf', side: 'back', pick: 'fav', entryMin: 2 * 24 * 60, exit: 'off' } },
 ]
 
-const DEFAULT_FORM: Form = { ...DEFAULT_RULE, from: isoDay(Date.now() - 6 * 86_400_000), to: today(), entryMin: 20, exitMin: 5, marketType: 'MATCH_ODDS' }
+const DEFAULT_FORM: Form = { ...DEFAULT_RULE, from: isoDay(Date.now() - 6 * 86_400_000), to: today(), entryMin: 20, exitMin: 5, marketType: 'MATCH_ODDS', source: 'recorded' }
 
 function Section({ title, note, children }: { title: string; note?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -158,13 +159,14 @@ export default function BacktestTab() {
   const tolSec = Math.round(Math.min(3 * 3600, Math.max(120, entrySec * 0.15)))
   const exitSec = Math.round(f.exitMin * 60)
   const types = f.sport === 'football' ? f.marketType : ''
-  const fetchKey = [f.sport, f.from, f.to, entrySec, tolSec, exitMode, exitSec, types].join('|')
+  const source: Source = f.source ?? 'recorded'
+  const fetchKey = [source, f.sport, f.from, f.to, entrySec, tolSec, exitMode, exitSec, types].join('|')
 
   const run = async () => {
     setErr(null)
     if (f.from > f.to) { setErr('The start date is after the end date.'); return }
     const days: string[] = []
-    for (let t = new Date(f.from + 'T00:00:00Z').getTime(); isoDay(t) <= f.to && days.length < 120; t += 86_400_000) days.push(isoDay(t))
+    for (let t = new Date(f.from + 'T00:00:00Z').getTime(); isoDay(t) <= f.to && days.length < 800; t += 86_400_000) days.push(isoDay(t))
     const all: BtMarket[] = []
     try {
       let done = 0
@@ -172,10 +174,10 @@ export default function BacktestTab() {
       const queue = [...days]
       const worker = async () => {
         for (let d = queue.shift(); d; d = queue.shift()) {
-          const key = [f.sport, d, entrySec, tolSec, exitMode, exitSec, types].join('|')
+          const key = [source, f.sport, d, entrySec, tolSec, exitMode, exitSec, types].join('|')
           let ms = d < today() ? cache.current.get(key) : undefined        // today keeps changing, so it's always fetched
           if (!ms) {
-            const qs = new URLSearchParams({ sport: f.sport, day: d, entry: String(entrySec), tol: String(tolSec), exit: exitMode, exitSec: String(exitSec), types })
+            const qs = new URLSearchParams({ sport: f.sport, day: d, entry: String(entrySec), tol: String(tolSec), exit: exitMode, exitSec: String(exitSec), types, source })
             const res = await fetch('/api/betfair/backtest?' + qs, { cache: 'no-store' })
             const j = await res.json()
             if (!res.ok || j.error) throw new Error(j.error ?? 'HTTP ' + res.status)
@@ -188,7 +190,7 @@ export default function BacktestTab() {
         }
       }
       setBusy(`Loading prices: 0 of ${days.length} days`)
-      await Promise.all([worker(), worker(), worker()])
+      await Promise.all([worker(), worker(), worker(), worker()])
       setWarn(Array.from(new Set(warns)))
       setMarkets(all)
       setLoadedKey(fetchKey)
@@ -244,6 +246,7 @@ export default function BacktestTab() {
               {(Object.keys(SPORT_LABEL) as BtSport[]).map(k => <option key={k} value={k}>{SPORT_LABEL[k]}</option>)}
             </select>
           </Field>
+          <PriceSourceField sport={f.sport} value={source} onChange={v => set('source', v)} inputStyle={input} />
           {f.sport === 'football' && <Field label="Market"><select style={input} value={f.marketType} onChange={e => set('marketType', e.target.value)}>{FOOTBALL_MARKETS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>}
           <Field label="From (start date)"><input style={input} type="date" value={f.from} onChange={e => set('from', e.target.value)} /></Field>
           <Field label="To"><input style={input} type="date" value={f.to} onChange={e => set('to', e.target.value)} /></Field>
@@ -295,7 +298,11 @@ export default function BacktestTab() {
             )}
           </div>
         </details>
-        {entryNote && <p style={{ color: C.amb, fontSize: 13, margin: '0 0 10px' }}>{entryNote}</p>}
+        <PriceSourceNote sport={f.sport} source={source} from={f.from} to={f.to} onUseAll={(a, b) => setF(x => ({ ...x, from: a, to: b }))} />
+        {entryNote && source === 'recorded' && <p style={{ color: C.amb, fontSize: 13, margin: '0 0 10px' }}>{entryNote}</p>}
+        {source === 'recorded' && (f.exit === 'off' || (f.exit === 'before' && f.exitMin < 3) || f.entryMin < 3) && (
+          <p style={{ color: C.mut, fontSize: 13, margin: '0 0 10px' }}>⚠ This test uses prices from the last few minutes before the {f.sport === 'racing' ? 'off' : 'start'}. With the free Betfair key they arrive 1 to 180 seconds late, so the {f.exit === 'off' ? 'exit price' : 'price'} could be up to 3 minutes old: read the result as approximate.{f.sport === 'racing' ? ' Closing at Betfair SP instead is exact.' : ''}</p>
+        )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <button style={btn(C.teal)} disabled={!!busy} onClick={run}>{markets && !stale ? '↻ Reload prices' : '▶ Run test'}</button>
           {result && result.trades.length > 0 && <button style={btn(C.panel2, C.fg)} disabled={!!busy} onClick={download}>⬇ Trades as CSV</button>}

@@ -43,7 +43,7 @@ export function guardMessage(): string | null {
 export function installGuard(supabaseUrl: string) {
   const supabaseHost = new URL(supabaseUrl).host
   rules = [
-    { name: 'Betfair', host: h => h === 'api.betfair.com' || h === 'identitysso.betfair.com', ...LIMITS.betfair },
+    { name: 'Betfair', host: h => h === 'api.betfair.com' || h === 'identitysso.betfair.com' || h === 'historicdata.betfair.com', ...LIMITS.betfair },
     { name: 'Supabase', host: h => h === supabaseHost, ...LIMITS.supabase, exempt: u => u.includes('/rest/v1/bf_recorder?') },
   ]
   if (realFetch) return                      // already installed

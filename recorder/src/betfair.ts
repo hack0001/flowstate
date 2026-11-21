@@ -1,6 +1,7 @@
 // Read-only Betfair client for the recorder.
 //
-// Only listMarketCatalogue and listMarketBook can be called: anything else is
+// Only listMarketCatalogue and listMarketBook (plus listing and downloading
+// files from Betfair's historical data site) can be called: anything else is
 // refused before a request is made, so this cannot place, change or cancel a bet.
 // Every request has a time limit and is retried on network trouble. Logins are
 // rate-limited, and a wrong username, password or key pauses logins for 30
@@ -15,6 +16,10 @@ const SSO = 'https://identitysso.betfair.com/api/login'
 const API = 'https://api.betfair.com/exchange/betting/rest/v1.0/'
 const READ_ONLY_OPS = ['listMarketCatalogue', 'listMarketBook'] as const
 type Op = (typeof READ_ONLY_OPS)[number]
+// Betfair's historical data site (free Basic plan and paid plans): listing and downloading files only.
+const HISTORIC = 'https://historicdata.betfair.com/api/'
+const HISTORIC_OPS = ['GetMyData', 'GetCollectionOptions', 'GetAdvBasketDataSize', 'DownloadListOfFiles', 'DownloadFile'] as const
+export type HistoricOp = (typeof HISTORIC_OPS)[number]
 
 const CREDENTIAL_ERRORS = /INVALID_USERNAME_OR_PASSWORD|ACCOUNT_NOW_LOCKED|ACCOUNT_ALREADY_LOCKED|INVALID_APP_KEY|APP_KEY_CREATION_FAILED|KYC_SUSPEND|SUSPENDED|CLOSED|SECURITY_RESTRICTED_LOCATION|ACCOUNT_PENDING_PASSWORD_CHANGE|NOT_AUTHORIZED_BY_REGULATOR|DUPLICATE_CARDS|SELF_EXCLUDED|PERSONAL_MESSAGE_REQUIRED|BETTING_RESTRICTED_LOCATION|TRADING_MASTER|AUTHORIZED_ONLY_FOR_DOMAIN|CERT_AUTH_REQUIRED|BLOCKED/
 const SESSION_MAX_MS = 6 * 3600_000
@@ -115,6 +120,34 @@ export class Betfair {
     const code: string = j?.detail?.APINGException?.errorCode ?? j?.faultstring ?? 'HTTP_' + res.status
     const transient = res.status >= 500 || /TOO_MANY_REQUESTS|SERVICE_BUSY|TIMEOUT_ERROR|UNEXPECTED_ERROR/.test(code)
     throw new BetfairError(`Betfair ${op} failed: ${code}`, code, transient)
+  }
+
+  // Betfair's historical data site, with the same login. JSON for the listing
+  // calls; the raw file (a Buffer) for DownloadFile. Up to 3 tries.
+  async historic<T>(op: HistoricOp, body: unknown, filePath?: string): Promise<T> {
+    if (!HISTORIC_OPS.includes(op)) throw new BetfairError('Operation not allowed: ' + op, 'NOT_ALLOWED')
+    let last: unknown
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const token = await this.session()
+        const url = HISTORIC + op + (filePath ? '?filePath=' + encodeURIComponent(filePath) : '')
+        const res = await fetch(url, {
+          method: op === 'DownloadFile' ? 'GET' : 'POST',
+          headers: { ssoid: token, 'X-Authentication': token, 'X-Application': this.creds.appKey, 'Content-Type': 'application/json', Accept: op === 'DownloadFile' ? '*/*' : 'application/json' },
+          body: op === 'DownloadFile' ? undefined : JSON.stringify(body ?? {}),
+          signal: AbortSignal.timeout(60_000),
+        })
+        if (res.status === 401 || res.status === 403) { this.token = null; throw new BetfairError(`Historical data ${op}: not signed in (HTTP ${res.status})`, 'NO_SESSION', true) }
+        if (!res.ok) throw new BetfairError(`Historical data ${op} failed: HTTP ${res.status} ${(await res.text().catch(() => '')).slice(0, 200)}`, 'HTTP_' + res.status, res.status >= 500 || res.status === 429)
+        return (op === 'DownloadFile' ? Buffer.from(await res.arrayBuffer()) : await res.json()) as T
+      } catch (e) {
+        last = e
+        const transient = !(e instanceof BetfairError) || e.transient
+        if (!transient) throw e
+        await sleep(2000 * (attempt + 1) * (attempt + 1))
+      }
+    }
+    throw last
   }
 
   // A read with up to 3 tries: retried after a pause on network or server trouble,

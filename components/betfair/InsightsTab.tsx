@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BtSport } from '@/lib/betfair/backtest'
+import { PriceSourceField, PriceSourceNote, type Source } from './PriceSource'
 import { DEFAULT_FILTER, OFFSETS, PLAN, PRICE_BANDS, applyFilter, compensation, coverage, findSystems, label, moneyTimeline, momentum, moveVsResult, ruleName, volumeEffects, weightOfMoney,
   type Filter, type Found, type PathMarket } from '@/lib/betfair/insights'
 
@@ -20,6 +21,7 @@ const tone = (v: number) => v > 0.0001 ? C.teal : v < -0.0001 ? C.red : C.mut
 const SPORT_LABEL: Record<BtSport, string> = { racing: 'Horse racing', football: 'Football (Match Odds)', tennis: 'Tennis', golf: 'Golf' }
 
 export type BacktestPreset = Record<string, unknown>
+const MAX_DAYS = 180
 
 function Section({ title, note, children }: { title: string; note?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -41,6 +43,8 @@ const small = (n: number) => n < 30 ? { opacity: 0.5 } : undefined
 
 export default function InsightsTab({ onOpenBacktest }: { onOpenBacktest: (preset: BacktestPreset) => void }) {
   const [sport, setSport] = useState<BtSport>('racing')
+  const [srcPick, setSrcPick] = useState<Source>('recorded')
+  const source: Source = srcPick
   const [from, setFrom] = useState(() => isoDay(Date.now() - 13 * 86_400_000))
   const [to, setTo] = useState(today)
   const [filter, setFilter] = useState<Filter>(DEFAULT_FILTER)
@@ -55,15 +59,17 @@ export default function InsightsTab({ onOpenBacktest }: { onOpenBacktest: (prese
   const [copied, setCopied] = useState(false)
   const cache = useRef(new Map<string, PathMarket[]>())
 
-  useEffect(() => { try { const s = localStorage.getItem('bf-insights'); if (s) { const v = JSON.parse(s); if (v.sport) setSport(v.sport); if (v.from) setFrom(v.from); if (v.filter) setFilter({ ...DEFAULT_FILTER, ...v.filter }) } } catch { /* private window */ } }, [])
-  useEffect(() => { try { localStorage.setItem('bf-insights', JSON.stringify({ sport, from, filter })) } catch { /* private window */ } }, [sport, from, filter])
+  useEffect(() => { try { const s = localStorage.getItem('bf-insights'); if (s) { const v = JSON.parse(s); if (v.sport) setSport(v.sport); if (v.from) setFrom(v.from); if (v.filter) setFilter({ ...DEFAULT_FILTER, ...v.filter }); if (v.source) setSrcPick(v.source) } } catch { /* private window */ } }, [])
+  useEffect(() => { try { localStorage.setItem('bf-insights', JSON.stringify({ sport, from, filter, source: srcPick })) } catch { /* private window */ } }, [sport, from, filter, srcPick])
 
-  const key = [sport, from, to].join('|')
+  const key = [source, sport, from, to].join('|')
   const analyse = async () => {
     setErr(null)
     if (from > to) { setErr('The start date is after the end date.'); return }
     const days: string[] = []
-    for (let t = new Date(from + 'T00:00:00Z').getTime(); isoDay(t) <= to && days.length < 120; t += 86_400_000) days.push(isoDay(t))
+    for (let t = new Date(from + 'T00:00:00Z').getTime(); isoDay(t) <= to; t += 86_400_000) days.push(isoDay(t))
+    // Insights hold every market's price path in the browser, so cap the range (the latest days are kept)
+    if (days.length > MAX_DAYS) { days.splice(0, days.length - MAX_DAYS); setErr(`That's more than ${MAX_DAYS} days, which is too much to analyse in the browser at once: using the last ${MAX_DAYS} (from ${days[0]}). Run earlier periods separately to compare.`) }
     const out: PathMarket[] = []
     try {
       let done = 0
@@ -71,10 +77,10 @@ export default function InsightsTab({ onOpenBacktest }: { onOpenBacktest: (prese
       const queue = [...days]
       const worker = async () => {
         for (let d = queue.shift(); d; d = queue.shift()) {
-          const k = sport + '|' + d
+          const k = source + '|' + sport + '|' + d
           let ms = d < today() ? cache.current.get(k) : undefined
           if (!ms) {
-            const qs = new URLSearchParams({ sport, day: d, offsets: OFFSETS[sport].join(','), types: sport === 'football' ? 'MATCH_ODDS' : '' })
+            const qs = new URLSearchParams({ sport, day: d, offsets: OFFSETS[sport].join(','), types: sport === 'football' ? 'MATCH_ODDS' : '', source })
             const res = await fetch('/api/betfair/insights?' + qs, { cache: 'no-store' })
             const j = await res.json()
             if (!res.ok || j.error) throw new Error(j.error ?? 'HTTP ' + res.status)
@@ -87,7 +93,7 @@ export default function InsightsTab({ onOpenBacktest }: { onOpenBacktest: (prese
         }
       }
       setBusy(`Loading prices: 0 of ${days.length} days`)
-      await Promise.all([worker(), worker(), worker()])
+      await Promise.all([worker(), worker(), worker(), worker()])
       setWarn(Array.from(new Set(warns)))
       out.sort((a, b) => a.start_at.localeCompare(b.start_at))
       setAll(out); setLoaded(key); setPair(0)
@@ -141,11 +147,13 @@ export default function InsightsTab({ onOpenBacktest }: { onOpenBacktest: (prese
         <div style={{ ...grid, marginBottom: 12 }}>
           <Field label="Sport"><select style={input} value={sport} onChange={e => { setSport(e.target.value as BtSport); setFilter(DEFAULT_FILTER) }}>
             {(['racing', 'football', 'tennis'] as BtSport[]).map(s => <option key={s} value={s}>{SPORT_LABEL[s]}</option>)}</select></Field>
+          <PriceSourceField sport={sport} value={source} onChange={setSrcPick} inputStyle={input} />
           <Field label="From"><input style={input} type="date" value={from} onChange={e => setFrom(e.target.value)} /></Field>
           <Field label="To"><input style={input} type="date" value={to} onChange={e => setTo(e.target.value)} /></Field>
           <Field label="Flat stake £"><input style={input} type="number" min={0.1} step={0.5} value={stake} onChange={e => setStake(Number(e.target.value) || 2)} /></Field>
           <Field label="Commission %"><input style={input} type="number" min={0} max={20} step={0.5} value={commission * 100} onChange={e => setCommission(Number(e.target.value) / 100)} /></Field>
         </div>
+        <PriceSourceNote sport={sport} source={source} from={from} to={to} onUseAll={(a, b) => { setFrom(a); setTo(b) }} />
         <details style={{ marginBottom: 12 }}>
           <summary style={{ cursor: 'pointer', color: C.mut, fontSize: 13 }}>Only include some markets (applies instantly)</summary>
           <div style={{ ...grid, marginTop: 10 }}>

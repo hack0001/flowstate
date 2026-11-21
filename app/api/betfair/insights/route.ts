@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireUser } from '@/lib/supabaseServer'
-import { readArchiveDay } from '@/lib/betfair/archiveFile'
+import { readArchiveDay, readHistoryDay } from '@/lib/betfair/archiveFile'
+import { expandHistory } from '@/lib/betfair/history'
+import type { BtSport } from '@/lib/betfair/backtest'
 import type { BtPoint } from '@/lib/betfair/backtest'
 import { pickPath } from '@/lib/betfair/insights'
 
@@ -29,6 +31,14 @@ export async function GET(req: NextRequest) {
   const from = `${day}T00:00:00Z`, to = new Date(new Date(from).getTime() + 86_400_000).toISOString()
 
   try {
+    if (q.get('source') === 'history') {           // the imported Betfair history instead of your recordings
+      const h = await readHistoryDay(db, sport as BtSport, day)
+      if (!h) return NextResponse.json({ day, markets: [], warnings: [] })
+      if ('error' in h) return NextResponse.json({ day, markets: [], warnings: [h.error] })
+      const { markets, snaps } = expandHistory(h, sport as BtSport)
+      return NextResponse.json({ day, warnings: [], markets: markets.filter(m => !types.length || types.includes(m.market_type))
+        .map(m => ({ ...m, path: pickPath(m, snaps.get(m.market_id) ?? [], offsets, TOL_SEC) })).filter(m => Object.keys(m.path).length) })
+    }
     const markets: Row[] = []
     for (let i = 0; ; i += 1000) {
       let b = db.from('bf_markets').select(COLS).eq('sport', sport).gte('start_at', from).lt('start_at', to).order('start_at').range(i, i + 999)

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireUser } from '@/lib/supabaseServer'
-import { readArchiveDay } from '@/lib/betfair/archiveFile'
+import { readArchiveDay, readHistoryDay } from '@/lib/betfair/archiveFile'
+import { expandHistory } from '@/lib/betfair/history'
+import type { BtSport } from '@/lib/betfair/backtest'
 import { pickPoints, type BtPoint } from '@/lib/betfair/backtest'
 
 // Points for the Backtest tab: one day of recorded markets (by start date, UTC),
 // each with just two snapshots, the one to enter on and the one to exit on.
 //   GET ?sport=racing&day=2026-11-20&entry=1200&tol=120&exit=off|before|inplay&exitSec=0&types=MATCH_ODDS,OVER_UNDER_25
+//   &source=history  reads the imported Betfair history (last traded prices each minute) instead of your recordings
 // Days still in the database use bf_bt_points (migration 055); archived days
 // are read from their compressed file and picked the same way here.
 export const dynamic = 'force-dynamic'
@@ -31,6 +34,18 @@ export async function GET(req: NextRequest) {
   const from = `${day}T00:00:00Z`, to = new Date(new Date(from).getTime() + 86_400_000).toISOString()
 
   try {
+    if (q.get('source') === 'history') {
+      const h = await readHistoryDay(db, sport as BtSport, day)
+      if (!h) return NextResponse.json({ day, markets: [], warnings: [] })
+      if ('error' in h) return NextResponse.json({ day, markets: [], warnings: [h.error] })
+      const { markets, snaps } = expandHistory(h, sport as BtSport)
+      const out = markets.filter(m => !types.length || types.includes(m.market_type)).map(m => {
+        const p = pickPoints(m, snaps.get(m.market_id) ?? [], { entrySec, tolSec, exit, exitSec })
+        return { ...m, entry: p.entry, exit: p.exit }
+      })
+      return NextResponse.json({ day, markets: out, warnings: [] })
+    }
+
     // 1. the day's markets
     const markets: Row[] = []
     for (let i = 0; ; i += 1000) {

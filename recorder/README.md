@@ -86,6 +86,32 @@ Commit and push in GitHub Desktop. The server downloads the recorder from GitHub
 
 Open Betfair Desk → **Data** or **Setup**. The recorder line should turn green within a minute, and "Races" and "Price snapshots" start rising as the day's races come within 75 minutes of the off.
 
+## Betfair historical data (free)
+
+The Backtest and Insights tabs can also run on Betfair's own historical data, which goes back years. The free **Basic** plan has each selection's last traded price and the result (and SP for racing), with no back/lay prices and no money matched.
+
+1. Go to **historicdata.betfair.com** and log in with your Betfair account. For each sport (Horse Racing, Soccer, Tennis, Golf) choose the **Basic** plan and the dates you want, then check out. It costs £0 and adds the data to your account.
+2. Run `supabase/migrations/058_betfair_history.sql` in the Supabase SQL editor (once). It creates the private `betfair-history` storage bucket.
+3. On the server, update the recorder and start the import with the same dates and the sports you want:
+
+   ```
+   sudo bash /opt/flowstate/recorder/deploy/update.sh
+   sudo bash /opt/flowstate/recorder/deploy/history.sh 2025-11-01 2026-11-17 racing,football,tennis,golf
+   ```
+
+It runs in the background, one sport after another, at the same 8 requests a second as the recorder: a few hours for a year of all four. Watch it with `sudo journalctl -u flowstate-history -f`; stop it with `sudo systemctl stop flowstate-history`. Days already imported are skipped, so running it again carries on where it left off; add `--force` at the end to redo them.
+
+**What's downloaded:** only the markets FlowState uses, not everything Betfair quotes for the basket (around 1 GB a year for racing alone):
+
+| Sport | Markets | Kept |
+|---|---|---|
+| Racing | GB and IE Win | every 5 minutes from 3 hours out, every minute in the last 75 |
+| Football | Match Odds, Over/Under 2.5, Both Teams to Score, in England/Scotland (GB), Spain, Italy, Germany, France, Netherlands, Portugal | every 5 minutes from 3 hours out, every minute in the last hour and in play (up to 150 minutes) |
+| Tennis | singles Match Odds | every 5 minutes from 2 hours out, every minute in the last 30, every 2 minutes in play |
+| Golf | tournament Winner | hourly from 3 days out and through the tournament |
+
+**Storage:** Betfair's files are read on the server and thrown away; only the sample above is kept, as one gzipped file per sport per day (`betfair-history/<sport>/YYYY-MM-DD.json.gz`). Expect roughly 100 to 150 MB a year for all four sports (racing alone 20 to 40 MB), within Supabase's free 1 GB of file storage, and nothing in the database. The download itself is free on Lightsail (incoming data isn't charged).
+
 ## Day to day
 
 | To… | Run on the server |

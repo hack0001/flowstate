@@ -8,9 +8,12 @@
     "check": "tsx src/check.ts",
     "typecheck": "tsc --noEmit -p ."
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
+    "seek-bzip": "^2.0.0",
     "tsx": "^4.19.2"
   },
   "devDependencies": {

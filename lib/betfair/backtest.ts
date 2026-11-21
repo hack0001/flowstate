@@ -13,7 +13,7 @@
 // /api/betfair/backtest (two snapshots per market, not the whole history).
 // ============================================================
 
-import { ticksBetween } from './ticks'
+import { tickUp, ticksBetween } from './ticks'
 
 export type BtSport = 'racing' | 'football' | 'tennis' | 'golf'
 // [selectionId, best back, £ at back, best lay, £ at lay, last traded]
@@ -204,8 +204,10 @@ export function runBacktest(markets: BtMarket[], rule: Rule): Result {
       let entryFill: number | null, exitFill: number | null
       if (rule.basis === 'ltp') { entryFill = p[5]; exitFill = rule.exit === 'bsp' ? bsp : x?.[5] ?? null }
       else if (rule.basis === 'back') { entryFill = p[1]; exitFill = rule.exit === 'bsp' ? bsp : x?.[1] ?? null }
-      else if (rule.side === 'back') { entryFill = p[1]; exitFill = rule.exit === 'bsp' ? bsp : x?.[3] ?? null }   // back at the back price, lay off at the lay price
-      else { entryFill = p[3]; exitFill = rule.exit === 'bsp' ? bsp : x?.[1] ?? null }                             // lay at the lay price, back off at the back price
+      // realistic: back at the back price and lay off at the lay price (or the reverse). Where only the last
+      // traded price is known (Betfair history), assume it was the back price and the lay was one tick above.
+      else if (rule.side === 'back') { entryFill = p[1] ?? p[5]; exitFill = rule.exit === 'bsp' ? bsp : x?.[3] ?? (x?.[5] ? tickUp(x[5]) : null) }
+      else { entryFill = p[3] ?? (p[5] ? tickUp(p[5]) : null); exitFill = rule.exit === 'bsp' ? bsp : x?.[1] ?? x?.[5] ?? null }
       if (!entryFill || !exitFill) { skip('no price to trade at (empty side of the book)'); continue }
 
       const s = rule.stake

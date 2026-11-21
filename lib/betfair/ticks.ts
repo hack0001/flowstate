@@ -29,3 +29,8 @@ export function tickSize(price: number): number {
   for (const [, hi, step] of BANDS) if (price < hi) return step
   return 10
 }
+
+// One tick above a price (where the lay price usually sits when only the last traded price is known).
+export function tickUp(price: number): number {
+  return Math.min(1000, Math.round((price + tickSize(price)) * 100) / 100)
+}

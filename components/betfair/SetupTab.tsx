@@ -52,6 +52,21 @@ export default function SetupTab({ liveReady, server }: { liveReady: boolean | u
         <p style={{ margin: '8px 0 0', color: C.mut, fontSize: 13 }}>On the server: <span style={code}>sudo journalctl -u flowstate-recorder -f</span> shows what it&apos;s doing; <span style={code}>sudo bash /opt/flowstate/recorder/deploy/update.sh</span> updates it after you push a change.</p>
       </Section>
 
+      <Section title="Betfair historical data (free)">
+        <p style={{ margin: '0 0 6px' }}>Years of past markets for the Backtest and Insights tabs, instead of waiting weeks for your own recordings. Betfair&apos;s free Basic plan gives each selection&apos;s last traded price and the result (and SP for racing), but no back/lay prices or money matched. Betfair quotes the full download size (around 1 GB a year for racing), but the recorder server only downloads the markets FlowState uses, never stores Betfair&apos;s files, and keeps a small sample per day: roughly 100 to 150 MB a year for all four sports, well within Supabase&apos;s free 1 GB.</p>
+        <ol style={{ margin: 0, paddingLeft: 20 }}>
+          <li>Go to <a href="https://historicdata.betfair.com" target="_blank" rel="noreferrer" style={{ color: C.blu }}>historicdata.betfair.com</a> and log in with your Betfair account.</li>
+          <li>For each sport you want (<b>Horse Racing</b>, <b>Soccer</b>, <b>Tennis</b>, <b>Golf</b>), choose the <b>Basic</b> plan and the dates, and add it to your basket. Check out: it costs £0. This just adds the data to your account.</li>
+          <li>Run <span style={code}>058_betfair_history.sql</span> in the Supabase SQL editor (once).</li>
+          <li>On the server, update the recorder, then start the import with the same dates and the sports:<br />
+            <span style={code}>sudo bash /opt/flowstate/recorder/deploy/update.sh</span><br />
+            <span style={code}>sudo bash /opt/flowstate/recorder/deploy/history.sh 2025-11-01 2026-11-17 racing,football,tennis,golf</span></li>
+          <li>It runs in the background, one sport after another: a few hours for a year of all four. Watch it with <span style={code}>sudo journalctl -u flowstate-history -f</span>. If it stops, run the same command again: days already done are skipped.</li>
+          <li>In Backtest or Insights, choose <b>Prices from: Betfair history</b>.</li>
+        </ol>
+        <p style={{ margin: '8px 0 0', color: C.mut, fontSize: 13 }}>What&apos;s kept: racing (GB and IE Win markets) every minute in the last 75 minutes; football (the big leagues&apos; countries: England, Scotland, Spain, Italy, Germany, France, Netherlands, Portugal) Match Odds, Over/Under 2.5 and Both Teams to Score, every minute in the last hour and in play; tennis singles Match Odds, every minute in the last 30 minutes and every 2 minutes in play; golf Winner markets hourly.</p>
+      </Section>
+
       <Section title="Start collecting data">
         <p style={{ margin: '0 0 6px', color: C.mut }}>Nothing is collected until you press Start. Once the key is in Vercel:</p>
         <ol style={{ margin: 0, paddingLeft: 20 }}>

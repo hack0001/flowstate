@@ -15,7 +15,7 @@
 //   findSystems     scan many simple rules, then check the best on later days
 // ============================================================
 
-import { ticksBetween } from './ticks'
+import { tickUp, ticksBetween } from './ticks'
 import { type BtMarket, type BtPoint, type BtRunnerPrice, type BtSport, type Pick } from './backtest'
 
 export type PathMarket = Omit<BtMarket, 'entry' | 'exit'> & { path: Record<string, BtPoint> }   // keyed by seconds before the start; '-1' = the off
@@ -44,6 +44,11 @@ export const PLAN: Record<BtSport, { pairs: [number, number][]; mid: number; ear
 const price = (r?: BtRunnerPrice) => r ? (r[1] ?? r[5]) : null
 const avg = (xs: number[]) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0
 const r2 = (n: number) => Math.round(n * 100) / 100
+
+// Prices to trade at: the best back / lay, or (Betfair history, last traded price only) the last
+// traded price as the back price with the lay one tick above.
+const backAt = (r?: BtRunnerPrice) => r ? (r[1] ?? r[5]) : null
+const layAt = (r?: BtRunnerPrice) => r ? (r[3] ?? (r[5] ? tickUp(r[5]) : null)) : null
 
 function ranked(p?: BtPoint): BtRunnerPrice[] {
   if (!p) return []
@@ -130,8 +135,9 @@ export function momentum(ms: PathMarket[], a: number, b: number, opts: { maxRank
       const early = ticksBetween(xa, xb), late = ticksBetween(xb, xo)
       // follow the move: back a shortener at the back price and lay it off at the off; lay a drifter and back it off
       let follow: number | null = null
-      if (early <= -3 && rb[1] && ro?.[3]) follow = hedged('back', rb[1], ro[3], opts.stake, opts.commission)
-      if (early >= 3 && rb[3] && ro?.[1]) follow = hedged('lay', rb[3], ro[1], opts.stake, opts.commission)
+      const bIn = backAt(rb), lIn = layAt(rb), bOut = backAt(ro), lOut = layAt(ro)
+      if (early <= -3 && bIn && lOut) follow = hedged('back', bIn, lOut, opts.stake, opts.commission)
+      if (early >= 3 && lIn && bOut) follow = hedged('lay', lIn, bOut, opts.stake, opts.commission)
       items.push({ early, late, follow })
     }
   }
@@ -315,7 +321,7 @@ export function findSystems(ms: PathMarket[], sport: BtSport, stake: number, com
         if (m.removed?.includes(r[0])) return
         const ro = runnerAt(po, r[0])
         cands.push({ day: m.start_at.slice(0, 10), rank: i + 1, n: order.length, matched: pe.matched ?? m.total_matched ?? 0, raceType: m.race_type ?? 'unknown',
-          hcap: /hcap|handicap/i.test(m.market_name ?? ''), entryPrice: price(r)!, eb: r[1], el: r[3], ob: ro?.[1] ?? null, ol: ro?.[3] ?? null, bsp: m.bsp?.[String(r[0])] ?? null })
+          hcap: /hcap|handicap/i.test(m.market_name ?? ''), entryPrice: price(r)!, eb: backAt(r), el: layAt(r), ob: backAt(ro), ol: layAt(ro), bsp: m.bsp?.[String(r[0])] ?? null })
       })
     }
     for (const pick of picks) {
