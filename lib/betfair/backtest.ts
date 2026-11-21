@@ -59,6 +59,7 @@ export type Trade = {
   stake: number; hedgeStake: number; pnlGross: number; pnl: number               // hedged, after commission
   runPnl: number | null; won: boolean | null                                     // if left to run instead
   spreadTicks: number | null; matched: number | null
+  side: 'back' | 'lay'; entrySize: number | null                                 // £ on offer at the entry price (best level only)
   dims: Record<string, string>
 }
 
@@ -230,6 +231,7 @@ export function runBacktest(markets: BtMarket[], rule: Rule): Result {
         entryFill, exitFill, ticksWon, stake: s, hedgeStake: r2(s * ratio), pnlGross: r2(pnlGross), pnl: r2(pnl),
         runPnl: runPnl === null ? null : r2(runPnl), won,
         spreadTicks: p[1] && p[3] ? ticksBetween(p[1], p[3]) : null, matched,
+        side: rule.side, entrySize: (rule.side === 'back' ? p[2] : p[4]) || null,
         dims: dimsFor(m, sel, rank, nRunners, entryQuote, matched),
       }
       trades.push(t)

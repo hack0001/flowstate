@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { simulateStaking, type Outcome, type Plan } from '@/lib/betfair/staking'
 import { DEFAULT_RULE, DIMS, randomBaseline, runBacktest, tradesCsv, type BtMarket, type BtSport, type Pick, type Result, type Rule } from '@/lib/betfair/backtest'
 
 // Backtest tab of /betfair: test a trading rule on the recorded prices.
@@ -102,6 +103,34 @@ function Equity({ r }: { r: Result }) {
   )
 }
 
+const PLAN_COLOURS = ['#7784a6', '#6f9bff', '#ff5470', '#2fd6b0', '#f6b93b']
+function StakingChart({ plans, bank }: { plans: Plan[]; bank: number }) {
+  const n = plans[0]?.points.length ?? 0
+  if (n < 2) return null
+  const W = 760, H = 220, L = 58, R = 10, T = 10, B = 22
+  const vals = plans.flatMap(p => p.points).filter(v => v > 0)
+  const lo0 = Math.min(bank, ...vals), hi0 = Math.max(bank, ...vals)
+  const log = hi0 / Math.max(lo0, 0.01) > 8                       // switch to a log scale when one plan runs away
+  const tf = (v: number) => log ? Math.log(Math.max(v, lo0 * 0.9, 0.01)) : v
+  const lo = tf(lo0 * (log ? 0.9 : 1) - (log ? 0 : (hi0 - lo0) * 0.05)), hi = tf(hi0 * (log ? 1.1 : 1) + (log ? 0 : (hi0 - lo0) * 0.05))
+  const x = (i: number) => L + i / (n - 1) * (W - L - R)
+  const y = (v: number) => T + (hi - tf(v)) / (hi - lo || 1) * (H - T - B)
+  const ticks = log ? [0.25, 0.5, 1, 2, 4, 8, 16, 32, 64].map(m => m * bank).filter(v => tf(v) >= lo && tf(v) <= hi)
+    : Array.from({ length: 5 }, (_, i) => lo0 + (hi0 - lo0) * i / 4)
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="Bank over the trades for each staking plan">
+        {ticks.map(v => <g key={v}><line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke={Math.abs(v - bank) < 1e-6 ? C.mut : C.line} strokeDasharray={Math.abs(v - bank) < 1e-6 ? '4 3' : undefined} />
+          <text x={L - 6} y={y(v) + 4} fill={C.dim} fontSize="11" textAnchor="end" fontFamily={MONO}>£{v >= 1000 ? Math.round(v / 100) / 10 + 'k' : v.toFixed(0)}</text></g>)}
+        <text x={L} y={H - 4} fill={C.dim} fontSize="11" fontFamily={MONO}>trade 1</text>
+        <text x={W - R} y={H - 4} fill={C.dim} fontSize="11" textAnchor="end" fontFamily={MONO}>trade {n - 1}</text>
+        {plans.map((p, i) => <path key={p.name} d={p.points.map((v, j) => `${j ? 'L' : 'M'}${x(j).toFixed(1)},${y(v).toFixed(1)}`).join('')} fill="none" stroke={PLAN_COLOURS[i]} strokeWidth={i === 3 ? 2.4 : 1.6} />)}
+      </svg>
+      {log && <p style={{ margin: '2px 0 0', color: C.dim, fontSize: 12 }}>Log scale: equal steps are equal percentage changes.</p>}
+    </div>
+  )
+}
+
 export default function BacktestTab() {
   const [f, setF] = useState<Form>(DEFAULT_FORM)
   const [markets, setMarkets] = useState<BtMarket[] | null>(null)
@@ -111,6 +140,10 @@ export default function BacktestTab() {
   const [warn, setWarn] = useState<string[]>([])
   const [dim, setDim] = useState('')
   const [showTrades, setShowTrades] = useState(100)
+  const [bank, setBank] = useState(100)
+  const [pctStake, setPctStake] = useState(2)
+  const [outcome, setOutcome] = useState<Outcome>('hedged')
+  const [liquidity, setLiquidity] = useState(true)
   const cache = useRef(new Map<string, BtMarket[]>())
 
   // remember the last test (this browser only)
@@ -169,6 +202,9 @@ export default function BacktestTab() {
   const result = useMemo(() => markets ? runBacktest(markets, rule) : null, [markets, JSON.stringify(rule)]) // eslint-disable-line react-hooks/exhaustive-deps
   const baseline = useMemo(() => markets && result && f.pick !== 'random' && f.pick !== 'all' && result.stats.n >= 5 ? randomBaseline(markets, rule, 40) : null,
     [markets, result, JSON.stringify(rule)]) // eslint-disable-line react-hooks/exhaustive-deps
+  const plans = useMemo(() => result && result.trades.length ? simulateStaking(result.trades, { bank: Math.max(1, bank), flatStake: f.stake, pct: Math.max(0.001, pctStake / 100),
+    commission: f.commission, warmup: 30, liquidity, outcome: outcome === 'run' && result.stats.runN === 0 ? 'hedged' : outcome }) : null,
+    [result, bank, pctStake, outcome, liquidity, f.stake, f.commission])
   const raceTypes = useMemo(() => Array.from(new Set((markets ?? []).map(m => m.race_type ?? 'unknown'))).sort(), [markets])
   const stale = markets && loadedKey !== fetchKey
   const bd = result?.breakdowns.find(b => b.dim === dim) ?? result?.breakdowns[0]
@@ -300,6 +336,40 @@ export default function BacktestTab() {
               </>
             )}
           </Section>
+
+          {s.n > 0 && plans && (
+            <Section title="Staking plans" note={<>The same {outcome === 'run' && s.runN ? s.runN : s.n} trades replayed in order from a £{bank} bank with different staking. Kelly stakes use only the trades before each bet to judge the edge (flat for the first 30), so there&apos;s no hindsight.</>}>
+              <div style={{ ...grid, marginBottom: 10 }}>
+                <Field label="Starting bank £"><input style={input} type="number" min={1} step={10} value={bank} onChange={e => setBank(Number(e.target.value) || 100)} /></Field>
+                <Field label="Outcome">
+                  <select style={input} value={outcome} onChange={e => setOutcome(e.target.value as Outcome)}>
+                    <option value="hedged">Closed out (hedged)</option>
+                    {s.runN > 0 && <option value="run">Left to run to the result</option>}
+                  </select>
+                </Field>
+                <Field label="Fixed % of bank"><input style={input} type="number" min={0.1} max={50} step={0.5} value={pctStake} onChange={e => setPctStake(Number(e.target.value) || 2)} /></Field>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: C.mut, alignSelf: 'end', paddingBottom: 6 }}>
+                  <input type="checkbox" checked={liquidity} onChange={e => setLiquidity(e.target.checked)} />Cap stakes at the money on offer</label>
+              </div>
+              <StakingChart plans={plans} bank={bank} />
+              <div style={{ overflowX: 'auto', marginTop: 10 }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%', color: C.fg }}>
+                  <thead><tr><th style={{ ...th, textAlign: 'left' }}>Plan</th><th style={th}>Final bank</th><th style={th}>Profit</th><th style={th}>Bank growth</th><th style={th}>Worst fall</th><th style={th}>Lowest bank</th><th style={th}>Bets</th><th style={th}>Biggest stake</th><th style={th}>Total staked</th></tr></thead>
+                  <tbody>{plans.map((p, i) => (
+                    <tr key={p.name}>
+                      <td style={{ ...td, textAlign: 'left', fontFamily: SANS }}><span style={{ display: 'inline-block', width: 10, height: 3, background: PLAN_COLOURS[i], marginRight: 6, verticalAlign: 'middle' }} />{p.name} <span style={{ color: C.dim }}>{p.note}</span></td>
+                      <td style={{ ...td, color: p.bust ? C.red : '#fff' }}>£{p.final.toFixed(2)}{p.bust ? ' (bust)' : ''}</td><td style={{ ...td, color: tone(p.profit) }}>{gbp(p.profit)}</td>
+                      <td style={{ ...td, color: tone(p.roi) }}>{pct(p.roi)}</td><td style={{ ...td, color: p.maxDd > 0.5 ? C.red : p.maxDd > 0.25 ? C.amb : C.fg }}>−{(p.maxDd * 100).toFixed(0)}%</td>
+                      <td style={td}>£{p.low.toFixed(2)}</td><td style={td}>{p.bets}</td><td style={td}>£{p.biggest.toFixed(2)}</td><td style={td}>£{p.staked.toFixed(0)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              <p style={{ margin: '10px 0 0', color: C.mut, fontSize: 13 }}>
+                Kelly only stakes when the trades so far show an edge, so on a losing rule it mostly bets nothing (that&apos;s it working). Its stakes are only as good as the edge estimate: with a few hundred trades that estimate is rough, which is why half or quarter Kelly is the usual choice. &ldquo;Worst fall&rdquo; is the biggest drop from a high point. Capping at the money on offer uses the best price only, from delayed data.
+              </p>
+            </Section>
+          )}
 
           {s.n > 0 && bd && (
             <Section title="Breakdown" note="The same trades split up. Groups with fewer than 30 trades are greyed: too few to mean much on their own.">
