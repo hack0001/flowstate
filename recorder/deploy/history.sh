@@ -11,8 +11,15 @@
 # re-import days that were done before.
 #   Watch it:  sudo journalctl -u flowstate-history -f
 #   Stop it:   sudo systemctl stop flowstate-history
+#   See what's on your account:  sudo bash /opt/flowstate/recorder/deploy/history.sh check
 set -euo pipefail
 if [ "$(id -u)" -ne 0 ]; then echo "Run this with sudo"; exit 1; fi
+if [ "${1:-}" = "check" ]; then
+  cd /opt/flowstate/recorder
+  exec systemd-run --quiet --wait --pipe --collect --uid=recorder --gid=recorder \
+    -p EnvironmentFile=/etc/flowstate-recorder.env -p WorkingDirectory="$PWD" \
+    -E SPOOL_DIR=/var/lib/flowstate-recorder ./node_modules/.bin/tsx src/history.ts check
+fi
 FROM="${1:-$(date -u -d '-365 days' +%F)}"
 TO="${2:-$(date -u -d '-4 days' +%F)}"
 SPORTS="${3:-racing}"

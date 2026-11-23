@@ -41,8 +41,32 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const isDay = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s)
 const iso = (d: Date) => d.toISOString().slice(0, 10)
 
+// `history.sh check`: lists the historical data already on your Betfair account.
+async function checkAccount() {
+  const cfg = loadConfig()
+  installGuard(cfg.supabase.url)
+  const bf = new Betfair(cfg.betfair, cfg.spoolDir)
+  const items = await bf.historic<Record<string, unknown>[]>('GetMyData', null)
+  if (!Array.isArray(items) || !items.length) { console.log('No historical data on this Betfair account yet. Add it at historicdata.betfair.com (Basic plan, £0).'); return }
+  // one line per sport and plan, with the months covered
+  const groups = new Map<string, string[]>()
+  for (const it of items) {
+    const key = `${it.sport ?? '?'} · ${it.plan ?? '?'}`
+    const d = String(it.forDate ?? it.date ?? '').slice(0, 7)
+    groups.set(key, [...(groups.get(key) ?? []), d])
+  }
+  console.log('Historical data on your Betfair account:\n')
+  for (const [k, ds] of [...groups.entries()].sort()) {
+    const months = Array.from(new Set(ds.filter(Boolean))).sort()
+    console.log(`  ${k}: ${months.length ? `${months[0]} to ${months[months.length - 1]} (${months.length} month${months.length === 1 ? '' : 's'})` : `${ds.length} item(s)`}`)
+  }
+  console.log('\nUse the Basic Plan dates above with: sudo bash /opt/flowstate/recorder/deploy/history.sh FROM TO SPORTS')
+  if (!items.some(it => 'forDate' in it || 'date' in it)) console.log('\n(raw sample) ' + JSON.stringify(items.slice(0, 3)))
+}
+
 async function main() {
   const args = process.argv.slice(2)
+  if (args[0] === 'check') return checkAccount()
   const force = args.includes('--force')
   const [fromArg, toArg, sportsArg] = args.filter(a => a !== '--force')
   const from = isDay(fromArg) ? fromArg : iso(new Date(Date.now() - 365 * 86_400_000))
