@@ -131,10 +131,11 @@ export class Betfair {
       try {
         const token = await this.session()
         const url = HISTORIC + op + (filePath ? '?filePath=' + encodeURIComponent(filePath) : '')
+        const get = op === 'DownloadFile' || op === 'GetMyData'            // these two are GET; the rest are POST with a JSON body
         const res = await fetch(url, {
-          method: op === 'DownloadFile' ? 'GET' : 'POST',
-          headers: { ssoid: token, 'X-Authentication': token, 'X-Application': this.creds.appKey, 'Content-Type': 'application/json', Accept: op === 'DownloadFile' ? '*/*' : 'application/json' },
-          body: op === 'DownloadFile' ? undefined : JSON.stringify(body ?? {}),
+          method: get ? 'GET' : 'POST',
+          headers: { ssoid: token, 'X-Authentication': token, 'X-Application': this.creds.appKey, ...(get ? {} : { 'Content-Type': 'application/json' }), Accept: op === 'DownloadFile' ? '*/*' : 'application/json' },
+          body: get ? undefined : JSON.stringify(body ?? {}),
           signal: AbortSignal.timeout(60_000),
         })
         if (res.status === 401 || res.status === 403) { this.token = null; throw new BetfairError(`Historical data ${op}: not signed in (HTTP ${res.status})`, 'NO_SESSION', true) }
