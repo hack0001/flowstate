@@ -76,22 +76,24 @@ function furlongs(name?: string | null) {
   return mi || f ? mi * 8 + f : null
 }
 
-async function loadDays(store: ReturnType<ReturnType<typeof createClient>['storage']['from']>, sport: 'racing' | 'football') {
+// Reads each day's file in turn and hands it to fn, so only a few days are in memory at once.
+async function forEachDay(store: ReturnType<ReturnType<typeof createClient>['storage']['from']>, sport: 'racing' | 'football', fn: (d: HistDay) => void): Promise<number> {
   const { data: idxFile } = await store.download(`${sport}/index.json`)
-  if (!idxFile) return []
+  if (!idxFile) return 0
   const idx = JSON.parse(await idxFile.text()) as HistIndex
-  const days = Object.keys(idx.days).sort()
-  const out: HistDay[] = []
-  const q = [...days]
+  const q = Object.keys(idx.days).sort()
+  let n = 0
   const worker = async () => {
     for (let d = q.shift(); d; d = q.shift()) {
       const { data } = await store.download(historyPath(sport, d))
       if (!data) continue
-      try { out.push(JSON.parse(zlib.gunzipSync(Buffer.from(await data.arrayBuffer())).toString('utf8')) as HistDay) } catch { /* skip a bad file */ }
+      let day: HistDay
+      try { day = JSON.parse(zlib.gunzipSync(Buffer.from(await data.arrayBuffer())).toString('utf8')) as HistDay } catch { continue }
+      fn(day); n++
     }
   }
   await Promise.all([worker(), worker(), worker(), worker()])
-  return out.sort((a, b) => a.day.localeCompare(b.day))
+  return n
 }
 
 function racingRunners(days: HistDay[]): Runner[] {
@@ -189,9 +191,11 @@ async function main() {
 
   // ================================================================ racing
   log.info('Scout: loading racing history')
-  const rdays = await loadDays(store, 'racing')
-  const runners = racingRunners(rdays)
-  log.info(`Scout: ${rdays.length} racing days, ${runners.length} runners`)
+  const runners: Runner[] = []
+  const signals = new Map<string, Ev[]>()
+  const rdayCount = await forEachDay(store, 'racing', d => { for (const r of racingRunners([d])) runners.push(r); collectSignals([d], signals) })
+  const rdays = { length: rdayCount }
+  log.info(`Scout: ${rdayCount} racing days, ${runners.length} runners`)
   const months = Array.from(new Set(runners.map(r => r.month))).sort()
   const cut = months[Math.floor(months.length * 2 / 3)] ?? months[months.length - 1]
   L.push(`## Horse racing: back early, let it run`, '', `${rdays.length} days (${months[0]} to ${months[months.length - 1]}), ${new Set(runners.map(r => r.race)).size.toLocaleString('en-GB')} races, ${runners.length.toLocaleString('en-GB')} runners. Systems are found on ${months[0]} to the month before ${cut} and checked on ${cut} onwards.`, '')
@@ -256,13 +260,14 @@ async function main() {
   }
   const rs = search(runners, rules, conds, cut)
   L.push(...systemsSection('racing', rs.found, rs.tested))
-  const pd = priceDiscovery(rdays, cut)
+  const pd = priceDiscovery(signals, cut)
   L.push(...pd.lines)
 
   // ================================================================ football
   log.info('Scout: loading football history')
-  const fdays = await loadDays(store, 'football')
-  const sels = footballSelections(fdays)
+  const sels: Sel[] = []
+  const fdayCount = await forEachDay(store, 'football', d => { for (const x of footballSelections([d])) sels.push(x) })
+  const fdays = { length: fdayCount }
   let footballFound: Found[] = []
   log.info(`Scout: ${fdays.length} football days, ${sels.length} selections`)
   if (sels.length) {
@@ -341,8 +346,8 @@ function hedge(side: 'back' | 'lay', entry: number, exit: number) {
   return g > 0 ? g * (1 - C) : g
 }
 
-function priceDiscovery(days: HistDay[], cut: string): { lines: string[]; found: Found[] } {
-  const groups = new Map<string, Ev[]>()       // key: k|th|kind
+// Adds one or more days' signals to groups (key: k|th|kind).
+function collectSignals(days: HistDay[], groups: Map<string, Ev[]>) {
   for (const d of days) {
     const { markets, snaps } = expandHistory(d, 'racing')
     for (const m of markets) {
@@ -395,6 +400,9 @@ function priceDiscovery(days: HistDay[], cut: string): { lines: string[]; found:
     }
   }
 
+}
+
+function priceDiscovery(groups: Map<string, Ev[]>, cut: string): { lines: string[]; found: Found[] } {
   // the actions to test on each kind of signal
   const actions: { kind: Ev['kind']; name: string; side: 'back' | 'lay' }[] = [
     { kind: 'steam', name: 'Follow a steamer (back it)', side: 'back' }, { kind: 'steam', name: 'Fade a steamer (lay it)', side: 'lay' },
