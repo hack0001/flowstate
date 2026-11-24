@@ -438,6 +438,17 @@ function TimelineDay({
   onHoverEnd: () => void
   onCreateAt: (date: string, startMin: number) => void
 }) {
+  // Live "now" line (like Notion Calendar): current minute-of-day, refreshed
+  // every 30s, only ticking on today's column.
+  const minuteNow = () => { const n = new Date(); return n.getHours() * 60 + n.getMinutes() + n.getSeconds() / 60 }
+  const [nowMin, setNowMin] = useState(minuteNow)
+  useEffect(() => {
+    if (!isToday) return
+    setNowMin(minuteNow())
+    const id = setInterval(() => setNowMin(minuteNow()), 30000)
+    return () => clearInterval(id)
+  }, [isToday])
+
   const autoPlaced = autoPlaceTasks(tasks)
   const taskBlocks: TLBlock[] = tasks.map(t => {
     const explicit = t.start_time ? hhmmToMinutes(t.start_time) : null
@@ -536,6 +547,18 @@ function TimelineDay({
               />
             ))}
           </div>
+          {/* Today only: fade everything above the current time, then draw the live line */}
+          {isToday && nowMin >= TL_START_MIN && nowMin <= effectiveEndMin && (() => {
+            const lineTop = (nowMin - TL_START_MIN) * pxPerMin
+            return (
+              <>
+                <div style={{ position:'absolute', left:0, right:0, top:0, height:lineTop, background:'rgba(10,10,15,0.55)', pointerEvents:'none', zIndex:20 }} />
+                <div style={{ position:'absolute', left:'26px', right:0, top:lineTop, height:0, borderTop:'2px solid '+C.red, pointerEvents:'none', zIndex:25 }}>
+                  <div style={{ position:'absolute', left:'-5px', top:'-6px', width:'10px', height:'10px', borderRadius:'50%', background:C.red }} />
+                </div>
+              </>
+            )
+          })()}
         </div>
       </div>
     </div>

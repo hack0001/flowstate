@@ -151,34 +151,77 @@ function footballSelections(days: HistDay[]): Sel[] {
 }
 
 // ------------------------------------------------------------------ rule search with a time split
-// knownAt: seconds before the start when the filter's information is available; a rule
-// that bets earlier than that can't use it (that would be using the future).
-type Cond = { name: string; test: (x: Runner) => boolean; knownAt?: number }
-type Found = { rule: string; train: Summary; test: Summary; all: Summary; passed: boolean }
+// knownAt (on filters): seconds before the start when the filter's information is available;
+// a rule that bets earlier than that can't use it (that would be using the future).
+type Cond = Filter<Runner>
+type Found = { rule: string; train: Summary; test: Summary; all: Summary; pTrain: number; pTest: number; pAll: number; q: number; passed: boolean }
 
-function search<T extends { month: string }>(items: T[], rules: { name: string; at?: number; make: (x: T) => Bet | null }[], conds: { name: string; test: (x: T) => boolean; knownAt?: number }[], cut: string) {
+// ------------------------------------------------------------------ p-values and the luck check
+// p: the chance of a profit at least this big if the rule really had no edge (one-sided, from t).
+// With thousands of rules tried, some will have tiny p-values by luck, so each rule also gets a
+// q-value (Benjamini-Hochberg): roughly, the share of rules this good that would be luck. A rule
+// passes only if all of these hold:
+//   p (all months) below ALPHA, the threshold you set (default 0.005)
+//   p on the later months alone below 0.05 (it kept working on data it wasn't found on)
+//   q below 0.10 (unlikely to be one of the lucky ones out of everything tried)
+//   at least 60% of months profitable
+export const ALPHA = Number(process.env.SCOUT_ALPHA ?? 0.005)
+function normCdf(z: number) {   // Abramowitz-Stegun approximation
+  const t = 1 / (1 + 0.2316419 * Math.abs(z)), d = 0.3989423 * Math.exp(-z * z / 2)
+  const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))))
+  return z > 0 ? 1 - p : p
+}
+const pOf = (t: number) => 1 - normCdf(t)
+const pfmt = (p: number) => p < 0.0001 ? '<0.0001' : p.toFixed(4)
+
+// Fills q-values (over `tested` rules, untested ones counting as p = 1) and the pass flag.
+function judge(found: Found[], tested: number) {
+  const order = [...found].sort((a, b) => a.pTrain - b.pTrain)
+  let minQ = 1
+  for (let i = order.length - 1; i >= 0; i--) { minQ = Math.min(minQ, order[i].pTrain * tested / (i + 1)); order[i].q = minQ }
+  for (const f of found) f.passed = f.pAll < ALPHA && f.pTest < 0.05 && f.test.roi > 0 && f.q < 0.10 && f.all.monthsUp / Math.max(1, f.all.months) >= 0.6
+  found.sort((a, b) => (Number(b.passed) - Number(a.passed)) || a.pAll - b.pAll)
+}
+
+function makeFound(rule: string, bets: Bet[], cut: string, valueCheck: boolean): Found | null {
+  const train: Bet[] = [], test: Bet[] = []
+  for (const b of bets) (b.month < cut ? train : test).push(b)
+  if (train.length < 150 || test.length < 50) return null
+  const s = summarise(train)
+  if (s.roi <= 0 || s.t < 1.5 || (valueCheck && s.value <= -0.02)) return null
+  const t = summarise(test), a = summarise(bets)
+  return { rule, train: s, test: t, all: a, pTrain: pOf(s.t), pTest: pOf(t.t), pAll: pOf(a.t), q: 1, passed: false }
+}
+
+type Filter<T> = { name: string; group: string; test: (x: T) => boolean; knownAt?: number }
+
+// Every rule with every filter, and every pair of filters from different groups
+// (e.g. "Hurdle" and "8 to 11 runners"). Masks are worked out once, so pairs stay quick.
+function search<T extends { month: string }>(items: T[], rules: { name: string; at?: number; make: (x: T) => Bet | null }[], filters: Filter<T>[], cut: string, valueCheck = true) {
+  const masks = filters.map(f => Uint8Array.from(items, x => f.test(x) ? 1 : 0))
+  type Combo = { name: string; idx: number[]; knownAt: number }
+  const combos: Combo[] = filters.map((f, i) => ({ name: f.name, idx: [i], knownAt: f.knownAt ?? Infinity }))
+  for (let i = 0; i < filters.length; i++) for (let j = i + 1; j < filters.length; j++) {
+    if (filters[i].group === filters[j].group || filters[i].group === 'all' || filters[j].group === 'all') continue
+    combos.push({ name: `${filters[i].name} + ${filters[j].name}`, idx: [i, j], knownAt: Math.min(filters[i].knownAt ?? Infinity, filters[j].knownAt ?? Infinity) })
+  }
   const found: Found[] = []
   let tested = 0
   for (const r of rules) {
-    for (const c of conds) {
-      if (r.at !== undefined && c.knownAt !== undefined && r.at > c.knownAt) continue
+    const rb: [number, Bet][] = []
+    items.forEach((x, i) => { const b = r.make(x); if (b) rb.push([i, b]) })
+    if (rb.length < 200) continue
+    for (const c of combos) {
+      if (r.at !== undefined && r.at > c.knownAt) continue           // no peeking: the filter must be known when the bet is placed
       tested++
       const bets: Bet[] = []
-      for (const x of items) { if (!c.test(x)) continue; const b = r.make(x); if (b) bets.push(b) }
-      const train = bets.filter(b => b.month < cut), test = bets.filter(b => b.month >= cut)
-      if (train.length < 150 || test.length < 50) continue
-      const s = summarise(train)
-      if (s.roi <= 0 || s.t < 2 || s.value <= 0) continue
-      const t = summarise(test), a = summarise(bets)
-      // passes: profitable on the later months too, the price also beats the efficient price there,
-      // and most months were winners
-      // and, over everything, the price beat the efficient one clearly (value over 1%, and steady enough to
-      // be more than noise: t of the value at least 2)
-      const passed = s.t >= 2.5 && t.roi > 0 && t.t > 1.5 && t.value > 0 && a.value > 0.01 && a.vt >= 2 && a.monthsUp / Math.max(1, a.months) >= 0.6
-      found.push({ rule: `${r.name} · ${c.name}`, train: s, test: t, all: a, passed })
+      if (c.idx.length === 1) { const m = masks[c.idx[0]]; for (const [i, b] of rb) if (m[i]) bets.push(b) }
+      else { const m1 = masks[c.idx[0]], m2 = masks[c.idx[1]]; for (const [i, b] of rb) if (m1[i] && m2[i]) bets.push(b) }
+      const f = makeFound(`${r.name} · ${c.name}`, bets, cut, valueCheck)
+      if (f) found.push(f)
     }
   }
-  found.sort((a, b) => b.train.t - a.train.t)
+  judge(found, tested)
   return { found, tested }
 }
 
@@ -191,6 +234,7 @@ async function main() {
   const L: string[] = []
   const today = new Date().toISOString().slice(0, 10)
   L.push(`# Scout report, ${today}`, '')
+  L.push(`Systems must reach p below ${ALPHA} (the chance of results this good from a rule with no real edge), keep working on months they weren't found on, and survive a check for luck across everything tried.`, '')
   L.push(`Commission ${C * 100}% on winnings. "Value" = what each bet is worth if the efficient price (Betfair SP for racing, the last price before kick-off for football) is the true chance. "Actual" = the real result. "Cautious" assumes you got one tick worse than the last traded price (the free history has no back/lay prices).`, '')
 
   // ================================================================ racing
@@ -251,12 +295,13 @@ async function main() {
 
   // 4. System search
   const pband = (p: number | null) => p === null ? '?' : band(p, [2, 3, 4, 6, 10, 20], ['under 2.0', '2.0 to 3.0', '3.0 to 4.0', '4.0 to 6.0', '6.0 to 10', '10 to 20', '20+'])
-  const conds: Cond[] = [{ name: 'all races', test: () => true }]
-  for (const rt of Array.from(new Set(runners.map(r => r.rt)))) conds.push({ name: rt, test: x => x.rt === rt })
-  conds.push({ name: 'handicaps', test: x => x.hcap }, { name: 'non-handicaps', test: x => !x.hcap })
-  for (const [lo, hi] of [[2, 7], [8, 11], [12, 16], [17, 99]]) conds.push({ name: `${lo}${hi === 99 ? '+' : ` to ${hi}`} runners`, test: x => x.n >= lo && x.n <= hi })
-  for (const g of mg) conds.push({ name: g.toLowerCase(), test: x => move(x) === g, knownAt: 1200 })
-  for (const h of [[0, 14], [14, 17], [17, 24]]) conds.push({ name: h[0] === 0 ? 'before 2pm' : h[0] === 14 ? '2pm to 5pm' : 'after 5pm', test: x => x.hour >= h[0] && x.hour < h[1] })
+  const conds: Cond[] = [{ name: 'all races', group: 'all', test: () => true }]
+  for (const rt of Array.from(new Set(runners.map(r => r.rt)))) conds.push({ name: rt, group: 'type', test: x => x.rt === rt })
+  conds.push({ name: 'handicaps', group: 'hcap', test: x => x.hcap }, { name: 'non-handicaps', group: 'hcap', test: x => !x.hcap })
+  for (const [lo, hi] of [[2, 7], [8, 11], [12, 16], [17, 99]]) conds.push({ name: `${lo}${hi === 99 ? '+' : ` to ${hi}`} runners`, group: 'field', test: x => x.n >= lo && x.n <= hi })
+  for (const g of mg) conds.push({ name: g.toLowerCase(), group: 'move', test: x => move(x) === g, knownAt: 1200 })
+  for (const h of [[0, 14], [14, 17], [17, 24]]) conds.push({ name: h[0] === 0 ? 'before 2pm' : h[0] === 14 ? '2pm to 5pm' : 'after 5pm', group: 'time', test: x => x.hour >= h[0] && x.hour < h[1] })
+  for (const [lo, hi, nm] of [[0, 9, 'up to 1m1f'], [9, 14, '1m1f to 1m6f'], [14, 20, '1m6f to 2m4f'], [20, 99, '2m4f+']] as const) conds.push({ name: nm, group: 'dist', test: x => x.furlongs !== null && x.furlongs >= lo && x.furlongs < hi })
   const rules: { name: string; at?: number; make: (x: Runner) => Bet | null }[] = []
   for (const o of R_OFFSETS) for (const side of ['Back', 'Lay'] as const) {
     for (const g of ['Favourite', '2nd fav', '3rd fav', '4th to 6th']) rules.push({ name: `${side} ${g.toLowerCase()} ${o / 60} min out (cautious price)`, at: o, make: x => rankName(x.rank[ri(o)]) === g ? (side === 'Back' ? backAt(o, true) : layAt(o, true))(x) : null })
@@ -296,11 +341,11 @@ async function main() {
       const title = type === 'OVER_UNDER_25' ? 'Over/Under 2.5 goals' : type === 'BOTH_TEAMS_TO_SCORE' ? 'Both teams to score' : 'Match Odds'
       L.push(`### ${title}`, '', table(['Selection', 'Back at', 'Bets', 'Price ÷ close', 'Beat close', 'Value', 'Actual', 'Actual (cautious)', 'Back at close'], rowsF), '')
     }
-    const fconds: { name: string; test: (s: Sel) => boolean; knownAt?: number }[] = [{ name: 'all matches', test: () => true }]
-    for (const cc of Array.from(new Set(sels.map(s => s.country)))) fconds.push({ name: `country ${cc}`, test: s => s.country === cc })
+    const fconds: Filter<Sel>[] = [{ name: 'all matches', group: 'all', test: () => true }]
+    for (const cc of Array.from(new Set(sels.map(s => s.country)))) fconds.push({ name: `country ${cc}`, group: 'country', test: s => s.country === cc })
     const fmove = (s: Sel) => { const a = s.px[fi(10800)] ?? s.px[fi(7200)], b = s.px[fi(3600)]; if (!a || !b) return null; const ch = (1 / b) / (1 / a) - 1; return ch >= 0.05 ? 'shortened' : ch <= -0.05 ? 'drifted' : 'steady' }
-    for (const g of ['shortened', 'drifted', 'steady']) fconds.push({ name: `${g} from 3h to 1h out`, test: s => fmove(s) === g, knownAt: 3600 })
-    for (const [lo, hi] of [[1, 1.7], [1.7, 2.2], [2.2, 3], [3, 5], [5, 1000]]) fconds.push({ name: `priced ${lo} to ${hi === 1000 ? 'any' : hi} an hour out`, test: s => !!s.px[fi(3600)] && s.px[fi(3600)]! >= lo && s.px[fi(3600)]! < hi, knownAt: 3600 })
+    for (const g of ['shortened', 'drifted', 'steady']) fconds.push({ name: `${g} from 3h to 1h out`, group: 'move', test: s => fmove(s) === g, knownAt: 3600 })
+    for (const [lo, hi] of [[1, 1.7], [1.7, 2.2], [2.2, 3], [3, 5], [5, 1000]]) fconds.push({ name: `priced ${lo} to ${hi === 1000 ? 'any' : hi} an hour out`, group: 'price', test: s => !!s.px[fi(3600)] && s.px[fi(3600)]! >= lo && s.px[fi(3600)]! < hi, knownAt: 3600 })
     const frules: { name: string; at?: number; make: (s: Sel) => Bet | null }[] = []
     for (const type of ['OVER_UNDER_25', 'BOTH_TEAMS_TO_SCORE', 'MATCH_ODDS']) for (const sd of Array.from(new Set(sels.filter(s => s.type === type).map(s => s.side)))) for (const o of F_OFFSETS) for (const side of ['Back', 'Lay'] as const)
       frules.push({ name: `${side} ${sd} (${type === 'OVER_UNDER_25' ? 'O/U 2.5' : type === 'BOTH_TEAMS_TO_SCORE' ? 'BTTS' : 'Match Odds'}) ${o / 60} min out (cautious price)`, at: o, make: s => s.type === type && s.side === sd ? (side === 'Back' ? fBack(o, true) : fLay(o, true))(s) : null })
@@ -447,32 +492,29 @@ function priceDiscovery(groups: Map<string, Ev[]>, cut: string): { lines: string
     for (const a of actions.filter(x => x.kind === kind)) for (const h of HOLDS) for (const f of filters) {
       tested++
       const bets = evs.filter(f.test).map(e => { const x = e.exits[HOLDS.indexOf(h)]; return x ? { month: e.month, value: 0, actual: hedge(a.side, e.entry, x) } : null }).filter((b): b is Bet => !!b)
-      const train = bets.filter(b => b.month < cut), test = bets.filter(b => b.month >= cut)
-      if (train.length < 150 || test.length < 50) continue
-      const s = summarise(train)
-      if (s.roi <= 0 || s.t < 2) continue
-      const t = summarise(test), all = summarise(bets)
-      const passed = s.t >= 2.5 && t.roi > 0 && t.t > 1.5 && all.roi > 0.005 && all.monthsUp / Math.max(1, all.months) >= 0.6
-      found.push({ rule: `${a.name} after ${th}+ ticks in ${k} min, ${holdName(h)} · ${f.name}`, train: s, test: t, all, passed })
+      const fd = makeFound(`${a.name} after ${th}+ ticks in ${k} min, ${holdName(h)} · ${f.name}`, bets, cut, false)
+      if (fd) found.push(fd)
     }
   }
-  found.sort((x, y) => (Number(y.passed) - Number(x.passed)) || y.train.t - x.train.t)
-  const passed = found.filter(f => f.passed)
-  L.push(`Searched ${tested.toLocaleString('en-GB')} trading rules (move speed, size, follow or fade, the other-horse trades, exit time, race filters). ${found.length} were profitable on the earlier months with t ≥ 2 (about ${Math.round(tested * 0.023)} would be by luck). **${passed.length} passed every check** (t ≥ 2.5 earlier, profitable later with t over 1.5, at least 60% of months up).`, '')
-  if (found.length) L.push(table(['Rule', 'Earlier: trades', 'Return', 't', 'Later: trades', 'Return', 't', 'Months up', 'Passed'],
-    found.slice(0, 15).map(f => [f.rule, f.train.n, pct(f.train.roi, 2), fx(f.train.t, 1), f.test.n, pct(f.test.roi, 2), fx(f.test.t, 1), `${f.all.monthsUp}/${f.all.months}`, f.passed ? '✓' : '✗'])), '')
+  judge(found, tested)
+  L.push(...resultsBlock('trading rules (move speed, size, follow or fade, the other-horse trades, exit time, race filters)', found, tested, true))
   L.push('Not tested yet, because the data doesn\'t have it: weight of money across the full ladder, and the money traded on each runner. Betfair\'s free history has only the last traded price, and the free live key gives no traded volume. See the Setup tab for what would add them.', '')
   return { lines: L, found }
 }
 
 function systemsSection(sport: string, found: Found[], tested: number): string[] {
+  return ['', `### ${sport === 'racing' ? '4' : 'Systems'}. Systems the scout found (${sport}, back or lay and let it run)`, '',
+    ...resultsBlock('rules (timing, back or lay, rank or price band, and up to two filters together)', found, tested, false)]
+}
+
+function resultsBlock(what: string, found: Found[], tested: number, trading: boolean): string[] {
   const passed = found.filter(f => f.passed)
-  const L = ['', `### ${sport === 'racing' ? '4' : 'Systems'}. Systems the scout found (${sport})`, '']
-  L.push(`Tried ${tested.toLocaleString('en-GB')} rules. ${found.length} were profitable on the earlier months with t ≥ 2 and a price better than the efficient one (about ${Math.round(tested * 0.023)} would do that by luck alone). **${passed.length} passed every check**: t ≥ 2.5 on the earlier months, still profitable on the later months (t over 1.5), the price beating the efficient one by over 1% (and steadily, t ≥ 2), and at least 60% of months up.`, '')
-  const show = [...passed, ...found.filter(f => !f.passed)].slice(0, 15)
-  if (show.length) L.push(table(['Rule', 'Earlier: bets', 'ROI', 't', 'Later: bets', 'ROI', 'Value', 'Months up', 'Passed'],
-    show.map(f => [f.rule, f.train.n, pct(f.train.roi), fx(f.train.t, 1), f.test.n, pct(f.test.roi), pct(f.test.value), `${f.all.monthsUp}/${f.all.months}`, f.passed ? '✓' : '✗'])))
-  else L.push('Nothing cleared the first hurdle.')
+  const tiny = found.filter(f => f.pAll < ALPHA).length
+  const L = [`Tried ${tested.toLocaleString('en-GB')} ${what}. ${tiny} had p below ${ALPHA} on all the months; by luck alone you'd expect about ${Math.max(0, Math.round(tested * ALPHA))} from this many tries. **${passed.length} passed every check**: p below ${ALPHA} overall, p below 0.05 on the later months alone (data it wasn't found on), q below 0.10 (unlikely to be a lucky one out of all the tries), and at least 60% of months up.`, '']
+  const show = found.slice(0, 20)
+  if (show.length) L.push(table(['Rule', 'Bets', trading ? 'Return' : 'ROI', 'p (all)', 'Later: bets', trading ? 'Return' : 'ROI', 'p (later)', 'q', 'Months up', 'Passed'],
+    show.map(f => [f.rule, f.all.n, pct(f.all.roi, 2), pfmt(f.pAll), f.test.n, pct(f.test.roi, 2), pfmt(f.pTest), fx(Math.min(1, f.q), 3), `${f.all.monthsUp}/${f.all.months}`, f.passed ? '✓' : '✗'])), '')
+  else L.push('Nothing was profitable enough to list.', '')
   return L
 }
 
