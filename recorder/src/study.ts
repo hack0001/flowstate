@@ -65,10 +65,13 @@ function summarise(bets: Bet[], beat?: number[]): Summary {
 // ------------------------------------------------------------------ data
 type Runner = {
   race: string; month: string; day: string; venue: string; rt: string; hcap: boolean; furlongs: number | null; n: number; hour: number
-  px: Record<number, number | null>; rank: Record<number, number>; sp: number; p: number; won: boolean
+  px: (number | null)[]; rank: number[]; sp: number; p: number; won: boolean
 }
 const R_OFFSETS = [3600, 1800, 1200, 600, 300]
 const F_OFFSETS = [10800, 7200, 3600, 1800, 600]
+// prices and ranks are kept as short arrays (one slot per time above) to keep memory down
+const ri = (o: number) => R_OFFSETS.indexOf(o)
+const fi = (o: number) => F_OFFSETS.indexOf(o)
 
 function furlongs(name?: string | null) {
   const m = (name ?? '').match(/(?:(\d+)m)?\s*(?:(\d+)f)?/i)
@@ -113,9 +116,8 @@ function racingRunners(days: HistDay[]): Runner[] {
       }
       const start = new Date(m.start_at)
       for (const r of sps) {
-        const px: Record<number, number | null> = {}, rank: Record<number, number> = {}
-        for (const o of R_OFFSETS) { px[o] = priceAt(o, r.id); rank[o] = ranks[o].get(r.id) ?? 99 }
-        rows.push({ race: m.market_id, month: m.start_at.slice(0, 7), day: m.start_at.slice(0, 10), venue: m.venue ?? m.event, rt: m.race_type ?? 'Unknown', hcap: /hcap|handicap/i.test(m.market_name ?? ''),
+        const px = R_OFFSETS.map(o => priceAt(o, r.id)), rank = R_OFFSETS.map(o => ranks[o].get(r.id) ?? 99)
+        rows.push({ race: m.market_id, month: m.start_at.slice(0, 7), day: '', venue: '', rt: m.race_type ?? 'Unknown', hcap: /hcap|handicap/i.test(m.market_name ?? ''),
           furlongs: furlongs(m.market_name), n: sps.length, hour: start.getUTCHours(), px, rank, sp: r.sp, p: (1 / r.sp) / book, won: m.winners.includes(r.id) })
       }
     }
@@ -123,7 +125,7 @@ function racingRunners(days: HistDay[]): Runner[] {
   return rows
 }
 
-type Sel = { month: string; country: string; type: string; side: string; px: Record<number, number | null>; close: number; p: number; won: boolean }
+type Sel = { month: string; country: string; type: string; side: string; px: (number | null)[]; close: number; p: number; won: boolean }
 function footballSelections(days: HistDay[]): Sel[] {
   const rows: Sel[] = []
   for (const d of days) {
@@ -140,8 +142,7 @@ function footballSelections(days: HistDay[]): Sel[] {
         const c = closePx.get(r.id)
         if (!c) return
         const side = m.market_type === 'MATCH_ODDS' ? (/draw/i.test(r.name) ? 'Draw' : i === 0 ? 'Home' : 'Away') : r.name.replace(/ 2\.5 Goals/i, '')
-        const px: Record<number, number | null> = {}
-        for (const o of F_OFFSETS) { const x = path[String(o)]?.runners.find(q => q[0] === r.id); px[o] = x ? (x[1] ?? x[5]) : null }
+        const px = F_OFFSETS.map(o => { const x = path[String(o)]?.runners.find(q => q[0] === r.id); return x ? (x[1] ?? x[5]) : null })
         rows.push({ month: m.start_at.slice(0, 7), country: m.country ?? '?', type: m.market_type, side, px, close: c, p: (1 / c) / book, won: m.winners!.includes(r.id) })
       })
     }
@@ -201,12 +202,12 @@ async function main() {
   L.push(`## Horse racing: back early, let it run`, '', `${rdays.length} days (${months[0]} to ${months[months.length - 1]}), ${new Set(runners.map(r => r.race)).size.toLocaleString('en-GB')} races, ${runners.length.toLocaleString('en-GB')} runners. Systems are found on ${months[0]} to the month before ${cut} and checked on ${cut} onwards.`, '')
 
   const backAt = (o: number, cautious: boolean) => (x: Runner): Bet | null => {
-    const raw = x.px[o]; if (!raw) return null
+    const raw = x.px[ri(o)]; if (!raw) return null
     const price = cautious ? tickDown(raw) : raw
     return { month: x.month, value: backValue(price, x.p), actual: backActual(price, x.won) }
   }
   const layAt = (o: number, cautious: boolean) => (x: Runner): Bet | null => {
-    const raw = x.px[o]; if (!raw) return null
+    const raw = x.px[ri(o)]; if (!raw) return null
     const price = cautious ? tickUp(raw) : raw
     return { month: x.month, value: layValue(price, x.p), actual: layActual(price, x.won) }
   }
@@ -216,32 +217,32 @@ async function main() {
   const rankName = (k: number) => k === 1 ? 'Favourite' : k === 2 ? '2nd fav' : k === 3 ? '3rd fav' : k <= 6 ? '4th to 6th' : '7th or longer'
   const groups = ['Favourite', '2nd fav', '3rd fav', '4th to 6th', '7th or longer']
   const rows1 = groups.map(g => {
-    const xs = runners.filter(x => x.px[1200] && rankName(x.rank[1200]) === g)
-    const early = summarise(xs.map(backAt(1200, false)).filter((b): b is Bet => !!b), xs.map(x => x.px[1200]! > x.sp ? 1 : 0))
+    const xs = runners.filter(x => x.px[ri(1200)] && rankName(x.rank[ri(1200)]) === g)
+    const early = summarise(xs.map(backAt(1200, false)).filter((b): b is Bet => !!b), xs.map(x => x.px[ri(1200)]! > x.sp ? 1 : 0))
     const caut = summarise(xs.map(backAt(1200, true)).filter((b): b is Bet => !!b))
     const sp = summarise(xs.map(spBack))
-    return [g, early.n.toLocaleString('en-GB'), fx(avg(xs.map(x => x.px[1200]! / x.sp))), Math.round(early.beatEff * 100) + '%', pct(early.value), pct(early.roi), pct(caut.roi), pct(sp.roi), fx(early.t, 1)]
+    return [g, early.n.toLocaleString('en-GB'), fx(avg(xs.map(x => x.px[ri(1200)]! / x.sp))), Math.round(early.beatEff * 100) + '%', pct(early.value), pct(early.roi), pct(caut.roi), pct(sp.roi), fx(early.t, 1)]
   })
   L.push('### 1. Is the price 20 minutes before the off better than SP?', '', table(['Rank at 20 min', 'Runners', 'Price ÷ SP', 'Beat SP', 'Value', 'Actual', 'Actual (cautious)', 'Back at SP', 't'], rows1), '')
   L.push('Price ÷ SP above 1 means the early price was bigger than the starting price on average. If SP is efficient, Value is the long-run return of backing at the early price; Actual should drift towards it as the sample grows.', '')
 
   // 2. Timing: favourites at each entry time
   const rows2 = R_OFFSETS.map(o => {
-    const xs = runners.filter(x => x.px[o] && x.rank[o] === 1)
-    const s = summarise(xs.map(backAt(o, false)).filter((b): b is Bet => !!b), xs.map(x => x.px[o]! > x.sp ? 1 : 0))
+    const xs = runners.filter(x => x.px[ri(o)] && x.rank[ri(o)] === 1)
+    const s = summarise(xs.map(backAt(o, false)).filter((b): b is Bet => !!b), xs.map(x => x.px[ri(o)]! > x.sp ? 1 : 0))
     const c = summarise(xs.map(backAt(o, true)).filter((b): b is Bet => !!b))
-    return [`${o / 60} min`, s.n.toLocaleString('en-GB'), fx(avg(xs.map(x => x.px[o]! / x.sp))), Math.round(s.beatEff * 100) + '%', pct(s.value), pct(s.roi), pct(c.roi), `${s.monthsUp}/${s.months}`]
+    return [`${o / 60} min`, s.n.toLocaleString('en-GB'), fx(avg(xs.map(x => x.px[ri(o)]! / x.sp))), Math.round(s.beatEff * 100) + '%', pct(s.value), pct(s.roi), pct(c.roi), `${s.monthsUp}/${s.months}`]
   })
   L.push('### 2. When to back the favourite', '', table(['Back at', 'Bets', 'Price ÷ SP', 'Beat SP', 'Value', 'Actual', 'Actual (cautious)', 'Months up'], rows2), '')
 
   // 3. Moves before the entry: steamers and drifters (60 → 20 minutes)
-  const move = (x: Runner) => { const a = x.px[3600], b = x.px[1200]; if (!a || !b) return null; const ch = (1 / b) / (1 / a) - 1; return ch >= 0.15 ? 'Steamed (chance up 15%+)' : ch >= 0.05 ? 'Shortened 5 to 15%' : ch > -0.05 ? 'Steady' : ch > -0.15 ? 'Drifted 5 to 15%' : 'Drifted (chance down 15%+)' }
+  const move = (x: Runner) => { const a = x.px[ri(3600)], b = x.px[ri(1200)]; if (!a || !b) return null; const ch = (1 / b) / (1 / a) - 1; return ch >= 0.15 ? 'Steamed (chance up 15%+)' : ch >= 0.05 ? 'Shortened 5 to 15%' : ch > -0.05 ? 'Steady' : ch > -0.15 ? 'Drifted 5 to 15%' : 'Drifted (chance down 15%+)' }
   const mg = ['Steamed (chance up 15%+)', 'Shortened 5 to 15%', 'Steady', 'Drifted 5 to 15%', 'Drifted (chance down 15%+)']
-  const rows3 = mg.filter(g => runners.some(x => move(x) === g && x.rank[1200] <= 6)).map(g => {
-    const xs = runners.filter(x => move(x) === g && x.rank[1200] <= 6)
-    const b = summarise(xs.map(backAt(1200, false)).filter((v): v is Bet => !!v), xs.map(x => x.px[1200]! > x.sp ? 1 : 0))
+  const rows3 = mg.filter(g => runners.some(x => move(x) === g && x.rank[ri(1200)] <= 6)).map(g => {
+    const xs = runners.filter(x => move(x) === g && x.rank[ri(1200)] <= 6)
+    const b = summarise(xs.map(backAt(1200, false)).filter((v): v is Bet => !!v), xs.map(x => x.px[ri(1200)]! > x.sp ? 1 : 0))
     const l = summarise(xs.map(layAt(1200, false)).filter((v): v is Bet => !!v))
-    return [g, b.n.toLocaleString('en-GB'), fx(avg(xs.map(x => x.px[1200]! / x.sp))), pct(b.value), pct(b.roi), pct(l.value), pct(l.roi)]
+    return [g, b.n.toLocaleString('en-GB'), fx(avg(xs.map(x => x.px[ri(1200)]! / x.sp))), pct(b.value), pct(b.roi), pct(l.value), pct(l.roi)]
   })
   L.push('### 3. Steamers and drifters (top six, move from 60 to 20 minutes, then back or lay at 20)', '', table(['Move 60→20 min', 'Runners', 'Price ÷ SP', 'Back value', 'Back actual', 'Lay value', 'Lay actual'], rows3), '')
 
@@ -255,8 +256,8 @@ async function main() {
   for (const h of [[0, 14], [14, 17], [17, 24]]) conds.push({ name: h[0] === 0 ? 'before 2pm' : h[0] === 14 ? '2pm to 5pm' : 'after 5pm', test: x => x.hour >= h[0] && x.hour < h[1] })
   const rules: { name: string; make: (x: Runner) => Bet | null }[] = []
   for (const o of R_OFFSETS) for (const side of ['Back', 'Lay'] as const) {
-    for (const g of ['Favourite', '2nd fav', '3rd fav', '4th to 6th']) rules.push({ name: `${side} ${g.toLowerCase()} ${o / 60} min out (cautious price)`, make: x => rankName(x.rank[o]) === g ? (side === 'Back' ? backAt(o, true) : layAt(o, true))(x) : null })
-    for (const pb of ['under 2.0', '2.0 to 3.0', '3.0 to 4.0', '4.0 to 6.0', '6.0 to 10', '10 to 20']) rules.push({ name: `${side} any runner priced ${pb} ${o / 60} min out (cautious price)`, make: x => pband(x.px[o]) === pb ? (side === 'Back' ? backAt(o, true) : layAt(o, true))(x) : null })
+    for (const g of ['Favourite', '2nd fav', '3rd fav', '4th to 6th']) rules.push({ name: `${side} ${g.toLowerCase()} ${o / 60} min out (cautious price)`, make: x => rankName(x.rank[ri(o)]) === g ? (side === 'Back' ? backAt(o, true) : layAt(o, true))(x) : null })
+    for (const pb of ['under 2.0', '2.0 to 3.0', '3.0 to 4.0', '4.0 to 6.0', '6.0 to 10', '10 to 20']) rules.push({ name: `${side} any runner priced ${pb} ${o / 60} min out (cautious price)`, make: x => pband(x.px[ri(o)]) === pb ? (side === 'Back' ? backAt(o, true) : layAt(o, true))(x) : null })
   }
   const rs = search(runners, rules, conds, cut)
   L.push(...systemsSection('racing', rs.found, rs.tested))
@@ -274,8 +275,8 @@ async function main() {
     const fm = Array.from(new Set(sels.map(s => s.month))).sort()
     const fcut = fm[Math.floor(fm.length * 2 / 3)] ?? fm[fm.length - 1]
     L.push('', `## Football: back early, let it run`, '', `${fdays.length} days (${fm[0]} to ${fm[fm.length - 1]}), ${sels.length.toLocaleString('en-GB')} selections. The efficient price is the last price before kick-off. Checked on ${fcut} onwards.`, '')
-    const fBack = (o: number, cautious: boolean) => (s: Sel): Bet | null => { const raw = s.px[o]; if (!raw) return null; const pr = cautious ? tickDown(raw) : raw; return { month: s.month, value: backValue(pr, s.p), actual: backActual(pr, s.won) } }
-    const fLay = (o: number, cautious: boolean) => (s: Sel): Bet | null => { const raw = s.px[o]; if (!raw) return null; const pr = cautious ? tickUp(raw) : raw; return { month: s.month, value: layValue(pr, s.p), actual: layActual(pr, s.won) } }
+    const fBack = (o: number, cautious: boolean) => (s: Sel): Bet | null => { const raw = s.px[fi(o)]; if (!raw) return null; const pr = cautious ? tickDown(raw) : raw; return { month: s.month, value: backValue(pr, s.p), actual: backActual(pr, s.won) } }
+    const fLay = (o: number, cautious: boolean) => (s: Sel): Bet | null => { const raw = s.px[fi(o)]; if (!raw) return null; const pr = cautious ? tickUp(raw) : raw; return { month: s.month, value: layValue(pr, s.p), actual: layActual(pr, s.won) } }
     const fClose = (s: Sel): Bet => ({ month: s.month, value: backValue(s.close, s.p), actual: backActual(s.close, s.won) })
     for (const type of ['OVER_UNDER_25', 'BOTH_TEAMS_TO_SCORE', 'MATCH_ODDS']) {
       const ts = sels.filter(s => s.type === type)
@@ -283,20 +284,20 @@ async function main() {
       const sides = Array.from(new Set(ts.map(s => s.side))).sort()
       const rowsF: (string | number)[][] = []
       for (const sd of sides) for (const o of F_OFFSETS) {
-        const xs = ts.filter(s => s.side === sd && s.px[o])
-        const e = summarise(xs.map(fBack(o, false)).filter((b): b is Bet => !!b), xs.map(s => s.px[o]! > s.close ? 1 : 0))
+        const xs = ts.filter(s => s.side === sd && s.px[fi(o)])
+        const e = summarise(xs.map(fBack(o, false)).filter((b): b is Bet => !!b), xs.map(s => s.px[fi(o)]! > s.close ? 1 : 0))
         const c = summarise(xs.map(fBack(o, true)).filter((b): b is Bet => !!b))
         const cl = summarise(xs.map(fClose))
-        rowsF.push([sd, `${o / 60} min`, e.n.toLocaleString('en-GB'), fx(avg(xs.map(s => s.px[o]! / s.close))), Math.round(e.beatEff * 100) + '%', pct(e.value), pct(e.roi), pct(c.roi), pct(cl.roi)])
+        rowsF.push([sd, `${o / 60} min`, e.n.toLocaleString('en-GB'), fx(avg(xs.map(s => s.px[fi(o)]! / s.close))), Math.round(e.beatEff * 100) + '%', pct(e.value), pct(e.roi), pct(c.roi), pct(cl.roi)])
       }
       const title = type === 'OVER_UNDER_25' ? 'Over/Under 2.5 goals' : type === 'BOTH_TEAMS_TO_SCORE' ? 'Both teams to score' : 'Match Odds'
       L.push(`### ${title}`, '', table(['Selection', 'Back at', 'Bets', 'Price ÷ close', 'Beat close', 'Value', 'Actual', 'Actual (cautious)', 'Back at close'], rowsF), '')
     }
     const fconds: { name: string; test: (s: Sel) => boolean }[] = [{ name: 'all matches', test: () => true }]
     for (const cc of Array.from(new Set(sels.map(s => s.country)))) fconds.push({ name: `country ${cc}`, test: s => s.country === cc })
-    const fmove = (s: Sel) => { const a = s.px[10800] ?? s.px[7200], b = s.px[3600]; if (!a || !b) return null; const ch = (1 / b) / (1 / a) - 1; return ch >= 0.05 ? 'shortened' : ch <= -0.05 ? 'drifted' : 'steady' }
+    const fmove = (s: Sel) => { const a = s.px[fi(10800)] ?? s.px[fi(7200)], b = s.px[fi(3600)]; if (!a || !b) return null; const ch = (1 / b) / (1 / a) - 1; return ch >= 0.05 ? 'shortened' : ch <= -0.05 ? 'drifted' : 'steady' }
     for (const g of ['shortened', 'drifted', 'steady']) fconds.push({ name: `${g} from 3h to 1h out`, test: s => fmove(s) === g })
-    for (const [lo, hi] of [[1, 1.7], [1.7, 2.2], [2.2, 3], [3, 5], [5, 1000]]) fconds.push({ name: `priced ${lo} to ${hi === 1000 ? 'any' : hi} an hour out`, test: s => !!s.px[3600] && s.px[3600]! >= lo && s.px[3600]! < hi })
+    for (const [lo, hi] of [[1, 1.7], [1.7, 2.2], [2.2, 3], [3, 5], [5, 1000]]) fconds.push({ name: `priced ${lo} to ${hi === 1000 ? 'any' : hi} an hour out`, test: s => !!s.px[fi(3600)] && s.px[fi(3600)]! >= lo && s.px[fi(3600)]! < hi })
     const frules: { name: string; make: (s: Sel) => Bet | null }[] = []
     for (const type of ['OVER_UNDER_25', 'BOTH_TEAMS_TO_SCORE', 'MATCH_ODDS']) for (const sd of Array.from(new Set(sels.filter(s => s.type === type).map(s => s.side)))) for (const o of F_OFFSETS) for (const side of ['Back', 'Lay'] as const)
       frules.push({ name: `${side} ${sd} (${type === 'OVER_UNDER_25' ? 'O/U 2.5' : type === 'BOTH_TEAMS_TO_SCORE' ? 'BTTS' : 'Match Odds'}) ${o / 60} min out (cautious price)`, make: s => s.type === type && s.side === sd ? (side === 'Back' ? fBack(o, true) : fLay(o, true))(s) : null })
@@ -337,7 +338,7 @@ async function main() {
 //           the money leaving one horse has to go somewhere
 // Prices: get in at the last traded price (back) or one tick above (lay), and get out one
 // tick worse, so every trade pays a spread. Per £1 hedged stake, after commission.
-type Ev = { month: string; rt: string; n: number; kind: 'steam' | 'drift' | 'favDrift' | 'favSteam'; ticks: number; entry: number; exits: Record<string, number | null> }
+type Ev = { month: string; rt: string; n: number; kind: 'steam' | 'drift' | 'favDrift' | 'favSteam'; ticks: number; entry: number; exits: (number | null)[] }   // exits: one per HOLDS
 const HOLDS = [2, 5, 10, 0]                    // minutes; 0 = at the off
 const holdName = (h: number) => h ? `close after ${h} min` : 'close at the off'
 
@@ -363,7 +364,7 @@ function collectSignals(days: HistDay[], groups: Map<string, Ev[]>) {
       const atOff = byMin.get(0)
       if (!atOff || atOff.size < 3) continue
       const month = m.start_at.slice(0, 7), rt = m.race_type ?? 'Unknown', n = atOff.size
-      const exitsFor = (id: number, t: number) => Object.fromEntries(HOLDS.map(h => [String(h), (h ? byMin.get(t - h) : atOff)?.get(id) ?? null]))
+      const exitsFor = (id: number, t: number) => HOLDS.map(h => (h ? byMin.get(t - h) : atOff)?.get(id) ?? null)
       for (const k of [2, 3, 5]) for (const th of [4, 8, 15]) {
         const seen = new Set<string>()
         for (let t = 60; t >= 4; t--) {
@@ -416,7 +417,7 @@ function priceDiscovery(groups: Map<string, Ev[]>, cut: string): { lines: string
   for (const a of actions) {
     const evs = groups.get(`3|8|${a.kind}`) ?? []
     for (const h of HOLDS) {
-      const r = evs.map(e => { const x = e.exits[String(h)]; return x ? { month: e.month, value: 0, actual: hedge(a.side, e.entry, x) } : null }).filter((b): b is Bet => !!b)
+      const r = evs.map(e => { const x = e.exits[HOLDS.indexOf(h)]; return x ? { month: e.month, value: 0, actual: hedge(a.side, e.entry, x) } : null }).filter((b): b is Bet => !!b)
       if (r.length < 30) continue
       const sm = summarise(r)
       tbl.push([a.name, holdName(h), sm.n.toLocaleString('en-GB'), Math.round(r.filter(b => b.actual > 0).length / r.length * 100) + '%', pct(sm.roi, 2), fx(sm.t, 1), `${sm.monthsUp}/${sm.months}`])
@@ -435,7 +436,7 @@ function priceDiscovery(groups: Map<string, Ev[]>, cut: string): { lines: string
     const [k, th, kind] = key.split('|')
     for (const a of actions.filter(x => x.kind === kind)) for (const h of HOLDS) for (const f of filters) {
       tested++
-      const bets = evs.filter(f.test).map(e => { const x = e.exits[String(h)]; return x ? { month: e.month, value: 0, actual: hedge(a.side, e.entry, x) } : null }).filter((b): b is Bet => !!b)
+      const bets = evs.filter(f.test).map(e => { const x = e.exits[HOLDS.indexOf(h)]; return x ? { month: e.month, value: 0, actual: hedge(a.side, e.entry, x) } : null }).filter((b): b is Bet => !!b)
       const train = bets.filter(b => b.month < cut), test = bets.filter(b => b.month >= cut)
       if (train.length < 150 || test.length < 50) continue
       const s = summarise(train)
