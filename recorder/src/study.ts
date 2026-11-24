@@ -143,7 +143,7 @@ function footballSelections(days: HistDay[]): Sel[] {
         if (!c) return
         const side = m.market_type === 'MATCH_ODDS' ? (/draw/i.test(r.name) ? 'Draw' : i === 0 ? 'Home' : 'Away') : r.name.replace(/ 2\.5 Goals/i, '')
         const px = F_OFFSETS.map(o => { const x = path[String(o)]?.runners.find(q => q[0] === r.id); return x ? (x[1] ?? x[5]) : null })
-        rows.push({ month: m.start_at.slice(0, 7), country: m.country ?? '?', type: m.market_type, side, px, close: c, p: (1 / c) / book, won: m.winners!.includes(r.id) })
+        rows.push({ month: m.start_at.slice(0, 7), country: m.country ?? '?', type: m.market_type, side, px, close: c, p: (1 / c) / Math.max(1, book), won: m.winners!.includes(r.id) })
       })
     }
   }
@@ -151,14 +151,17 @@ function footballSelections(days: HistDay[]): Sel[] {
 }
 
 // ------------------------------------------------------------------ rule search with a time split
-type Cond = { name: string; test: (x: Runner) => boolean }
+// knownAt: seconds before the start when the filter's information is available; a rule
+// that bets earlier than that can't use it (that would be using the future).
+type Cond = { name: string; test: (x: Runner) => boolean; knownAt?: number }
 type Found = { rule: string; train: Summary; test: Summary; all: Summary; passed: boolean }
 
-function search<T extends { month: string }>(items: T[], rules: { name: string; make: (x: T) => Bet | null }[], conds: { name: string; test: (x: T) => boolean }[], cut: string) {
+function search<T extends { month: string }>(items: T[], rules: { name: string; at?: number; make: (x: T) => Bet | null }[], conds: { name: string; test: (x: T) => boolean; knownAt?: number }[], cut: string) {
   const found: Found[] = []
   let tested = 0
   for (const r of rules) {
     for (const c of conds) {
+      if (r.at !== undefined && c.knownAt !== undefined && r.at > c.knownAt) continue
       tested++
       const bets: Bet[] = []
       for (const x of items) { if (!c.test(x)) continue; const b = r.make(x); if (b) bets.push(b) }
@@ -252,12 +255,12 @@ async function main() {
   for (const rt of Array.from(new Set(runners.map(r => r.rt)))) conds.push({ name: rt, test: x => x.rt === rt })
   conds.push({ name: 'handicaps', test: x => x.hcap }, { name: 'non-handicaps', test: x => !x.hcap })
   for (const [lo, hi] of [[2, 7], [8, 11], [12, 16], [17, 99]]) conds.push({ name: `${lo}${hi === 99 ? '+' : ` to ${hi}`} runners`, test: x => x.n >= lo && x.n <= hi })
-  for (const g of mg) conds.push({ name: g.toLowerCase(), test: x => move(x) === g })
+  for (const g of mg) conds.push({ name: g.toLowerCase(), test: x => move(x) === g, knownAt: 1200 })
   for (const h of [[0, 14], [14, 17], [17, 24]]) conds.push({ name: h[0] === 0 ? 'before 2pm' : h[0] === 14 ? '2pm to 5pm' : 'after 5pm', test: x => x.hour >= h[0] && x.hour < h[1] })
-  const rules: { name: string; make: (x: Runner) => Bet | null }[] = []
+  const rules: { name: string; at?: number; make: (x: Runner) => Bet | null }[] = []
   for (const o of R_OFFSETS) for (const side of ['Back', 'Lay'] as const) {
-    for (const g of ['Favourite', '2nd fav', '3rd fav', '4th to 6th']) rules.push({ name: `${side} ${g.toLowerCase()} ${o / 60} min out (cautious price)`, make: x => rankName(x.rank[ri(o)]) === g ? (side === 'Back' ? backAt(o, true) : layAt(o, true))(x) : null })
-    for (const pb of ['under 2.0', '2.0 to 3.0', '3.0 to 4.0', '4.0 to 6.0', '6.0 to 10', '10 to 20']) rules.push({ name: `${side} any runner priced ${pb} ${o / 60} min out (cautious price)`, make: x => pband(x.px[ri(o)]) === pb ? (side === 'Back' ? backAt(o, true) : layAt(o, true))(x) : null })
+    for (const g of ['Favourite', '2nd fav', '3rd fav', '4th to 6th']) rules.push({ name: `${side} ${g.toLowerCase()} ${o / 60} min out (cautious price)`, at: o, make: x => rankName(x.rank[ri(o)]) === g ? (side === 'Back' ? backAt(o, true) : layAt(o, true))(x) : null })
+    for (const pb of ['under 2.0', '2.0 to 3.0', '3.0 to 4.0', '4.0 to 6.0', '6.0 to 10', '10 to 20']) rules.push({ name: `${side} any runner priced ${pb} ${o / 60} min out (cautious price)`, at: o, make: x => pband(x.px[ri(o)]) === pb ? (side === 'Back' ? backAt(o, true) : layAt(o, true))(x) : null })
   }
   const rs = search(runners, rules, conds, cut)
   L.push(...systemsSection('racing', rs.found, rs.tested))
@@ -293,14 +296,14 @@ async function main() {
       const title = type === 'OVER_UNDER_25' ? 'Over/Under 2.5 goals' : type === 'BOTH_TEAMS_TO_SCORE' ? 'Both teams to score' : 'Match Odds'
       L.push(`### ${title}`, '', table(['Selection', 'Back at', 'Bets', 'Price ÷ close', 'Beat close', 'Value', 'Actual', 'Actual (cautious)', 'Back at close'], rowsF), '')
     }
-    const fconds: { name: string; test: (s: Sel) => boolean }[] = [{ name: 'all matches', test: () => true }]
+    const fconds: { name: string; test: (s: Sel) => boolean; knownAt?: number }[] = [{ name: 'all matches', test: () => true }]
     for (const cc of Array.from(new Set(sels.map(s => s.country)))) fconds.push({ name: `country ${cc}`, test: s => s.country === cc })
     const fmove = (s: Sel) => { const a = s.px[fi(10800)] ?? s.px[fi(7200)], b = s.px[fi(3600)]; if (!a || !b) return null; const ch = (1 / b) / (1 / a) - 1; return ch >= 0.05 ? 'shortened' : ch <= -0.05 ? 'drifted' : 'steady' }
-    for (const g of ['shortened', 'drifted', 'steady']) fconds.push({ name: `${g} from 3h to 1h out`, test: s => fmove(s) === g })
-    for (const [lo, hi] of [[1, 1.7], [1.7, 2.2], [2.2, 3], [3, 5], [5, 1000]]) fconds.push({ name: `priced ${lo} to ${hi === 1000 ? 'any' : hi} an hour out`, test: s => !!s.px[fi(3600)] && s.px[fi(3600)]! >= lo && s.px[fi(3600)]! < hi })
-    const frules: { name: string; make: (s: Sel) => Bet | null }[] = []
+    for (const g of ['shortened', 'drifted', 'steady']) fconds.push({ name: `${g} from 3h to 1h out`, test: s => fmove(s) === g, knownAt: 3600 })
+    for (const [lo, hi] of [[1, 1.7], [1.7, 2.2], [2.2, 3], [3, 5], [5, 1000]]) fconds.push({ name: `priced ${lo} to ${hi === 1000 ? 'any' : hi} an hour out`, test: s => !!s.px[fi(3600)] && s.px[fi(3600)]! >= lo && s.px[fi(3600)]! < hi, knownAt: 3600 })
+    const frules: { name: string; at?: number; make: (s: Sel) => Bet | null }[] = []
     for (const type of ['OVER_UNDER_25', 'BOTH_TEAMS_TO_SCORE', 'MATCH_ODDS']) for (const sd of Array.from(new Set(sels.filter(s => s.type === type).map(s => s.side)))) for (const o of F_OFFSETS) for (const side of ['Back', 'Lay'] as const)
-      frules.push({ name: `${side} ${sd} (${type === 'OVER_UNDER_25' ? 'O/U 2.5' : type === 'BOTH_TEAMS_TO_SCORE' ? 'BTTS' : 'Match Odds'}) ${o / 60} min out (cautious price)`, make: s => s.type === type && s.side === sd ? (side === 'Back' ? fBack(o, true) : fLay(o, true))(s) : null })
+      frules.push({ name: `${side} ${sd} (${type === 'OVER_UNDER_25' ? 'O/U 2.5' : type === 'BOTH_TEAMS_TO_SCORE' ? 'BTTS' : 'Match Odds'}) ${o / 60} min out (cautious price)`, at: o, make: s => s.type === type && s.side === sd ? (side === 'Back' ? fBack(o, true) : fLay(o, true))(s) : null })
     const fs = search(sels, frules, fconds, fcut)
     footballFound = fs.found
     L.push(...systemsSection('football', fs.found, fs.tested))
@@ -380,9 +383,13 @@ function collectSignals(days: HistDay[], groups: Map<string, Ev[]>) {
             seen.add(id + kind)
             const key = `${k}|${th}|${kind}`
             if (!groups.has(key)) groups.set(key, [])
-            // get in a minute after the signal (reaction time, and the live prices are delayed)
+            // get in a minute after the signal (reaction time, and the live prices are delayed),
+            // and only if the move is still there then: one stray trade at an odd price shows
+            // up as a spike in the last traded price that you could never have traded at
             const entry = byMin.get(t - 1)?.get(id)
             if (!entry) return
+            const held = ticksBetween(was, entry)
+            if (kind === 'steam' ? held > -th : held < th) return
             groups.get(key)!.push({ month, rt, n, kind, ticks: mv, entry, exits: exitsFor(id, t - 1) })
             // the favourite moved: what happens to the 2nd favourite?
             if (i === 0 && order[1]) {
@@ -391,6 +398,9 @@ function collectSignals(days: HistDay[], groups: Map<string, Ev[]>) {
                 seen.add('fav' + k2)
                 const key2 = `${k}|${th}|${k2}`
                 if (!groups.has(key2)) groups.set(key2, [])
+                const favNext = byMin.get(t - 1)?.get(id)
+                const favHeld = favNext ? ticksBetween(was, favNext) : 0
+                if (kind === 'steam' ? favHeld > -th : favHeld < th) return
                 const e2 = byMin.get(t - 1)?.get(order[1][0])
                 if (e2) groups.get(key2)!.push({ month, rt, n, kind: k2, ticks: mv, entry: e2, exits: exitsFor(order[1][0], t - 1) })
               }
@@ -412,7 +422,7 @@ function priceDiscovery(groups: Map<string, Ev[]>, cut: string): { lines: string
     { kind: 'favSteam', name: 'Favourite steams: lay the 2nd favourite', side: 'lay' }, { kind: 'favSteam', name: 'Favourite steams: back the 2nd favourite', side: 'back' },
   ]
   const L: string[] = ['', '### 5. Trading the price discovery (hedged, minute by minute)', '',
-    'Signals from the minute-by-minute prices in the last hour: the first time a top-six runner moves 8+ ticks within 3 minutes (other sizes and speeds are in the search below). Each trade gets in one minute after the signal (time to react, and live prices on the free key are delayed), and in and out one tick worse than the last traded price, so it pays a spread both ways. Figures per £1 hedged stake, after commission.', '']
+    'Signals from the minute-by-minute prices in the last hour: the first time a top-six runner moves 8+ ticks within 3 minutes (other sizes and speeds are in the search below). Each trade gets in one minute after the signal, only if the move is still there (time to react, the delay on the free key, and to skip one-off spikes from a single stray trade), and in and out one tick worse than the last traded price, so it pays a spread both ways. Figures per £1 hedged stake, after commission.', '']
   const tbl: (string | number)[][] = []
   for (const a of actions) {
     const evs = groups.get(`3|8|${a.kind}`) ?? []
