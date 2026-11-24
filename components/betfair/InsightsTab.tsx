@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BtSport } from '@/lib/betfair/backtest'
 import { PriceSourceField, PriceSourceNote, type Source } from './PriceSource'
+import ScoutReport from './ScoutReport'
 import { DEFAULT_FILTER, OFFSETS, PLAN, PRICE_BANDS, applyFilter, compensation, coverage, findSystems, label, moneyTimeline, momentum, moveVsResult, ruleName, volumeEffects, weightOfMoney,
   type Filter, type Found, type PathMarket } from '@/lib/betfair/insights'
 
@@ -143,6 +144,7 @@ export default function InsightsTab({ onOpenBacktest }: { onOpenBacktest: (prese
 
   return (
     <div style={{ display: 'grid', gap: 14, marginTop: 14 }}>
+      <ScoutReport />
       <Section title="Look for clues in the prices and the money" note="Studies every recorded market in the date range: how prices and matched money move in the run-up to the off, and whether any of it says something about results. Then scans hundreds of simple rules and checks the best ones on days it didn't use to find them.">
         <div style={{ ...grid, marginBottom: 12 }}>
           <Field label="Sport"><select style={input} value={sport} onChange={e => { setSport(e.target.value as BtSport); setFilter(DEFAULT_FILTER) }}>

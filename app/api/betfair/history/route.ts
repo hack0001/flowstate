@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { BtSport } from '@/lib/betfair/backtest'
 import { requireUser } from '@/lib/supabaseServer'
-import { readHistoryIndex } from '@/lib/betfair/archiveFile'
+import { readHistoryIndex, readScoutReport } from '@/lib/betfair/archiveFile'
 
 // What Betfair history has been imported (for the Backtest and Insights tabs).
 //   GET ?sport=racing|football|tennis|golf -> { days, races (markets), from, to } or { days: 0 }
+//   GET ?report=latest -> { report: markdown | null } (the scout's latest report)
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   const auth = await requireUser()
   if (!auth.ok) return auth.response
+  if (req.nextUrl.searchParams.get('report') === 'latest') {
+    const r = await readScoutReport(auth.supabase)
+    return NextResponse.json(r && typeof r === 'object' ? { report: null, error: r.error } : { report: r })
+  }
   const q = req.nextUrl.searchParams.get('sport') ?? 'racing'
   const sport = (['racing', 'football', 'tennis', 'golf'].includes(q) ? q : 'racing') as BtSport
   const idx = await readHistoryIndex(auth.supabase, sport)

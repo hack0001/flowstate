@@ -56,3 +56,18 @@ async function readHistoryJson<T>(userDb: SupabaseClient, path: string, gz: bool
   if (/bucket not found/i.test(last)) return { error: 'Historical data isn\'t set up yet: run supabase/migrations/058_betfair_history.sql in the Supabase SQL editor, then import (see the Setup tab).' }
   return { error: `Historical prices couldn't be read: ${last}` }
 }
+
+// The scout's latest report (recorder/src/study.ts), as Markdown. null if it hasn't run yet.
+export async function readScoutReport(userDb: SupabaseClient): Promise<string | null | { error: string }> {
+  const tries: (() => SupabaseClient)[] = [() => userDb]
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) tries.push(() => createSupabaseServiceClient())
+  let last = ''
+  for (const client of tries) {
+    try {
+      const { data, error } = await client().storage.from(HISTORY_BUCKET).download('reports/latest.md')
+      if (error || !data) { last = error?.message ?? 'missing'; continue }
+      return await data.text()
+    } catch (e) { last = e instanceof Error ? e.message : String(e) }
+  }
+  return /not found|404/i.test(last) && !/bucket/i.test(last) ? null : { error: `The scout report couldn't be read: ${last}` }
+}

@@ -67,6 +67,17 @@ export default function SetupTab({ liveReady, server }: { liveReady: boolean | u
         <p style={{ margin: '8px 0 0', color: C.mut, fontSize: 13 }}>What&apos;s kept: racing (GB and IE Win markets) every minute in the last 75 minutes; football (the big leagues&apos; countries: England, Scotland, Spain, Italy, Germany, France, Netherlands, Portugal) Match Odds, Over/Under 2.5 and Both Teams to Score, every minute in the last hour and in play; tennis singles Match Odds, every minute in the last 30 minutes and every 2 minutes in play; golf Winner markets hourly.</p>
       </Section>
 
+      <Section title="Weight of money and traded volume">
+        <p style={{ margin: '0 0 6px' }}>Signals like the money waiting across the whole price ladder, or how much is being traded on each horse minute by minute, need data the free sources don&apos;t have:</p>
+        <ul style={{ margin: 0, paddingLeft: 20 }}>
+          <li><b>Free delayed key</b> (what you have): best prices and the money at them, 1 to 180 seconds late; no traded volume per runner.</li>
+          <li><b>Free Basic history</b>: last traded price only.</li>
+          <li><b>Live app key</b> (one-off fee from Betfair, needed anyway to bet for real): real-time prices, the full ladder and traded volume per runner. The recorder can then capture weight of money and volume from that day on, and the scout can test them.</li>
+          <li><b>Paid history</b> (Betfair&apos;s Advanced or Pro plans): past markets with the ladder and traded volume, to test those signals over years straight away.</li>
+        </ul>
+        <p style={{ margin: '8px 0 0', color: C.mut, fontSize: 13 }}>Until then, the scout tests what the free data can show: whether minute-by-minute moves carry on or reverse, and how money moving off one horse shows up on the others.</p>
+      </Section>
+
       <Section title="Start collecting data">
         <p style={{ margin: '0 0 6px', color: C.mut }}>Nothing is collected until you press Start. Once the key is in Vercel:</p>
         <ol style={{ margin: 0, paddingLeft: 20 }}>

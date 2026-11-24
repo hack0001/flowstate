@@ -34,3 +34,13 @@ export function tickSize(price: number): number {
 export function tickUp(price: number): number {
   return Math.min(1000, Math.round((price + tickSize(price)) * 100) / 100)
 }
+
+// One tick below a price (where the back price usually sits when a trade went through at the lay price).
+export function tickDown(price: number): number {
+  for (const [lo, hi, step] of BANDS) if (price <= hi + 1e-9) return Math.max(1.01, Math.round((price - (price - step < lo - 1e-9 ? stepBelow(lo) : step)) * 100) / 100)
+  return 990
+}
+function stepBelow(lo: number): number {
+  for (const [, hi, step] of BANDS) if (Math.abs(hi - lo) < 1e-9) return step
+  return 0.01
+}

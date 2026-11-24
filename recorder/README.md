@@ -112,6 +112,17 @@ It runs in the background, one sport after another, at the same 8 requests a sec
 
 **Storage:** Betfair's files are read on the server and thrown away; only the sample above is kept, as one gzipped file per sport per day (`betfair-history/<sport>/YYYY-MM-DD.json.gz`). Expect roughly 100 to 150 MB a year for all four sports (racing alone 20 to 40 MB), within Supabase's free 1 GB of file storage, and nothing in the database. The download itself is free on Lightsail (incoming data isn't charged).
 
+## The scout: testing ideas on the history
+
+Once history is imported, the scout tests betting ideas on it and writes a report you can read in FlowState (Betfair → Insights → Scout report):
+
+```
+sudo bash /opt/flowstate/recorder/deploy/study.sh           # run now (a few minutes)
+sudo bash /opt/flowstate/recorder/deploy/study.sh weekly    # also every Monday at 6am
+```
+
+It measures every idea against the efficient price (Betfair SP for racing, the last price before kick-off for football): backing earlier only pays if the earlier price beats that, after commission. It reports racing (price 20 minutes out against SP by rank, the best time to back the favourite, steamers and drifters) and football (Over/Under 2.5, Both Teams to Score, Match Odds by entry time), then searches about 2,000 simple rules. A rule only passes if it was profitable on the earlier two-thirds of the months, stayed profitable on the later third, its price beat the efficient price steadily, and most months were up. It says how many rules would pass by luck alone, and keeps a ledger of passed systems that it re-checks every run.
+
 ## Day to day
 
 | To… | Run on the server |
