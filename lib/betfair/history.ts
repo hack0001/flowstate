@@ -29,7 +29,7 @@ export type HistMarket = {
   s: [number, (number | null)[], 1?][]   // [unix seconds, last traded price per runner, 1 if in play]
 }
 export type HistDay = { v: 1; day: string; source: 'betfair-basic'; markets: HistMarket[] }
-export type HistIndex = { updated: string; days: Record<string, number> }
+export type HistIndex = { updated: string; days: Record<string, number>; folders?: Record<string, number> }   // folders: Betfair's daily folders fully imported
 
 export const HISTORY_BUCKET = 'betfair-history'
 export const historyPath = (sport: BtSport, day: string) => `${sport}/${day}.json.gz`

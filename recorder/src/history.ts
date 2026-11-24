@@ -98,7 +98,15 @@ async function importSport(sport: BtSport, from: string, to: string, force: bool
     if (error) log.warn('Index not saved:', error.message)
   }
 
-  let totalDays = 0, totalRaces = 0, totalBytes = 0, failedFiles = 0
+  let failedFiles = 0, daysDone = 0
+  const recent = new Map<string, HistMarket[]>()       // days saved recently in this run
+  const writtenThisRun = new Set<string>()
+  const sizes = new Map<string, number>(), counts = new Map<string, number>()
+  const loadDay = async (d: string): Promise<HistMarket[]> => {
+    const { data } = await store.download(historyPath(sport, d))
+    if (!data) return []
+    try { return (JSON.parse(zlib.gunzipSync(Buffer.from(await data.arrayBuffer())).toString('utf8')) as HistDay).markets ?? [] } catch { return [] }
+  }
   for (let m = new Date(from.slice(0, 7) + '-01T00:00:00Z'); iso(m) <= to; m = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 1))) {
     const monthEnd = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 0))
     const a = new Date(Math.max(m.getTime(), new Date(from).getTime())), b = new Date(Math.min(monthEnd.getTime(), new Date(to).getTime()))
@@ -106,7 +114,11 @@ async function importSport(sport: BtSport, from: string, to: string, force: bool
       fromDay: a.getUTCDate(), fromMonth: a.getUTCMonth() + 1, fromYear: a.getUTCFullYear(), toDay: b.getUTCDate(), toMonth: b.getUTCMonth() + 1, toYear: b.getUTCFullYear(),
       marketTypesCollection: spec.types, countriesCollection: spec.countries, fileTypeCollection: ['M'] }
     let paths: string[] = []
-    try { paths = await bf.historic<string[]>('DownloadListOfFiles', filter) } catch (e) { log.error(`${iso(a)} to ${iso(b)}: couldn't list files: ${errText(e)}`); continue }
+    try { paths = await bf.historic<string[]>('DownloadListOfFiles', filter) } catch (e) {
+      if (/not purchased/i.test(errText(e))) log.warn(`${spec.name} ${iso(a)} to ${iso(b)}: not on your Betfair account. Add it at historicdata.betfair.com (${spec.name}, Basic plan, £0) and run this again.`)
+      else log.error(`${spec.name} ${iso(a)} to ${iso(b)}: couldn't list files: ${errText(e)}`)
+      continue
+    }
     if (!paths.length) {
       log.warn(`${spec.name} ${iso(a)} to ${iso(b)}: no files. Add this period to your account first: historicdata.betfair.com → ${spec.name} → Basic plan → choose the dates → Buy now (free).`)
       continue
@@ -122,7 +134,7 @@ async function importSport(sport: BtSport, from: string, to: string, force: bool
     log.info(`${spec.name}, ${MONTHS[m.getUTCMonth()]} ${m.getUTCFullYear()}: ${paths.length} markets on ${byDay.size} days`)
 
     for (const [day, files] of [...byDay.entries()].sort()) {
-      if (!force && index.days[day]) continue
+      if (!force && index.folders?.[day]) continue          // this Betfair folder was fully imported before
       const markets: HistMarket[] = []
       let dayFailed = 0
       const queue = [...files]
@@ -142,7 +154,17 @@ async function importSport(sport: BtSport, from: string, to: string, force: bool
       // file by the races' own (UTC) date, which is what the Backtest and Insights tabs ask for
       const groups = new Map<string, HistMarket[]>()
       for (const mk of markets) { const d = mk.start.slice(0, 10); groups.set(d, [...(groups.get(d) ?? []), mk]) }
-      for (const [d, ms] of groups) {
+      for (const [d, fresh] of groups) {
+        // A day's markets can come from more than one of Betfair's daily folders (races
+        // listed the day before, matches that cross midnight), so add to the day's file
+        // rather than replacing it.
+        let ms = fresh
+        const before = recent.get(d) ?? (writtenThisRun.has(d) || !force ? await loadDay(d) : [])
+        if (before.length) {
+          const byId = new Map(before.map(x => [x.id, x]))
+          for (const x of fresh) byId.set(x.id, x)
+          ms = [...byId.values()].sort((x, y) => x.start.localeCompare(y.start))
+        }
         const file: HistDay = { v: 1, day: d, source: 'betfair-basic', markets: ms }
         const gz = zlib.gzipSync(Buffer.from(JSON.stringify(file)), { level: 9 })
         let saved = false
@@ -153,14 +175,19 @@ async function importSport(sport: BtSport, from: string, to: string, force: bool
         }
         if (!saved) { log.error(`${d}: not saved; it will be retried next run`); continue }
         if (!dayFailed) index.days[d] = ms.length           // a day with failed downloads is tried again next run
-        totalDays++; totalRaces += ms.length; totalBytes += gz.length
+        else if (index.days[d]) index.days[d] = ms.length
+        writtenThisRun.add(d); recent.set(d, ms); sizes.set(d, gz.length); counts.set(d, ms.length)
         log.info(`${spec.name} ${d}: ${ms.length} markets saved (${(gz.length / 1024).toFixed(0)} KB)`)
       }
-      if (totalDays % 7 === 0) await saveIndex()
+      if (!dayFailed) (index.folders ??= {})[day] = files.length
+      // keep only the last couple of weeks in memory; older days are re-read if they turn up again
+      for (const k of [...recent.keys()]) if (k < iso(new Date(new Date(day).getTime() - 14 * 86_400_000))) recent.delete(k)
+      if (++daysDone % 7 === 0) await saveIndex()
     }
     await saveIndex()
   }
   await saveIndex()
+  const totalDays = writtenThisRun.size, totalRaces = [...counts.values()].reduce((a, b) => a + b, 0), totalBytes = [...sizes.values()].reduce((a, b) => a + b, 0)
   log.info(`${spec.name} done: ${totalDays} days, ${totalRaces} markets, ${(totalBytes / 1024 / 1024).toFixed(1)} MB${failedFiles ? `, ${failedFiles} files couldn't be downloaded (run the same command again to retry those days)` : ''}.`)
 }
 
