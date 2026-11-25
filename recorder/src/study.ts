@@ -166,11 +166,11 @@ type Found = { rule: string; train: Summary; test: Summary; all: Summary; pTrain
 // With thousands of rules tried, some will have tiny p-values by luck, so each rule also gets a
 // q-value (Benjamini-Hochberg): roughly, the share of rules this good that would be luck. A rule
 // passes only if all of these hold:
-//   p (all months) below ALPHA, the threshold you set (default 0.005)
+//   p (all months) below ALPHA, the threshold you set (default 0.05)
 //   p on the later months alone below 0.05 (it kept working on data it wasn't found on)
 //   q below 0.10 (unlikely to be one of the lucky ones out of everything tried)
 //   at least 60% of months profitable
-export const ALPHA = Number(process.env.SCOUT_ALPHA ?? 0.005)
+export const ALPHA = Number(process.env.SCOUT_ALPHA ?? 0.05)
 function normCdf(z: number) {   // Abramowitz-Stegun approximation
   const t = 1 / (1 + 0.2316419 * Math.abs(z)), d = 0.3989423 * Math.exp(-z * z / 2)
   const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))))
@@ -246,7 +246,8 @@ async function main() {
   log.info('Scout: loading racing history')
   const runners: Runner[] = []
   const signals = new Map<string, Ev[]>()
-  const rdayCount = await forEachDay(store, 'racing', d => { for (const r of racingRunners([d])) runners.push(r); collectSignals([d], signals) })
+  const samples: Sample[] = []
+  const rdayCount = await forEachDay(store, 'racing', d => { for (const r of racingRunners([d])) runners.push(r); collectSignals([d], signals, samples) })
   const rdays = { length: rdayCount }
   log.info(`Scout: ${rdayCount} racing days, ${runners.length} runners`)
   const months = Array.from(new Set(runners.map(r => r.month))).sort()
@@ -316,6 +317,8 @@ async function main() {
   L.push(...systemsSection('racing', rs.found, rs.tested))
   const hh = horseHistory(runners, cut)
   L.push(...hh.lines)
+  const lab = signalLab(samples, cut)
+  L.push(...lab.lines)
   const pd = priceDiscovery(signals, cut)
   L.push(...pd.lines)
 
@@ -393,6 +396,7 @@ async function main() {
   for (const f of rs.found) if (f.passed) passedNow.set('racing: ' + f.rule, f)
   for (const f of pd.found) if (f.passed) passedNow.set('racing trading: ' + f.rule, f)
   for (const f of hh.found) if (f.passed) passedNow.set('racing form: ' + f.rule, f)
+  for (const f of lab.found) if (f.passed) passedNow.set('racing short-term: ' + f.rule, f)
   for (const f of footballFound) if (f.passed) passedNow.set('football: ' + f.rule, f)
   for (const f of inPlayFound) if (f.passed) passedNow.set('football in-play: ' + f.rule, f)
   for (const f of dcFound) if (f.passed) passedNow.set('football model: ' + f.rule, f)
@@ -473,6 +477,105 @@ function horseHistory(runners: Runner[], cut: string): { lines: string[]; found:
   return { lines: L, found: res.found }
 }
 
+// ------------------------------------------------------------------ signal lab: predicting the next few minutes
+// At 60, 48, 36, 24 and 12 minutes before the off (far enough apart that one horse's trades don't
+// overlap), every top-six horse gets a set of signals, and we record what its price did over the
+// next 5 and 10 minutes. Then: which signals predict the move, and can a back or lay trade
+// (one tick worse each way, hedged) make money from it?
+//
+// Crossover points: Betfair's tick size doubles at 2.0 (0.01 → 0.02), and changes again at 3, 4,
+// 6, 10, 20, 30, 50 and 100. Lay just below a crossover and each tick it drifts past is worth
+// more than each tick it shortens, so the same number of ticks either way is a profit. The lab
+// tests whether that asymmetry pays, after the spread.
+const BOUNDS = [2, 3, 4, 6, 10, 20, 30, 50, 100]
+type Sample = {
+  month: string; rt: string; n: number; hcap: boolean; t: number; rank: number; price: number
+  mom3: number; mom10: number; rangePos: number | null; vol: number; below: number; above: number
+  fut5: number | null; fut10: number | null; x5: number | null; x10: number | null   // ticks moved, and the price, 5 and 10 minutes later
+  xOff: number | null
+}
+// ticks to the next crossover above the price (how far below it the price sits), and to the one below
+function crossoverDistance(p: number) {
+  const up = BOUNDS.find(b => b > p + 1e-9), dn = [...BOUNDS].reverse().find(b => b < p - 1e-9)
+  return { below: up ? ticksBetween(p, up) : 999, above: dn ? ticksBetween(dn, p) : 999 }
+}
+function addSamples(out: Sample[], byMin: Map<number, Map<number, number>>, atOff: Map<number, number>, month: string, rt: string, n: number, name: string | null | undefined, volAt: (t: number) => number) {
+  const hcap = /hcap|handicap/i.test(name ?? '')
+  for (const t of [60, 48, 36, 24, 12]) {
+    const now = byMin.get(t)
+    if (!now) continue
+    const order = [...now.entries()].sort((a, b) => a[1] - b[1]).slice(0, 6)
+    order.forEach(([id, px], i) => {
+      const p3 = byMin.get(t + 3)?.get(id), p10 = byMin.get(t + 10)?.get(id)
+      const hist: number[] = []
+      for (let j = t; j <= t + 10; j++) { const v = byMin.get(j)?.get(id); if (v) hist.push(v) }
+      const lo = Math.min(...hist), hi = Math.max(...hist)
+      const x5 = byMin.get(t - 5)?.get(id) ?? null, x10 = byMin.get(t - 10)?.get(id) ?? null
+      const { below, above } = crossoverDistance(px)
+      out.push({ month, rt, n, hcap, t, rank: i + 1, price: px, mom3: p3 ? ticksBetween(p3, px) : 0, mom10: p10 ? ticksBetween(p10, px) : 0,
+        rangePos: hist.length >= 5 && hi > lo ? (ticksBetween(lo, px)) / ticksBetween(lo, hi) : null, vol: volAt(t), below, above,
+        fut5: x5 ? ticksBetween(px, x5) : null, fut10: x10 ? ticksBetween(px, x10) : null, x5, x10, xOff: atOff.get(id) ?? null })
+    })
+  }
+}
+
+function signalLab(samples: Sample[], cut: string): { lines: string[]; found: Found[] } {
+  const L: string[] = ['', '### 7. Predicting the next few minutes (signal lab)', '']
+  if (samples.length < 5000) { L.push('Not enough minute-by-minute history yet.'); return { lines: L, found: [] } }
+  // A. how well each signal predicts the next 5 minutes (rank correlation), and the move by fifths of the signal
+  const sigs: { name: string; get: (x: Sample) => number | null }[] = [
+    { name: 'move in the last 3 min (ticks)', get: x => x.mom3 }, { name: 'move in the last 10 min (ticks)', get: x => x.mom10 },
+    { name: 'place in its 10-min range (0 = low, 1 = high)', get: x => x.rangePos }, { name: 'race volatility (ticks/min)', get: x => x.vol },
+    { name: 'ticks below the next crossover', get: x => Math.min(x.below, 30) }, { name: 'price', get: x => x.price }, { name: 'minutes before the off', get: x => x.t },
+  ]
+  const spearman = (xs: number[], ys: number[]) => {
+    const rank = (v: number[]) => { const o = v.map((x, i) => [x, i] as const).sort((a, b) => a[0] - b[0]); const r = new Array(v.length); o.forEach(([, i], k) => { r[i] = k }); return r as number[] }
+    const rx = rank(xs), ry = rank(ys), n = xs.length, mx = (n - 1) / 2
+    let c = 0, vx = 0, vy = 0
+    for (let i = 0; i < n; i++) { c += (rx[i] - mx) * (ry[i] - mx); vx += (rx[i] - mx) ** 2; vy += (ry[i] - mx) ** 2 }
+    return c / Math.sqrt(vx * vy)
+  }
+  const rowsA: (string | number)[][] = []
+  for (const sg of sigs) {
+    const pairs = samples.map(x => [sg.get(x), x.fut5] as const).filter((p): p is readonly [number, number] => p[0] !== null && p[1] !== null)
+    if (pairs.length < 1000) continue
+    const r = spearman(pairs.map(p => p[0]), pairs.map(p => p[1]))
+    const tr = r * Math.sqrt((pairs.length - 2) / Math.max(1e-9, 1 - r * r))
+    const sorted = [...pairs].sort((a, b) => a[0] - b[0]), q = (k: number) => sorted.slice(Math.floor(sorted.length * k / 5), Math.floor(sorted.length * (k + 1) / 5))
+    rowsA.push([sg.name, pairs.length.toLocaleString('en-GB'), fx(r, 3), pfmt(2 * (1 - normCdf(Math.abs(tr)))), ...[0, 1, 2, 3, 4].map(k => sgn1(avg(q(k).map(p => p[1])), 2))])
+  }
+  L.push('How each signal relates to the price move over the next 5 minutes (in ticks; minus = shortened). The last five columns are the average next move for the lowest fifth of the signal up to the highest. A correlation near zero means the signal tells you little; the p-value says whether it is more than chance.', '')
+  L.push(table(['Signal', 'Cases', 'Correlation', 'p', 'Lowest 5th', '2nd', '3rd', '4th', 'Highest 5th'], rowsA), '')
+
+  // B. crossover points: the same number of ticks is worth more on one side of 2.0 (and 3, 4, 6, 10...)
+  const near = samples.filter(x => x.below >= 1 && x.below <= 3 && x.fut10 !== null), far = samples.filter(x => x.below >= 8 && x.above >= 8 && x.fut10 !== null)
+  const layRet = (x: Sample, exit: number | null) => exit ? hedge('lay', x.price, exit) : null
+  const cell = (xs: Sample[], f: (x: Sample) => number | null) => { const v = xs.map(f).filter((z): z is number => z !== null); return v.length ? `${pct(avg(v), 2)} (n ${v.length.toLocaleString('en-GB')}, p ${pfmt(pOf(tStat(v)))})` : '—' }
+  L.push('Crossover points: lay a horse 1 to 3 ticks below a crossover (just under 2.0, 3.0, 4.0, 6.0, 10...) against horses well away from one, then hedge. Return per £1, one tick worse each way, after commission:', '')
+  L.push(table(['Hedge after', 'Just below a crossover', 'Away from crossovers'], [['5 min', cell(near, x => layRet(x, x.x5)), cell(far, x => layRet(x, x.x5))], ['10 min', cell(near, x => layRet(x, x.x10)), cell(far, x => layRet(x, x.x10))], ['at the off', cell(near, x => layRet(x, x.xOff)), cell(far, x => layRet(x, x.xOff))]]), '')
+
+  // C. rule search: back or lay, hedge after 5 or 10 minutes or at the off, with signal filters (alone and in pairs)
+  const rules: { name: string; make: (x: Sample) => Bet | null }[] = []
+  for (const side of ['back', 'lay'] as const) for (const [h, nm] of [['x5', 'hedge after 5 min'], ['x10', 'hedge after 10 min'], ['xOff', 'hedge at the off']] as const)
+    rules.push({ name: `${side === 'back' ? 'Back' : 'Lay'}, ${nm}`, make: x => { const e = x[h]; return e ? { month: x.month, value: 0, actual: hedge(side, x.price, e) } : null } })
+  const F: Filter<Sample>[] = [{ name: 'all', group: 'all', test: () => true }]
+  for (const [lo, hi, nm] of [[-999, -6, 'shortened 6+ ticks in 3 min'], [-5, -2, 'shortened 2 to 5 ticks'], [-1, 1, 'steady'], [2, 5, 'drifted 2 to 5 ticks'], [6, 999, 'drifted 6+ ticks in 3 min']] as const) F.push({ name: nm, group: 'mom3', test: x => x.mom3 >= lo && x.mom3 <= hi })
+  for (const [lo, hi, nm] of [[-999, -10, 'shortened 10+ ticks in 10 min'], [10, 999, 'drifted 10+ ticks in 10 min']] as const) F.push({ name: nm, group: 'mom10', test: x => x.mom10 >= lo && x.mom10 <= hi })
+  F.push({ name: 'at the bottom of its 10-min range', group: 'range', test: x => x.rangePos !== null && x.rangePos <= 0.1 }, { name: 'at the top of its 10-min range', group: 'range', test: x => x.rangePos !== null && x.rangePos >= 0.9 })
+  F.push({ name: '1 to 3 ticks below a crossover', group: 'cross', test: x => x.below >= 1 && x.below <= 3 }, { name: '1 to 3 ticks above a crossover', group: 'cross', test: x => x.above >= 1 && x.above <= 3 })
+  const vs = samples.map(x => x.vol).sort((a, b) => a - b), v1 = vs[Math.floor(vs.length / 3)], v2 = vs[Math.floor(vs.length * 2 / 3)]
+  F.push({ name: 'quiet race', group: 'vol', test: x => x.vol < v1 }, { name: 'volatile race', group: 'vol', test: x => x.vol >= v2 })
+  for (const [lo, hi, nm] of [[1, 1, 'favourite'], [2, 3, '2nd or 3rd fav'], [4, 6, '4th to 6th']] as const) F.push({ name: nm, group: 'rank', test: x => x.rank >= lo && x.rank <= hi })
+  for (const tt of [60, 48, 36, 24, 12]) F.push({ name: `${tt} min before the off`, group: 'time', test: x => x.t === tt })
+  for (const rt of Array.from(new Set(samples.map(x => x.rt)))) F.push({ name: rt, group: 'rtype', test: x => x.rt === rt })
+  for (const [lo, hi] of [[2, 7], [8, 11], [12, 99]]) F.push({ name: `${lo}${hi === 99 ? '+' : ` to ${hi}`} runners`, group: 'field', test: x => x.n >= lo && x.n <= hi })
+  const res = search(samples, rules, F, cut, false)
+  L.push(...resultsBlock('short-term trades (back or lay, hedged after 5 or 10 minutes or at the off; with signals for recent moves, place in the range, crossover points, volatility, rank, time, race type and field size, alone and in pairs)', res.found, res.tested, true))
+  L.push('Not in these tests yet: traded volume and which way it pushed the price (the pressure signal). That needs the money matched on each horse, from the live key or Betfair\'s Pro data.', '')
+  return { lines: L, found: res.found }
+}
+const sgn1 = (v: number, dp = 1) => (v < 0 ? '−' : v > 0 ? '+' : '') + Math.abs(v).toFixed(dp)
+
 // ------------------------------------------------------------------ price discovery: trading the moves
 // Minute-by-minute last traded prices in the last hour. A "signal" fires the first time
 // in a race that a runner (top six) moves by at least `th` ticks over `k` minutes. Then:
@@ -492,7 +595,7 @@ function hedge(side: 'back' | 'lay', entry: number, exit: number) {
 }
 
 // Adds one or more days' signals to groups (key: k|th|kind).
-function collectSignals(days: HistDay[], groups: Map<string, Ev[]>) {
+function collectSignals(days: HistDay[], groups: Map<string, Ev[]>, samples?: Sample[]) {
   for (const d of days) {
     const { markets, snaps } = expandHistory(d, 'racing')
     for (const m of markets) {
@@ -522,6 +625,7 @@ function collectSignals(days: HistDay[], groups: Map<string, Ev[]>) {
         const v = cnt ? sum / cnt : 0
         volCache.set(t, v); return v
       }
+      if (samples) addSamples(samples, byMin, atOff, month, rt, n, m.market_name, volAt)
       for (const k of [2, 3, 5]) for (const th of [4, 8, 15]) {
         const seen = new Set<string>()
         for (let t = 60; t >= 4; t--) {
