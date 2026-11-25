@@ -7,6 +7,7 @@ export type MotionProject = {
   template: string
   content: unknown
   notes: string | null
+  refs?: Record<string, string[]> | null
   created_at: string
   updated_at: string
 }
@@ -23,8 +24,8 @@ export async function listMotionProjects(): Promise<{ projects: MotionProject[];
   return { projects: (data as MotionProject[]) ?? [], error: null }
 }
 
-export async function saveMotionProject(p: { id?: string; name: string; template: string; content: unknown }): Promise<{ project: MotionProject | null; error: string | null }> {
-  const row = { name: p.name.trim() || 'Untitled', template: p.template, content: p.content, updated_at: new Date().toISOString() }
+export async function saveMotionProject(p: { id?: string; name: string; template: string; content: unknown; refs?: Record<string, string[]> }): Promise<{ project: MotionProject | null; error: string | null }> {
+  const row = { name: p.name.trim() || 'Untitled', template: p.template, content: p.content, ...(p.refs ? { refs: p.refs } : {}), updated_at: new Date().toISOString() }
   const q = p.id
     ? supabase.from('motion_projects').update(row).eq('id', p.id).select().single()
     : supabase.from('motion_projects').insert(row).select().single()
