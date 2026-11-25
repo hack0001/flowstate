@@ -17,9 +17,9 @@ export const DS_NOTES: DsNote[] = [
     link: 'https://betfair-datascientists.github.io/tutorials/analysingAndPredictingBSP', source: 'Betfair Data Scientists: Analysing and predicting BSP',
   },
   {
-    title: 'The best single price: the geometric midpoint',
-    plain: 'The "true" price of a horse at any moment is best estimated by the geometric midpoint of the best back and lay prices: the square root of back × lay. Back 4.0 and lay 4.4 give √(4.0 × 4.4) ≈ 4.2. It beat the best back price, the best lay price, the last traded price and Betfair\'s projected SP at estimating the final SP.',
-    forUs: 'The last traded price jumps between the back and lay side with every trade, which looks like movement when nothing has really changed. The scout now uses the midpoint on your recordings (which have back and lay prices), so fewer false signals.',
+    title: 'The best single price: the middle of back and lay',
+    plain: 'The "true" price of a horse at any moment is best estimated from the middle of the best back and lay prices. Betfair\'s data scientists used the geometric midpoint (√(back × lay)), which beat the back price, the lay price, the last traded price and Betfair\'s projected SP at estimating the final SP. That midpoint is often not a price you can bet at (4.3 and 4.4 give about 4.35).',
+    forUs: 'FlowState uses the same idea but keeps it on the ladder: the tick halfway between the back and lay prices, and the back price when they are one tick apart (4.3 / 4.4 gives 4.3). It is only used to spot real moves (the last traded price jumps between the back and lay side with every trade); trades are always priced at the back and lay actually on offer.',
     link: 'https://betfair-datascientists.github.io/tutorials/analysingAndPredictingBSP', source: 'Betfair Data Scientists: Analysing and predicting BSP',
   },
   {

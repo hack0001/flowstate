@@ -26,7 +26,7 @@ import { installGuard } from './guard'
 import { errText, log } from './log'
 import { HISTORY_BUCKET, expandHistory, historyPath, type HistDay, type HistIndex } from '../../lib/betfair/history'
 import { pickPath, OFF } from '../../lib/betfair/insights'
-import { tickDown, tickUp, ticksBetween } from '../../lib/betfair/ticks'
+import { ladderMid, tickDown, tickUp, ticksBetween } from '../../lib/betfair/ticks'
 
 const C = 0.05                                      // commission on net winnings
 const REPORT_DIR = 'reports'
@@ -1069,8 +1069,9 @@ function tennisInPlay(sw: TSwing[], cut: string): { lines: string[]; found: Foun
 
 // ------------------------------------------------------------------ your own recordings: real back and lay prices
 // The recorder saves the best back and lay prices (delayed on the free key) for every GB and IE race.
-// Prices here use the geometric midpoint √(back × lay), Betfair's data scientists' best estimate of
-// the "true" price, so a trade bouncing between the back and lay side doesn't look like a move.
+// Signals use the middle of the back and lay prices, always a real price on the ladder (the tick
+// halfway between them; with a one-tick gap, the back price), so a trade bouncing between the back
+// and lay side doesn't look like a move. Trades never use it: they're priced at what was on offer.
 // Trades are priced at what was really on offer: back at the best back, hedge at the best lay.
 type RecSnap = { market_id: string; at: string; inplay?: boolean; runners: [number, number | null, number, number | null, number, number | null][] }
 async function recordingsStudy(db: SupabaseClient): Promise<string[]> {
@@ -1111,7 +1112,7 @@ async function recordingsStudy(db: SupabaseClient): Promise<string[]> {
         if (sn.inplay) continue
         const mins = Math.round((off - Date.parse(sn.at)) / 60_000)
         if (mins < 0 || mins > 75) continue
-        byMin.set(mins, new Map(sn.runners.map(r => [r[0], { mid: r[1] && r[3] ? Math.sqrt(r[1] * r[3]) : (r[5] ?? 0), back: r[1], lay: r[3] }] as const).filter(([, v]) => v.mid > 1)))
+        byMin.set(mins, new Map(sn.runners.map(r => [r[0], { mid: r[1] && r[3] ? ladderMid(r[1], r[3]) : (r[5] ?? 0), back: r[1], lay: r[3] }] as const).filter(([, v]) => v.mid > 1)))
       }
       const atOff = byMin.get(0) ?? byMin.get(1)
       if (!atOff) continue
@@ -1143,7 +1144,7 @@ async function recordingsStudy(db: SupabaseClient): Promise<string[]> {
       }
     }
   }
-  L.push(`${markets.length.toLocaleString('en-GB')} settled races recorded since ${markets[0].start_at.slice(0, 10)}. Prices are the midpoint √(back × lay); trades use the real best back and lay on offer (delayed on the free key).`, '')
+  L.push(`${markets.length.toLocaleString('en-GB')} settled races recorded since ${markets[0].start_at.slice(0, 10)}. Signals use the middle of the back and lay prices, always a real ladder price; trades use the real best back and lay on offer (delayed on the free key).`, '')
   const fr = fade.map(f => f.ret)
   L.push('**Fade-drift on your recordings** (the scout\'s best history system, checked on prices you could really take):', '',
     fr.length ? `${fr.length} trades, return per £1 ${pct(avg(fr), 2)}, won ${Math.round(fr.filter(x => x > 0).length / fr.length * 100)}%, p ${pfmt(pOf(tStat(fr)))}.${fr.length < 100 ? ' Too few trades to judge yet.' : ''}` : 'No signals yet.', '')

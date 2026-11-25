@@ -44,3 +44,20 @@ function stepBelow(lo: number): number {
   for (const [, hi, step] of BANDS) if (Math.abs(hi - lo) < 1e-9) return step
   return 0.01
 }
+
+// The ladder price at a position (the opposite of tickIndex): 0 is 1.01, 99 is 2.00, 149 is 3.00.
+export function priceAtIndex(idx: number): number {
+  let base = 0
+  for (const [lo, hi, step] of BANDS) {
+    const n = Math.round((hi - lo) / step)
+    if (idx <= base + n) return Math.round((lo + (idx - base) * step) * 100) / 100
+    base += n
+  }
+  return 1000
+}
+
+// The middle of the back and lay prices, as a real price on the ladder: the tick halfway between
+// them (rounded down to the back side when they're one tick apart, so 4.3 / 4.4 gives 4.3).
+export function ladderMid(back: number, lay: number): number {
+  return priceAtIndex(Math.floor((Math.round(tickIndex(back)) + Math.round(tickIndex(lay))) / 2))
+}
