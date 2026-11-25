@@ -34,13 +34,17 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 type Row = { market_id: string; event: string; venue: string; name: string | null; market_type: string; race_type: string | null; start_at: string; off_at: string | null
-  runners: number; status: string | null; winners: number[] | null; matched: number | null; snaps: number; last_snap: string | null }
+  runners: number; status: string | null; winners: number[] | null; matched: number | null; snaps: number; last_snap: string | null; vol?: number | null }
 type Group = { key: string; title: string; sub: string | null; start_at: string; rows: Row[] }
 type Runner = { id: number; name: string; jockey?: string | null }
 type Snap = { at: string; inplay: boolean; matched: number | null; runners: [number, number | null, number, number | null, number, number | null][] }
 type Detail = { market: { market_id: string; sport: Sport; venue: string | null; event: string; market_name: string | null; market_type: string; race_type: string | null
   start_at: string; off_at: string | null; runners: Runner[]; status: string | null; winners: number[] | null; removed: number[] | null; total_matched: number | null
   bsp: Record<string, number> | null }; snaps: Snap[] }
+
+// Volatility meter: ticks per minute per horse over the last 10 minutes (top six)
+const volLabel = (v?: number | null) => v == null ? '—' : `${v < 0.5 ? 'quiet' : v < 1.5 ? 'normal' : 'volatile'} ${v.toFixed(1)}`
+const volColour = (v?: number | null) => v == null ? '#4b5677' : v < 0.5 ? '#7784a6' : v < 1.5 ? '#dbe3f7' : '#f6b93b'
 
 function groupRows(sport: Sport, rows: Row[]): Group[] {
   if (sport !== 'football') return rows.map(r => ({ key: r.market_id, start_at: r.start_at, rows: [r],
@@ -230,7 +234,7 @@ export default function RecentMarkets() {
                 <thead><tr>
                   <th style={th}>{sport === 'golf' ? 'Starts' : 'Time'}</th><th style={th}>{sport === 'racing' ? 'Race' : sport === 'golf' ? 'Tournament' : 'Match'}</th>
                   <th style={th}>{sport === 'football' ? 'Markets' : sport === 'racing' ? 'Runners' : 'Selections'}</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Snapshots</th><th style={th}>Last saved</th><th style={{ ...th, textAlign: 'right' }}>Matched</th><th style={th}>Status</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Snapshots</th><th style={th}>Last saved</th><th style={{ ...th, textAlign: 'right' }}>Matched</th>{sport === 'racing' && <th style={th} title="How much the top six's prices moved in the last 10 minutes (ticks per minute per horse)">Moving</th>}<th style={th}>Status</th>
                 </tr></thead>
                 <tbody>{groups.map(g => {
                   const s = status(sport, g, now)
@@ -244,6 +248,7 @@ export default function RecentMarkets() {
                       <td style={{ ...td, fontFamily: MONO, textAlign: 'right', color: snaps ? '#fff' : C.dim }}>{snaps.toLocaleString('en-GB')}</td>
                       <td style={{ ...td, color: C.mut }}>{ago(lastSnap, now)}</td>
                       <td style={{ ...td, fontFamily: MONO, textAlign: 'right', color: C.mut }}>{money(g.rows[0].matched)}</td>
+                      {sport === 'racing' && <td style={{ ...td, color: volColour(g.rows[0].vol) }}>{volLabel(g.rows[0].vol)}</td>}
                       <td style={{ ...td, color: s.colour }}>{s.label}</td>
                     </tr>
                   )

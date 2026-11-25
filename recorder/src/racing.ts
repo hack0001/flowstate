@@ -64,8 +64,14 @@ function everyMs(minsToOff: number): number | null {
   return null
 }
 
+export type PriceHooks = {
+  prices: (marketId: string, name: string, start: number, now: number, runners: SnapRec['runners']) => void
+  off: (marketId: string, now: number) => void
+}
+
 export class RacingRecorder {
   races = new Map<string, Race>()
+  hooks: PriceHooks | null = null              // e.g. the fade-drift paper bot
   private settled = new Set<string>()    // races already finished with: never pick them up again
   lastOkAt = 0
   lastError: string | null = null
@@ -168,18 +174,20 @@ export class RacingRecorder {
           if (b.inplay || b.status === 'CLOSED' || (b.status === 'SUSPENDED' && atOrAfterStart)) {
             r.stage = 'off'; r.offAt = now
             offs.push({ id: r.id, offAt: at })
+            this.hooks?.off(r.id, now)
             continue
           }
           if (b.status !== 'OPEN') continue                // e.g. suspended for a non-runner: keep watching
           const snap = toSnap(b, at)
           snap.matched = r.matched
+          try { this.hooks?.prices(r.id, r.name, r.start, now, snap.runners) } catch (e) { log.warn('Paper bot:', errText(e)) }
           const key = JSON.stringify(snap.runners)
           if (key === r.lastKey && now - r.lastSaved < SAVE_UNCHANGED_EVERY_MS) continue
           r.lastKey = key; r.lastSaved = now
           snaps.push(snap)
         }
         // A race Betfair no longer returns has closed or been removed.
-        for (const r of chunk) if (!books.some(b => b.marketId === r.id) && now > r.start) { r.stage = 'off'; r.offAt ??= now }
+        for (const r of chunk) if (!books.some(b => b.marketId === r.id) && now > r.start) { r.stage = 'off'; r.offAt ??= now; this.hooks?.off(r.id, now) }
       } catch (e) {
         this.fail('Prices', e)
       }

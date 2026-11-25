@@ -60,8 +60,13 @@ export const SAMPLE: Record<BtSport, SamplePlan> = {
   golf: { fromMin: 72 * 60, early: 60, fineMin: 0, fine: 60, inPlayEvery: 60, inPlayMax: 5 * 24 * 60 },
 }
 
+// Correct Score has ~19 selections and is kept mainly for its result (the exact final score,
+// which the Dixon-Coles model learns from), so only a few prices before kick-off are kept.
+export const SAMPLE_CORRECT_SCORE: SamplePlan = { fromMin: 60, early: 30, fineMin: 0, fine: 60, inPlayEvery: 0, inPlayMax: 0 }
+
 // One Betfair Basic market file (already decompressed) → a compact summary, or null if unusable.
-export function parseMarketFile(text: string, plan: SamplePlan = SAMPLE.racing): HistMarket | null {
+export function parseMarketFile(text: string, planIn: SamplePlan = SAMPLE.racing): HistMarket | null {
+  let plan = planIn
   let id = ''
   let def: Def | null = null
   let offAt: number | null = null
@@ -84,6 +89,7 @@ export function parseMarketFile(text: string, plan: SamplePlan = SAMPLE.racing):
     }
   }
   if (!id || !def?.runners?.length || !def.marketTime) return null
+  if (def.marketType === 'CORRECT_SCORE') plan = SAMPLE_CORRECT_SCORE
   const runners = [...def.runners].sort((a, b) => (a.sortPriority ?? 99) - (b.sortPriority ?? 99))
   const idx = new Map(runners.map((r, i) => [r.id, i]))
   const start = new Date(def.marketTime).getTime()

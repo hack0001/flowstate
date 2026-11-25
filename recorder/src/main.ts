@@ -19,6 +19,7 @@ import { Store } from './store'
 import { RacingRecorder, type Counters } from './racing'
 import { runArchive } from './archive'
 import { SportsRecorder } from './sports'
+import { FadeBot } from './fadeBot'
 import { errText, log } from './log'
 import { installGuard, guardMessage } from './guard'
 import { runOnce } from '../../lib/betfair/run'
@@ -33,6 +34,19 @@ const store = new Store(db, cfg.spoolDir)
 const count: Counters = { checksOk: 0, checksFailed: 0, snaps: 0 }
 const racing = new RacingRecorder(bf, store, count)
 const sports = new SportsRecorder(bf, store, count)
+
+// Fade-drift paper bot (the scout's best racing system), on the live racing prices.
+// Needs migration 059 (the bf_paper_fade table); until then it stays off.
+const fade = new FadeBot(store)
+let fadeOn = false
+every('paper bot check', 10 * 60_000, async () => {
+  const { error } = await db.from('bf_paper_fade').select('market_id', { head: true, count: 'exact' }).abortSignal(AbortSignal.timeout(10_000))
+  const ok = !error
+  if (ok !== fadeOn) log.info(ok ? 'Fade-drift paper bot on' : 'Fade-drift paper bot off: run supabase/migrations/059_betfair_paper_fade.sql in Supabase')
+  fadeOn = ok
+  racing.hooks = ok ? { prices: (...a) => fade.onPrices(...a), off: (id, now) => fade.onOff(id, now) } : null
+  if (ok) fade.tidy(Date.now())
+}, 5_000)
 const startedAt = new Date().toISOString()
 let stopping = false
 

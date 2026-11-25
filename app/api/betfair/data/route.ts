@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireUser } from '@/lib/supabaseServer'
 import { readArchiveDay } from '@/lib/betfair/archiveFile'
 import { recorderStatus } from '@/lib/betfair/recorderStatus'
+import { ticksBetween } from '@/lib/betfair/ticks'
 
 // Recorded Betfair prices (the Data tab of /betfair).
 //   GET ?view=summary                                    -> counts and date range
@@ -69,7 +70,35 @@ export async function GET(req: NextRequest) {
         return { market_id: m.market_id, event: m.event, venue: m.venue ?? m.event, name: m.market_name, market_type: m.market_type, race_type: m.race_type, start_at: m.start_at, off_at: m.off_at,
           runners, status: m.status, winners: m.winners, matched: m.total_matched, snaps: count ?? 0, last_snap: data?.[0]?.at ?? null }
       }))
-      return NextResponse.json({ races, sport, window: { back, ahead }, now: new Date(now).toISOString() })
+      // Volatility meter (racing): how much the top six's prices moved in the last 10 minutes,
+      // in ticks per minute per horse, for races still to go off.
+      const vol: Record<string, number> = {}
+      const live = races.filter(r => !r.off_at && !r.status && new Date(r.start_at).getTime() - now < 80 * 60_000 && new Date(r.start_at).getTime() - now > -20 * 60_000).map(r => r.market_id)
+      if (sport === 'racing' && live.length) {
+        const rows: { market_id: string; at: string; runners: [number, number | null, number, number | null, number, number | null][] }[] = []
+        for (let i = 0; i < 5000; i += 1000) {
+          const { data } = await db.from('bf_snaps').select('market_id, at, runners').in('market_id', live).gte('at', new Date(now - 10 * 60_000).toISOString()).order('market_id').order('at').range(i, i + 999)
+          rows.push(...((data ?? []) as typeof rows))
+          if (!data || data.length < 1000) break
+        }
+        const byMk = new Map<string, typeof rows>()
+        for (const r of rows) byMk.set(r.market_id, [...(byMk.get(r.market_id) ?? []), r])
+        for (const [id, ss] of byMk) {
+          if (ss.length < 2) continue
+          const first = ss[0], lastS = ss[ss.length - 1]
+          const mins = (Date.parse(lastS.at) - Date.parse(first.at)) / 60_000
+          if (mins < 2) continue
+          const top = [...lastS.runners].filter(r => r[1] ?? r[5]).sort((a, b) => (a[1] ?? a[5]!) - (b[1] ?? b[5]!)).slice(0, 6).map(r => r[0])
+          let moved = 0
+          for (let k = 1; k < ss.length; k++) for (const sel of top) {
+            const a = ss[k - 1].runners.find(r => r[0] === sel), b = ss[k].runners.find(r => r[0] === sel)
+            const pa = a?.[1] ?? a?.[5], pb = b?.[1] ?? b?.[5]
+            if (pa && pb) moved += Math.abs(ticksBetween(pa, pb))
+          }
+          vol[id] = Math.round(moved / top.length / mins * 100) / 100
+        }
+      }
+      return NextResponse.json({ races: races.map(r => ({ ...r, vol: vol[r.market_id] ?? null })), sport, window: { back, ahead }, now: new Date(now).toISOString() })
     }
 
     if (q.get('view') === 'race') {

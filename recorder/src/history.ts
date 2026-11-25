@@ -32,7 +32,7 @@ import type { BtSport } from '../../lib/betfair/backtest'
 // the big leagues; cup and European ties are included when the home side is from one.
 const SPORTS: Record<BtSport, { name: string; types: string[]; countries: string[]; keep?: (m: HistMarket) => boolean }> = {
   racing: { name: 'Horse Racing', types: ['WIN'], countries: ['GB', 'IE'] },
-  football: { name: 'Soccer', types: ['MATCH_ODDS', 'OVER_UNDER_25', 'BOTH_TEAMS_TO_SCORE'], countries: ['GB', 'ES', 'IT', 'DE', 'FR', 'NL', 'PT'] },
+  football: { name: 'Soccer', types: ['MATCH_ODDS', 'OVER_UNDER_25', 'BOTH_TEAMS_TO_SCORE', 'CORRECT_SCORE'], countries: ['GB', 'ES', 'IT', 'DE', 'FR', 'NL', 'PT'] },
   tennis: { name: 'Tennis', types: ['MATCH_ODDS'], countries: [], keep: m => m.runners.length === 2 && !m.runners.some(([, n]) => n.includes('/')) },   // singles only
   golf: { name: 'Golf', types: ['WINNER'], countries: [] },
 }
@@ -68,7 +68,9 @@ async function main() {
   const args = process.argv.slice(2)
   if (args[0] === 'check') return checkAccount()
   const force = args.includes('--force')
-  const [fromArg, toArg, sportsArg] = args.filter(a => a !== '--force')
+  // --only=CORRECT_SCORE adds just those market types to days already imported
+  const only = args.find(a => a.startsWith('--only='))?.slice(7).split(',').filter(x => /^[A-Z0-9_]+$/.test(x)) ?? null
+  const [fromArg, toArg, sportsArg] = args.filter(a => !a.startsWith('--'))
   const from = isDay(fromArg) ? fromArg : iso(new Date(Date.now() - 365 * 86_400_000))
   const to = isDay(toArg) ? toArg : iso(new Date(Date.now() - 4 * 86_400_000))
   const sports = (sportsArg ?? 'racing').split(',').map(x => x.trim()).filter((x): x is BtSport => x in SPORTS)
@@ -79,11 +81,12 @@ async function main() {
   installGuard(cfg.supabase.url)
   const bf = new Betfair(cfg.betfair, cfg.spoolDir)
   const db = createClient(cfg.supabase.url, cfg.supabase.key, { auth: { persistSession: false, autoRefreshToken: false } })
-  for (const sport of sports) await importSport(sport, from, to, force, bf, db)
+  for (const sport of sports) await importSport(sport, from, to, force, bf, db, only)
 }
 
-async function importSport(sport: BtSport, from: string, to: string, force: boolean, bf: Betfair, db: SupabaseClient) {
-  const spec = SPORTS[sport]
+async function importSport(sport: BtSport, from: string, to: string, force: boolean, bf: Betfair, db: SupabaseClient, only: string[] | null = null) {
+  const spec = only ? { ...SPORTS[sport], types: only } : SPORTS[sport]
+  const folderKey = (day: string) => only ? `${day}#${only.join(',')}` : day     // separate record when only adding some market types
   const store = db.storage.from(HISTORY_BUCKET)
   log.info(`Historical import: ${spec.name}${spec.countries.length ? ` (${spec.countries.join(', ')})` : ''}, ${spec.types.join(', ')}, ${from} to ${to}${force ? ' (re-importing days already done)' : ''}`)
 
@@ -134,7 +137,7 @@ async function importSport(sport: BtSport, from: string, to: string, force: bool
     log.info(`${spec.name}, ${MONTHS[m.getUTCMonth()]} ${m.getUTCFullYear()}: ${paths.length} markets on ${byDay.size} days`)
 
     for (const [day, files] of [...byDay.entries()].sort()) {
-      if (!force && index.folders?.[day]) continue          // this Betfair folder was fully imported before
+      if (!force && index.folders?.[folderKey(day)]) continue    // this Betfair folder was fully imported before
       const markets: HistMarket[] = []
       let dayFailed = 0
       const queue = [...files]
@@ -179,7 +182,7 @@ async function importSport(sport: BtSport, from: string, to: string, force: bool
         writtenThisRun.add(d); recent.set(d, ms); sizes.set(d, gz.length); counts.set(d, ms.length)
         log.info(`${spec.name} ${d}: ${ms.length} markets saved (${(gz.length / 1024).toFixed(0)} KB)`)
       }
-      if (!dayFailed) (index.folders ??= {})[day] = files.length
+      if (!dayFailed) (index.folders ??= {})[folderKey(day)] = files.length
       // keep only the last couple of weeks in memory; older days are re-read if they turn up again
       for (const k of [...recent.keys()]) if (k < iso(new Date(new Date(day).getTime() - 14 * 86_400_000))) recent.delete(k)
       if (++daysDone % 7 === 0) await saveIndex()

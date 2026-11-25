@@ -66,7 +66,10 @@ function summarise(bets: Bet[], beat?: number[]): Summary {
 type Runner = {
   race: string; month: string; day: string; venue: string; rt: string; hcap: boolean; furlongs: number | null; n: number; hour: number
   px: (number | null)[]; rank: number[]; sp: number; p: number; won: boolean
+  horse: string; t: number; spRank: number
+  h?: HorseHistory                      // the horse's earlier runs in the data (filled in after loading)
 }
+type HorseHistory = { runs: number; days: number; lastWon: boolean; lastFavLost: boolean; lastSp: number; lastMove: number | null; course: boolean; distDelta: number | null; typeChange: boolean }
 const R_OFFSETS = [3600, 1800, 1200, 600, 300]
 const F_OFFSETS = [10800, 7200, 3600, 1800, 600]
 // prices and ranks are kept as short arrays (one slot per time above) to keep memory down
@@ -80,7 +83,7 @@ function furlongs(name?: string | null) {
 }
 
 // Reads each day's file in turn and hands it to fn, so only a few days are in memory at once.
-async function forEachDay(store: ReturnType<ReturnType<typeof createClient>['storage']['from']>, sport: 'racing' | 'football', fn: (d: HistDay) => void): Promise<number> {
+async function forEachDay(store: ReturnType<ReturnType<typeof createClient>['storage']['from']>, sport: 'racing' | 'football' | 'tennis' | 'golf', fn: (d: HistDay) => void): Promise<number> {
   const { data: idxFile } = await store.download(`${sport}/index.json`)
   if (!idxFile) return 0
   const idx = JSON.parse(await idxFile.text()) as HistIndex
@@ -115,10 +118,12 @@ function racingRunners(days: HistDay[]): Runner[] {
         ranks[o] = new Map(pr.map(([id], i) => [id, i + 1]))
       }
       const start = new Date(m.start_at)
+      const spRank = new Map([...sps].sort((a, b) => a.sp - b.sp).map((r, i) => [r.id, i + 1]))
       for (const r of sps) {
         const px = R_OFFSETS.map(o => priceAt(o, r.id)), rank = R_OFFSETS.map(o => ranks[o].get(r.id) ?? 99)
-        rows.push({ race: m.market_id, month: m.start_at.slice(0, 7), day: '', venue: '', rt: m.race_type ?? 'Unknown', hcap: /hcap|handicap/i.test(m.market_name ?? ''),
-          furlongs: furlongs(m.market_name), n: sps.length, hour: start.getUTCHours(), px, rank, sp: r.sp, p: (1 / r.sp) / book, won: m.winners.includes(r.id) })
+        rows.push({ race: m.market_id, month: m.start_at.slice(0, 7), day: '', venue: m.venue ?? m.event, rt: m.race_type ?? 'Unknown', hcap: /hcap|handicap/i.test(m.market_name ?? ''),
+          furlongs: furlongs(m.market_name), n: sps.length, hour: start.getUTCHours(), px, rank, sp: r.sp, p: (1 / r.sp) / book, won: m.winners.includes(r.id),
+          horse: (m.runners.find(x => x.id === r.id)?.name ?? '').replace(/^\d+\.\s*/, '').toLowerCase(), t: start.getTime(), spRank: spRank.get(r.id) ?? 99 })
       }
     }
   }
@@ -309,15 +314,22 @@ async function main() {
   }
   const rs = search(runners, rules, conds, cut)
   L.push(...systemsSection('racing', rs.found, rs.tested))
+  const hh = horseHistory(runners, cut)
+  L.push(...hh.lines)
   const pd = priceDiscovery(signals, cut)
   L.push(...pd.lines)
 
   // ================================================================ football
   log.info('Scout: loading football history')
   const sels: Sel[] = []
-  const fdayCount = await forEachDay(store, 'football', d => { for (const x of footballSelections([d])) sels.push(x) })
+  const matches: Match[] = []
+  const fmatches: FMatch[] = []
+  const fdayCount = await forEachDay(store, 'football', d => { for (const x of footballSelections([d])) sels.push(x); for (const m of inPlayMatches(d)) matches.push(m); for (const m of footballMatches(d)) fmatches.push(m) })
   const fdays = { length: fdayCount }
   let footballFound: Found[] = []
+  let inPlayFound: Found[] = []
+  let dcFound: Found[] = []
+  let tennisFound: Found[] = []
   log.info(`Scout: ${fdays.length} football days, ${sels.length} selections`)
   if (sels.length) {
     const fm = Array.from(new Set(sels.map(s => s.month))).sort()
@@ -352,6 +364,26 @@ async function main() {
     const fs = search(sels, frules, fconds, fcut)
     footballFound = fs.found
     L.push(...systemsSection('football', fs.found, fs.tested))
+    const ip = footballInPlay(matches, fcut)
+    L.push(...ip.lines)
+    inPlayFound = ip.found
+    const dc = dixonColes(fmatches, fcut)
+    L.push(...dc.lines)
+    dcFound = dc.found
+  }
+
+  // ================================================================ tennis
+  log.info('Scout: loading tennis history')
+  const swings: TSwing[] = []
+  const tdays = await forEachDay(store, 'tennis', d => { for (const x of tennisSwings(d)) swings.push(x) })
+  log.info(`Scout: ${tdays} tennis days, ${swings.length} swings`)
+  if (swings.length) {
+    const tm = Array.from(new Set(swings.map(x => x.month))).sort()
+    const tcut = tm[Math.floor(tm.length * 2 / 3)] ?? tm[tm.length - 1]
+    L.push('', '## Tennis', '')
+    const tr = tennisInPlay(swings, tcut)
+    L.push(...tr.lines)
+    tennisFound = tr.found
   }
 
   // ================================================================ ledger: systems that passed, re-checked every run
@@ -360,7 +392,11 @@ async function main() {
   const passedNow = new Map<string, Found>()
   for (const f of rs.found) if (f.passed) passedNow.set('racing: ' + f.rule, f)
   for (const f of pd.found) if (f.passed) passedNow.set('racing trading: ' + f.rule, f)
+  for (const f of hh.found) if (f.passed) passedNow.set('racing form: ' + f.rule, f)
   for (const f of footballFound) if (f.passed) passedNow.set('football: ' + f.rule, f)
+  for (const f of inPlayFound) if (f.passed) passedNow.set('football in-play: ' + f.rule, f)
+  for (const f of dcFound) if (f.passed) passedNow.set('football model: ' + f.rule, f)
+  for (const f of tennisFound) if (f.passed) passedNow.set('tennis: ' + f.rule, f)
   for (const k of Object.keys(ledger)) if (!passedNow.has(k)) ledger[k].runs.push({ date: today, passed: false, roi: NaN, n: 0 })
   for (const [k, f] of passedNow) { (ledger[k] ??= { first: today, runs: [] }).runs.push({ date: today, passed: true, roi: f.all.roi, n: f.all.n }) }
   L.push('', '## Ledger: systems that have passed, re-checked each run', '')
@@ -377,6 +413,66 @@ async function main() {
   log.info('Scout: report saved. Open FlowState → Betfair → Insights to read it.')
 }
 
+// ------------------------------------------------------------------ horse history ("form" from the data itself)
+// Each horse's earlier runs in the history (matched by name): days since it last ran, whether it
+// won, whether it was a beaten favourite, its last starting price, whether it drifted or steamed
+// last time, whether it has run at this course before, and changes in distance or race type.
+// Then: does any of that make backing or laying it (at the 20-minute price or at SP) pay?
+function horseHistory(runners: Runner[], cut: string): { lines: string[]; found: Found[] } {
+  const byHorse = new Map<string, Runner[]>()
+  for (const r of runners) if (r.horse) { const a = byHorse.get(r.horse); if (a) a.push(r); else byHorse.set(r.horse, [r]) }
+  for (const runs of byHorse.values()) {
+    runs.sort((a, b) => a.t - b.t)
+    runs.forEach((r, i) => {
+      if (i === 0) { r.h = { runs: 0, days: -1, lastWon: false, lastFavLost: false, lastSp: 0, lastMove: null, course: false, distDelta: null, typeChange: false }; return }
+      const last = runs[i - 1]
+      const a = last.px[ri(3600)], b = last.px[ri(1200)]
+      r.h = {
+        runs: i, days: (r.t - last.t) / 86_400_000, lastWon: last.won, lastFavLost: last.spRank === 1 && !last.won, lastSp: last.sp,
+        lastMove: a && b ? (1 / b) / (1 / a) - 1 : null, course: runs.slice(0, i).some(x => x.venue === r.venue),
+        distDelta: r.furlongs !== null && last.furlongs !== null ? r.furlongs - last.furlongs : null, typeChange: r.rt !== last.rt,
+      }
+    })
+  }
+  const items = runners.filter(r => r.h)
+  const F: Filter<Runner>[] = [{ name: 'all runners', group: 'all', test: () => true }]
+  const h = (r: Runner) => r.h!
+  for (const [lo, hi, nm] of [[-1, 0, 'first run in the data'], [0, 15, 'ran within 14 days'], [15, 31, '15 to 30 days since last run'], [31, 91, '1 to 3 months off'], [91, 9999, 'off 3+ months']] as const)
+    F.push({ name: nm, group: 'days', test: r => lo === -1 ? h(r).days === -1 : h(r).days >= lo && h(r).days < hi })
+  F.push({ name: 'won last time', group: 'last', test: r => h(r).runs > 0 && h(r).lastWon }, { name: 'lost last time', group: 'last', test: r => h(r).runs > 0 && !h(r).lastWon })
+  F.push({ name: 'beaten favourite last time', group: 'fav', test: r => h(r).lastFavLost })
+  F.push({ name: 'much shorter than last SP', group: 'sp', test: r => !!h(r).lastSp && !!r.px[ri(1200)] && r.px[ri(1200)]! / h(r).lastSp < 0.6 },
+    { name: 'similar to last SP', group: 'sp', test: r => !!h(r).lastSp && !!r.px[ri(1200)] && r.px[ri(1200)]! / h(r).lastSp >= 0.6 && r.px[ri(1200)]! / h(r).lastSp <= 1.6 },
+    { name: 'much bigger than last SP', group: 'sp', test: r => !!h(r).lastSp && !!r.px[ri(1200)] && r.px[ri(1200)]! / h(r).lastSp > 1.6 })
+  F.push({ name: 'steamed last time', group: 'move', test: r => (h(r).lastMove ?? 0) >= 0.15 }, { name: 'drifted last time', group: 'move', test: r => (h(r).lastMove ?? 0) <= -0.15 })
+  F.push({ name: 'run at this course before', group: 'course', test: r => h(r).runs > 0 && h(r).course }, { name: 'new to this course', group: 'course', test: r => h(r).runs > 0 && !h(r).course })
+  F.push({ name: 'up 2f+ in distance', group: 'dist', test: r => (h(r).distDelta ?? 0) >= 2 }, { name: 'down 2f+ in distance', group: 'dist', test: r => (h(r).distDelta ?? 0) <= -2 },
+    { name: 'same distance', group: 'dist', test: r => h(r).distDelta !== null && Math.abs(h(r).distDelta!) < 2 })
+  F.push({ name: 'switching race type', group: 'type', test: r => h(r).runs > 0 && h(r).typeChange })
+  for (const [lo, hi, nm] of [[1, 3, '1 or 2 earlier runs'], [3, 6, '3 to 5 earlier runs'], [6, 999, '6+ earlier runs']] as const) F.push({ name: nm, group: 'runs', test: r => h(r).runs >= lo && h(r).runs < hi })
+  for (const rt of Array.from(new Set(items.map(r => r.rt)))) F.push({ name: rt, group: 'rtype', test: r => r.rt === rt })
+  F.push({ name: 'handicaps', group: 'hcap', test: r => r.hcap }, { name: 'non-handicaps', group: 'hcap', test: r => !r.hcap })
+
+  const rankName = (k: number) => k === 1 ? 'favourite' : k === 2 ? '2nd fav' : k === 3 ? '3rd fav' : k <= 6 ? '4th to 6th' : '7th or longer'
+  const pb = (p: number) => band(p, [2, 3, 4, 6, 10, 20], ['under 2.0', '2.0 to 3.0', '3.0 to 4.0', '4.0 to 6.0', '6.0 to 10', '10 to 20', '20+'])
+  const rules: { name: string; make: (x: Runner) => Bet | null }[] = []
+  for (const side of ['Back', 'Lay'] as const) {
+    for (const at of ['20 min', 'SP'] as const) {
+      const price = (x: Runner) => at === 'SP' ? x.sp : x.px[ri(1200)] ? (side === 'Back' ? tickDown(x.px[ri(1200)]!) : tickUp(x.px[ri(1200)]!)) : null
+      const bet = (x: Runner): Bet | null => { const p = price(x); if (!p) return null; return side === 'Back' ? { month: x.month, value: backValue(p, x.p), actual: backActual(p, x.won) } : { month: x.month, value: layValue(p, x.p), actual: layActual(p, x.won) } }
+      const where = at === 'SP' ? 'at SP' : '20 min out (cautious price)'
+      rules.push({ name: `${side} any runner ${where}`, make: bet })
+      for (const g of ['favourite', '2nd fav', '3rd fav', '4th to 6th', '7th or longer']) rules.push({ name: `${side} the ${g} ${where}`, make: x => rankName(x.rank[ri(1200)]) === g ? bet(x) : null })
+      for (const b of ['under 2.0', '2.0 to 3.0', '3.0 to 4.0', '4.0 to 6.0', '6.0 to 10', '10 to 20', '20+']) rules.push({ name: `${side} runners priced ${b} ${where}`, make: x => x.px[ri(1200)] && pb(x.px[ri(1200)]!) === b ? bet(x) : null })
+    }
+  }
+  const res = search(items, rules, F, cut, false)
+  const L = ['', '### 5. Horse form from the data (back or lay, let it run)', '',
+    `Each horse's earlier runs in the history, matched by name (${byHorse.size.toLocaleString('en-GB')} horses, ${items.filter(r => r.h!.runs > 0).length.toLocaleString('en-GB')} runs with at least one earlier run to look back on). Form signals tested: days since the last run, won or lost last time, beaten favourite last time, today's price against last time's SP, steamed or drifted last time, course before or new, distance up or down, switching race type, number of earlier runs; alone and in pairs, and with race type and handicaps. Backed or laid at the 20-minute price (one tick worse) or at Betfair SP (exact). Trainer and jockey aren't in the free history; your recordings have them from 19 November.`, '']
+  L.push(...resultsBlock('form rules', res.found, res.tested, false))
+  return { lines: L, found: res.found }
+}
+
 // ------------------------------------------------------------------ price discovery: trading the moves
 // Minute-by-minute last traded prices in the last hour. A "signal" fires the first time
 // in a race that a runner (top six) moves by at least `th` ticks over `k` minutes. Then:
@@ -386,7 +482,7 @@ async function main() {
 //           the money leaving one horse has to go somewhere
 // Prices: get in at the last traded price (back) or one tick above (lay), and get out one
 // tick worse, so every trade pays a spread. Per £1 hedged stake, after commission.
-type Ev = { month: string; rt: string; n: number; kind: 'steam' | 'drift' | 'favDrift' | 'favSteam'; ticks: number; entry: number; exits: (number | null)[] }   // exits: one per HOLDS
+type Ev = { month: string; rt: string; n: number; kind: 'steam' | 'drift' | 'favDrift' | 'favSteam'; ticks: number; entry: number; exits: (number | null)[]; vol: number }   // exits: one per HOLDS; vol: the race's recent movement
 const HOLDS = [2, 5, 10, 0]                    // minutes; 0 = at the off
 const holdName = (h: number) => h ? `close after ${h} min` : 'close at the off'
 
@@ -413,6 +509,19 @@ function collectSignals(days: HistDay[], groups: Map<string, Ev[]>) {
       if (!atOff || atOff.size < 3) continue
       const month = m.start_at.slice(0, 7), rt = m.race_type ?? 'Unknown', n = atOff.size
       const exitsFor = (id: number, t: number) => HOLDS.map(h => (h ? byMin.get(t - h) : atOff)?.get(id) ?? null)
+      // volatility: average ticks moved per minute by the top six over the 10 minutes before minute t
+      const volCache = new Map<number, number>()
+      const volAt = (t: number) => {
+        const c = volCache.get(t); if (c !== undefined) return c
+        let sum = 0, cnt = 0
+        for (let j = t; j < t + 10; j++) {
+          const a = byMin.get(j), b = byMin.get(j + 1)
+          if (!a || !b) continue
+          for (const [id, px] of [...a.entries()].sort((x, y) => x[1] - y[1]).slice(0, 6)) { const q = b.get(id); if (q) { sum += Math.abs(ticksBetween(q, px)); cnt++ } }
+        }
+        const v = cnt ? sum / cnt : 0
+        volCache.set(t, v); return v
+      }
       for (const k of [2, 3, 5]) for (const th of [4, 8, 15]) {
         const seen = new Set<string>()
         for (let t = 60; t >= 4; t--) {
@@ -435,7 +544,7 @@ function collectSignals(days: HistDay[], groups: Map<string, Ev[]>) {
             if (!entry) return
             const held = ticksBetween(was, entry)
             if (kind === 'steam' ? held > -th : held < th) return
-            groups.get(key)!.push({ month, rt, n, kind, ticks: mv, entry, exits: exitsFor(id, t - 1) })
+            groups.get(key)!.push({ month, rt, n, kind, ticks: mv, entry, exits: exitsFor(id, t - 1), vol: volAt(t) })
             // the favourite moved: what happens to the 2nd favourite?
             if (i === 0 && order[1]) {
               const k2 = kind === 'drift' ? 'favDrift' : 'favSteam'
@@ -447,7 +556,7 @@ function collectSignals(days: HistDay[], groups: Map<string, Ev[]>) {
                 const favHeld = favNext ? ticksBetween(was, favNext) : 0
                 if (kind === 'steam' ? favHeld > -th : favHeld < th) return
                 const e2 = byMin.get(t - 1)?.get(order[1][0])
-                if (e2) groups.get(key2)!.push({ month, rt, n, kind: k2, ticks: mv, entry: e2, exits: exitsFor(order[1][0], t - 1) })
+                if (e2) groups.get(key2)!.push({ month, rt, n, kind: k2, ticks: mv, entry: e2, exits: exitsFor(order[1][0], t - 1), vol: volAt(t) })
               }
             }
           })
@@ -466,7 +575,7 @@ function priceDiscovery(groups: Map<string, Ev[]>, cut: string): { lines: string
     { kind: 'favDrift', name: 'Favourite drifts: back the 2nd favourite', side: 'back' }, { kind: 'favDrift', name: 'Favourite drifts: lay the 2nd favourite', side: 'lay' },
     { kind: 'favSteam', name: 'Favourite steams: lay the 2nd favourite', side: 'lay' }, { kind: 'favSteam', name: 'Favourite steams: back the 2nd favourite', side: 'back' },
   ]
-  const L: string[] = ['', '### 5. Trading the price discovery (hedged, minute by minute)', '',
+  const L: string[] = ['', '### 6. Trading the price discovery (hedged, minute by minute)', '',
     'Signals from the minute-by-minute prices in the last hour: the first time a top-six runner moves 8+ ticks within 3 minutes (other sizes and speeds are in the search below). Each trade gets in one minute after the signal, only if the move is still there (time to react, the delay on the free key, and to skip one-off spikes from a single stray trade), and in and out one tick worse than the last traded price, so it pays a spread both ways. Figures per £1 hedged stake, after commission.', '']
   const tbl: (string | number)[][] = []
   for (const a of actions) {
@@ -485,6 +594,10 @@ function priceDiscovery(groups: Map<string, Ev[]>, cut: string): { lines: string
   const filters: { name: string; test: (e: Ev) => boolean }[] = [{ name: 'all races', test: () => true }]
   for (const rt of Array.from(new Set([...groups.values()].flat().map(e => e.rt)))) filters.push({ name: rt, test: e => e.rt === rt })
   for (const [lo, hi] of [[2, 7], [8, 11], [12, 99]]) filters.push({ name: `${lo}${hi === 99 ? '+' : ` to ${hi}`} runners`, test: e => e.n >= lo && e.n <= hi })
+  // volatility thirds (how much the race's prices had been moving in the 10 minutes before the signal)
+  const vols = [...groups.values()].flat().map(e => e.vol).sort((a, b) => a - b)
+  const v1 = vols[Math.floor(vols.length / 3)] ?? 0, v2 = vols[Math.floor(vols.length * 2 / 3)] ?? 0
+  filters.push({ name: `quiet market (under ${v1.toFixed(1)} ticks/min)`, test: e => e.vol < v1 }, { name: 'normal market', test: e => e.vol >= v1 && e.vol < v2 }, { name: `volatile market (${v2.toFixed(1)}+ ticks/min)`, test: e => e.vol >= v2 })
   const found: Found[] = []
   let tested = 0
   for (const [key, evs] of groups) {
@@ -500,6 +613,351 @@ function priceDiscovery(groups: Map<string, Ev[]>, cut: string): { lines: string
   L.push(...resultsBlock('trading rules (move speed, size, follow or fade, the other-horse trades, exit time, race filters)', found, tested, true))
   L.push('Not tested yet, because the data doesn\'t have it: weight of money across the full ladder, and the money traded on each runner. Betfair\'s free history has only the last traded price, and the free live key gives no traded volume. See the Setup tab for what would add them.', '')
   return { lines: L, found }
+}
+
+// ------------------------------------------------------------------ football in play: Over/Under 2.5 and the draw
+// The free history has each market's last traded price every minute in play, but not the
+// score. Goals are worked out from the Over 2.5 price: when a goal goes in, the Over's chance
+// jumps (by 12 points or more within a minute). Minutes are clock minutes from kick-off,
+// so half-time sits between about 47 and 62.
+type Match = {
+  month: string; country: string; preOver: number | null; preDraw: number | null
+  over: Float32Array; under: Float32Array; draw: Float32Array   // last traded price at each 5-minute mark (0, 5, ... 150); 0 = none
+  goals: number[]                                                 // minutes of the goals worked out from the prices
+  atGoal2: { over: number; under: number; draw: number }        // prices 2 minutes after the first goal (0 = none)
+  atGoal17: { over: number; draw: number }                      // and 17 minutes after it
+  overWon: boolean; drawWon: boolean
+  mo: { before: [number, number]; at2: [number, number]; at17: [number, number]; won: [boolean, boolean] } | null   // home, away prices around the first goal
+}
+const MARKS = Array.from({ length: 31 }, (_, i) => i * 5)
+
+function inPlayMatches(d: HistDay): Match[] {
+  const { markets, snaps } = expandHistory(d, 'football')
+  const byEvent = new Map<string, { ou?: (typeof markets)[number]; mo?: (typeof markets)[number] }>()
+  for (const m of markets) {
+    if (!m.off_at || !m.winners?.length) continue
+    const k = m.event + '|' + m.start_at
+    const e = byEvent.get(k) ?? {}
+    if (m.market_type === 'OVER_UNDER_25') e.ou = m
+    if (m.market_type === 'MATCH_ODDS') e.mo = m
+    byEvent.set(k, e)
+  }
+  const out: Match[] = []
+  for (const { ou, mo } of byEvent.values()) {
+    if (!ou) continue
+    const off = Date.parse(ou.off_at!)
+    const overId = ou.runners.find(r => /over/i.test(r.name))?.id, underId = ou.runners.find(r => /under/i.test(r.name))?.id
+    if (overId === undefined || underId === undefined) continue
+    const drawId = mo?.runners.find(r => /draw/i.test(r.name))?.id
+    // minute-by-minute prices in play (and the last price before kick-off)
+    const series = (mk: typeof ou | undefined, id: number | undefined) => {
+      const perMin = new Map<number, number>()
+      let pre: number | null = null
+      if (!mk || id === undefined) return { perMin, pre }
+      for (const sn of snaps.get(mk.market_id) ?? []) {
+        const px = sn.runners.find(r => r[0] === id)?.[5]
+        if (!px) continue
+        if (!sn.inplay) { pre = px; continue }
+        perMin.set(Math.round((Date.parse(sn.at) - off) / 60_000), px)
+      }
+      return { perMin, pre }
+    }
+    const O = series(ou, overId), U = series(ou, underId), D = series(mo, drawId)
+    const H = series(mo, mo?.runners[0]?.id), A = series(mo, mo?.runners[1]?.id)
+    if (!O.perMin.size) continue
+    const at = (m: Map<number, number>, k: number) => { for (let j = k; j >= Math.max(0, k - 2); j--) { const v = m.get(j); if (v) return v } return 0 }
+    // goals: a jump in the Over's chance within a minute
+    const goals: number[] = []
+    let last = O.pre ? 1 / O.pre : 0
+    for (let k = 1; k <= 150; k++) {
+      const v = O.perMin.get(k)
+      if (!v) continue
+      const ch = 1 / v
+      if (ch - last >= 0.12 && goals.length < 3) goals.push(k)
+      last = ch
+    }
+    const g1 = goals[0]
+    out.push({
+      month: ou.start_at.slice(0, 7), country: ou.country ?? '?', preOver: O.pre, preDraw: D.pre,
+      over: Float32Array.from(MARKS, k => at(O.perMin, k)), under: Float32Array.from(MARKS, k => at(U.perMin, k)), draw: Float32Array.from(MARKS, k => at(D.perMin, k)),
+      goals, atGoal2: { over: g1 ? at(O.perMin, g1 + 2) : 0, under: g1 ? at(U.perMin, g1 + 2) : 0, draw: g1 ? at(D.perMin, g1 + 2) : 0 },
+      atGoal17: { over: g1 ? at(O.perMin, g1 + 17) : 0, draw: g1 ? at(D.perMin, g1 + 17) : 0 },
+      overWon: ou.winners!.includes(overId), drawWon: !!(mo && drawId !== undefined && mo.winners?.includes(drawId)),
+      mo: mo && g1 && mo.winners?.length ? { before: [at(H.perMin, g1 - 1) || H.pre || 0, at(A.perMin, g1 - 1) || A.pre || 0], at2: [at(H.perMin, g1 + 2), at(A.perMin, g1 + 2)],
+        at17: [at(H.perMin, g1 + 17), at(A.perMin, g1 + 17)], won: [mo.winners.includes(mo.runners[0].id), mo.winners.includes(mo.runners[1].id)] } : null,
+    })
+  }
+  return out
+}
+
+function footballInPlay(matches: Match[], cut: string): { lines: string[]; found: Found[] } {
+  const L: string[] = ['', '### Football in play: Over/Under 2.5 and the draw', '']
+  if (matches.length < 500) { L.push('Not enough in-play history yet.'); return { lines: L, found: [] } }
+  const goalsBy = (m: Match, k: number) => m.goals.filter(g => g <= k).length
+  const settle = (side: 'back' | 'lay', price: number, won: boolean) => side === 'back' ? backActual(price, won) : layActual(price, won)
+  const mk = (month: string, actual: number): Bet => ({ month, value: 0, actual })
+  // a hedge after h minutes; if the market has gone (Over already won) settle on the result instead
+  const hedgeOrSettle = (side: 'back' | 'lay', entry: number, exit: number, won: boolean) => exit ? hedge(side, entry, exit) : settle(side, side === 'back' ? tickDown(entry) : tickUp(entry), won)
+
+  type R = { name: string; make: (m: Match) => Bet | null }
+  const rules: R[] = []
+  const idx = (k: number) => k / 5
+  for (const k of [10, 20, 30, 40, 65, 75, 85]) for (const g of [0, 1, 2]) for (const sel of ['Over', 'Under'] as const) for (const side of ['back', 'lay'] as const) {
+    const px = (m: Match, kk: number) => (sel === 'Over' ? m.over : m.under)[idx(kk)]
+    const won = (m: Match) => sel === 'Over' ? m.overWon : !m.overWon
+    const label = `${side === 'back' ? 'Back' : 'Lay'} ${sel} 2.5 at ${k} min with ${g} goal${g === 1 ? '' : 's'}`
+    rules.push({ name: `${label}, let it run`, make: m => { const p = px(m, k); if (!p || goalsBy(m, k) !== g) return null; return mk(m.month, settle(side, side === 'back' ? tickDown(p) : tickUp(p), won(m))) } })
+    for (const h of [10, 20]) rules.push({ name: `${label}, close after ${h} min`, make: m => { const p = px(m, k); if (!p || goalsBy(m, k) !== g || k + h > 150) return null; return mk(m.month, hedgeOrSettle(side, p, px(m, k + h), won(m))) } })
+  }
+  // after the first goal: back or lay the Over two minutes later
+  for (const by of [20, 35, 60]) for (const side of ['back', 'lay'] as const) {
+    const ok = (m: Match) => m.goals.length > 0 && m.goals[0] <= by && m.atGoal2.over
+    rules.push({ name: `${side === 'back' ? 'Back' : 'Lay'} Over 2.5 two minutes after a first goal by ${by} min, let it run`, make: m => ok(m) ? mk(m.month, settle(side, side === 'back' ? tickDown(m.atGoal2.over) : tickUp(m.atGoal2.over), m.overWon)) : null })
+    rules.push({ name: `${side === 'back' ? 'Back' : 'Lay'} Over 2.5 two minutes after a first goal by ${by} min, close 15 min later`, make: m => ok(m) ? mk(m.month, hedgeOrSettle(side, m.atGoal2.over, m.atGoal17.over, m.overWon)) : null })
+  }
+  // Match Odds after the first goal: the scorer is the side whose price fell. Back the scorer
+  // (follow) or the side that conceded (fade: the market overreacting), let it run or close 15 min later.
+  for (const by of [20, 45, 70]) for (const who of ['scorer', 'conceder'] as const) for (const exit of ['run', '15'] as const) rules.push({
+    name: `Back the ${who === 'scorer' ? 'team that scored' : 'team that conceded'} first, 2 min after a goal by ${by} min, ${exit === 'run' ? 'let it run' : 'close 15 min later'}`,
+    make: m => {
+      const g = m.mo, g1 = m.goals[0]
+      if (!g || !g1 || g1 > by || !g.before[0] || !g.at2[0] || !g.at2[1]) return null
+      const homeScored = g.at2[0] < g.before[0]
+      const i = (who === 'scorer') === homeScored ? 0 : 1
+      return mk(m.month, exit === 'run' ? settle('back', tickDown(g.at2[i]), g.won[i]) : hedgeOrSettle('back', g.at2[i], g.at17[i], g.won[i]))
+    } })
+  // lay the draw before kick-off; get out two minutes after the first goal, or at a set time, or let it run
+  for (const stop of [60, 70, 80, 0]) rules.push({ name: `Lay the draw at kick-off, close 2 min after the first goal${stop ? ` or at ${stop} min` : ', or let it run'}`, make: m => {
+    if (!m.preDraw) return null
+    const g1 = m.goals[0]
+    if (g1 && (!stop || g1 < stop)) return m.atGoal2.draw ? mk(m.month, hedge('lay', m.preDraw, m.atGoal2.draw)) : null
+    if (stop) { const x = m.draw[idx(stop)]; return x ? mk(m.month, hedge('lay', m.preDraw, x)) : null }
+    return mk(m.month, settle('lay', tickUp(m.preDraw), m.drawWon))
+  } })
+
+  const filters: Filter<Match>[] = [{ name: 'all matches', group: 'all', test: () => true }]
+  for (const cc of Array.from(new Set(matches.map(m => m.country)))) filters.push({ name: `country ${cc}`, group: 'country', test: m => m.country === cc })
+  for (const [lo, hi] of [[1, 1.7], [1.7, 2.1], [2.1, 2.6], [2.6, 100]]) filters.push({ name: `Over priced ${lo} to ${hi === 100 ? 'any' : hi} at kick-off`, group: 'price', test: m => !!m.preOver && m.preOver >= lo && m.preOver < hi })
+  for (const [lo, hi] of [[1, 3.2], [3.2, 3.8], [3.8, 100]]) filters.push({ name: `draw priced ${lo} to ${hi === 100 ? 'any' : hi} at kick-off`, group: 'dprice', test: m => !!m.preDraw && m.preDraw >= lo && m.preDraw < hi })
+  const res = search(matches, rules, filters, cut, false)
+  const goalRate = avg(matches.map(m => m.goals.length ? 1 : 0))
+  L.push(`${matches.length.toLocaleString('en-GB')} matches with in-play prices. The score isn't in the free history, so goals are worked out from sudden jumps in the Over 2.5 price (a goal was spotted in ${Math.round(goalRate * 100)}% of matches). Minutes are clock minutes from kick-off, so half-time falls at about 47 to 62. Prices one tick worse than the last trade, after commission.`, '')
+  L.push(...resultsBlock('in-play rules (Over/Under at each time and score, after the first goal, laying the draw; with country and kick-off price filters)', res.found, res.tested, false))
+  return { lines: L, found: res.found }
+}
+
+// ------------------------------------------------------------------ Dixon-Coles: a score model learned from earlier results
+// Each team has an attack and a defence strength, plus a home advantage; expected goals
+//   home = attack(home) × defence(away) × home advantage,  away = attack(away) × defence(home)
+// Goals follow a Poisson distribution, with Dixon and Coles' correction (rho) for 0-0, 1-0,
+// 0-1 and 1-1, and older matches count less (time decay, xi per day). The model is refitted at
+// the start of every month using only earlier matches, so every prediction is made the way it
+// would have been at the time. Scores come from the Correct Score market's result.
+type FSel = { key: 'H' | 'D' | 'A' | 'O' | 'U' | 'BY' | 'BN'; px60: number | null; close: number | null; won: boolean }
+type FMatch = { t: number; month: string; country: string; home: string; away: string; hg: number | null; ag: number | null; sels: FSel[] }
+
+function footballMatches(d: HistDay): FMatch[] {
+  const { markets, snaps } = expandHistory(d, 'football')
+  const by = new Map<string, FMatch>()
+  for (const m of markets) {
+    const [home, away] = m.event.split(/\s+v\s+/i)
+    if (!home || !away || !m.winners?.length) continue
+    const k = m.event + '|' + m.start_at
+    let f = by.get(k)
+    if (!f) { f = { t: Date.parse(m.start_at), month: m.start_at.slice(0, 7), country: m.country ?? '?', home: home.trim().toLowerCase(), away: away.trim().toLowerCase(), hg: null, ag: null, sels: [] }; by.set(k, f) }
+    if (m.market_type === 'CORRECT_SCORE') {
+      const w = m.runners.find(r => m.winners!.includes(r.id))?.name ?? ''
+      const sc = w.match(/(\d+)\s*-\s*(\d+)/)
+      if (sc) { f.hg = Number(sc[1]); f.ag = Number(sc[2]) }
+      else if (/any other home/i.test(w)) { f.hg = 4; f.ag = 1 } else if (/any other away/i.test(w)) { f.hg = 1; f.ag = 4 } else if (/any other draw/i.test(w)) { f.hg = 4; f.ag = 4 }
+      continue
+    }
+    const path = pickPath(m, snaps.get(m.market_id) ?? [], [3600], 300)
+    const px = (o: string, id: number) => { const r = path[o]?.runners.find(x => x[0] === id); return r ? (r[1] ?? r[5]) : null }
+    const add = (key: FSel['key'], id: number | undefined) => { if (id === undefined) return; f!.sels.push({ key, px60: px('3600', id), close: px(OFF, id), won: m.winners!.includes(id) }) }
+    if (m.market_type === 'MATCH_ODDS') { add('H', m.runners[0]?.id); add('A', m.runners[1]?.id); add('D', m.runners.find(r => /draw/i.test(r.name))?.id) }
+    if (m.market_type === 'OVER_UNDER_25') { add('O', m.runners.find(r => /over/i.test(r.name))?.id); add('U', m.runners.find(r => /under/i.test(r.name))?.id) }
+    if (m.market_type === 'BOTH_TEAMS_TO_SCORE') { add('BY', m.runners.find(r => /yes/i.test(r.name))?.id); add('BN', m.runners.find(r => /no/i.test(r.name))?.id) }
+  }
+  return [...by.values()]
+}
+
+const pois = (k: number, l: number) => { let p = Math.exp(-l); for (let i = 1; i <= k; i++) p *= l / i; return p }
+const tau = (x: number, y: number, l: number, m: number, rho: number) =>
+  x === 0 && y === 0 ? 1 - l * m * rho : x === 0 && y === 1 ? 1 + l * rho : x === 1 && y === 0 ? 1 + m * rho : x === 1 && y === 1 ? 1 - rho : 1
+
+type DCVariant = { name: string; xi: number; perCountryHome: boolean }
+const DC_VARIANTS: DCVariant[] = [
+  { name: 'standard (results fade over about a year)', xi: 0.0019, perCountryHome: false },
+  { name: 'home advantage by country', xi: 0.0019, perCountryHome: true },
+  { name: 'no fading', xi: 0, perCountryHome: false },
+  { name: 'fast fading (about 4 months)', xi: 0.0065, perCountryHome: false },
+]
+
+function fitDC(train: FMatch[], at: number, v: DCVariant) {
+  const att = new Map<string, number>(), def = new Map<string, number>(), homeAdv = new Map<string, number>()
+  const games = new Map<string, number>()
+  const w = train.map(m => Math.exp(-v.xi * (at - m.t) / 86_400_000))
+  for (const m of train) { for (const tm of [m.home, m.away]) { att.set(tm, 1); def.set(tm, 1); games.set(tm, (games.get(tm) ?? 0) + 1) } }
+  const hk = (m: FMatch) => v.perCountryHome ? m.country : 'all'
+  for (const m of train) homeAdv.set(hk(m), 1.3)
+  for (let it = 0; it < 25; it++) {
+    const aNum = new Map<string, number>(), aDen = new Map<string, number>(), dNum = new Map<string, number>(), dDen = new Map<string, number>()
+    const add = (mp: Map<string, number>, k: string, x: number) => mp.set(k, (mp.get(k) ?? 0) + x)
+    train.forEach((m, i) => {
+      const h = homeAdv.get(hk(m))!, wi = w[i]
+      add(aNum, m.home, wi * m.hg!); add(aDen, m.home, wi * h * def.get(m.away)!)
+      add(aNum, m.away, wi * m.ag!); add(aDen, m.away, wi * def.get(m.home)!)
+    })
+    for (const [k, n] of aNum) att.set(k, Math.max(0.05, (n + 0.5) / ((aDen.get(k) ?? 0) + 0.5)))   // small pull towards average
+    train.forEach((m, i) => {
+      const h = homeAdv.get(hk(m))!, wi = w[i]
+      add(dNum, m.away, wi * m.hg!); add(dDen, m.away, wi * h * att.get(m.home)!)
+      add(dNum, m.home, wi * m.ag!); add(dDen, m.home, wi * att.get(m.away)!)
+    })
+    for (const [k, n] of dNum) def.set(k, Math.max(0.05, (n + 0.5) / ((dDen.get(k) ?? 0) + 0.5)))
+    const hNum = new Map<string, number>(), hDen = new Map<string, number>()
+    train.forEach((m, i) => { add(hNum, hk(m), w[i] * m.hg!); add(hDen, hk(m), w[i] * att.get(m.home)! * def.get(m.away)!) })
+    for (const [k, n] of hNum) homeAdv.set(k, n / Math.max(1e-9, hDen.get(k)!))
+    // keep attack centred on 1
+    const meanA = [...att.values()].reduce((a, b) => a + b, 0) / att.size
+    for (const [k, x] of att) att.set(k, x / meanA)
+    for (const [k, x] of def) def.set(k, x * meanA)
+  }
+  // rho: the low-score correction, by a simple search
+  let best = 0, bestLL = -Infinity
+  for (let r = -0.2; r <= 0.1001; r += 0.02) {
+    let ll = 0
+    train.forEach((m, i) => { if (m.hg! <= 1 && m.ag! <= 1) { const h = homeAdv.get(hk(m))!; ll += w[i] * Math.log(Math.max(1e-9, tau(m.hg!, m.ag!, h * att.get(m.home)! * def.get(m.away)!, att.get(m.away)! * def.get(m.home)!, r))) } })
+    if (ll > bestLL) { bestLL = ll; best = r }
+  }
+  return { att, def, homeAdv, rho: best, games, hk }
+}
+
+function predictDC(f: ReturnType<typeof fitDC>, m: FMatch) {
+  const a1 = f.att.get(m.home), d1 = f.def.get(m.home), a2 = f.att.get(m.away), d2 = f.def.get(m.away), h = f.homeAdv.get(f.hk(m)) ?? f.homeAdv.get('all')
+  if (!a1 || !a2 || !d1 || !d2 || !h || (f.games.get(m.home) ?? 0) < 8 || (f.games.get(m.away) ?? 0) < 8) return null
+  const l = h * a1 * d2, mu = a2 * d1
+  let H = 0, D = 0, A = 0, O = 0, BY = 0, tot = 0
+  for (let x = 0; x <= 10; x++) for (let y = 0; y <= 10; y++) {
+    const p = pois(x, l) * pois(y, mu) * tau(x, y, l, mu, f.rho)
+    tot += p
+    if (x > y) H += p; else if (x === y) D += p; else A += p
+    if (x + y >= 3) O += p
+    if (x > 0 && y > 0) BY += p
+  }
+  return { H: H / tot, D: D / tot, A: A / tot, O: O / tot, U: 1 - O / tot, BY: BY / tot, BN: 1 - BY / tot } as Record<FSel['key'], number>
+}
+
+type DCItem = { month: string; country: string; mkt: 'MO' | 'OU' | 'BTTS'; key: FSel['key']; px60: number | null; close: number | null; won: boolean; pm: Float32Array; pmk: number }
+
+function dixonColes(matches: FMatch[], cut: string): { lines: string[]; found: Found[] } {
+  const L: string[] = ['', '### Dixon-Coles score model (football, let it run)', '']
+  const scored = matches.filter(m => m.hg !== null).sort((a, b) => a.t - b.t)
+  if (scored.length < 2000) { L.push(`Needs the Correct Score results (${scored.length.toLocaleString('en-GB')} matches with a final score so far). Import them with: sudo bash /opt/flowstate/recorder/deploy/history.sh 2023-07-01 2026-06-30 football --only=CORRECT_SCORE`); return { lines: L, found: [] } }
+  const months = Array.from(new Set(scored.map(m => m.month))).sort()
+  const items: DCItem[] = []
+  const ll = DC_VARIANTS.map(() => ({ model: 0, market: 0, n: 0 }))
+  for (const mo of months.slice(6)) {                       // first six months only train the model
+    const start = Date.parse(mo + '-01T00:00:00Z')
+    const train = scored.filter(m => m.t < start && m.t > start - 2 * 365 * 86_400_000)
+    const fits = DC_VARIANTS.map(v => fitDC(train, start, v))
+    for (const m of matches.filter(x => x.month === mo)) {
+      const preds = fits.map(f => predictDC(f, m))
+      if (!preds[0]) continue
+      const groups: [DCItem['mkt'], FSel['key'][]][] = [['MO', ['H', 'D', 'A']], ['OU', ['O', 'U']], ['BTTS', ['BY', 'BN']]]
+      for (const [mkt, keys] of groups) {
+        const ss = keys.map(k => m.sels.find(x => x.key === k)).filter((x): x is FSel => !!x && !!x.close)
+        if (ss.length !== keys.length) continue
+        const book = ss.reduce((a, x) => a + 1 / x.close!, 0)
+        for (const x of ss) {
+          const pmk = (1 / x.close!) / Math.max(1, book)
+          items.push({ month: m.month, country: m.country, mkt, key: x.key, px60: x.px60, close: x.close, won: x.won, pm: Float32Array.from(preds, p => p ? p[x.key] : NaN), pmk })
+          if (mkt === 'MO') preds.forEach((p, i) => { if (p) { ll[i].model -= Math.log(Math.max(1e-6, x.won ? p[x.key] : 1 - p[x.key])); ll[i].market -= Math.log(Math.max(1e-6, x.won ? pmk : 1 - pmk)); ll[i].n++ } })
+        }
+      }
+    }
+  }
+  L.push(`${scored.length.toLocaleString('en-GB')} matches with a final score; refitted every month on the two years before it, predicting ${new Set(items.map(i => i.month)).size} months of matches (${items.length.toLocaleString('en-GB')} selections). Teams need 8+ earlier matches.`, '')
+  L.push('How the model compares with the market at kick-off (Match Odds, lower is better; the market usually wins):', '')
+  L.push(table(['Model version', 'Model log loss', 'Market log loss', 'Selections'], DC_VARIANTS.map((v, i) => [v.name, fx(ll[i].model / Math.max(1, ll[i].n), 4), fx(ll[i].market / Math.max(1, ll[i].n), 4), ll[i].n.toLocaleString('en-GB')])), '')
+
+  const NAMES: Record<FSel['key'], string> = { H: 'home win', D: 'draw', A: 'away win', O: 'Over 2.5', U: 'Under 2.5', BY: 'BTTS yes', BN: 'BTTS no' }
+  const rules: { name: string; make: (x: DCItem) => Bet | null }[] = []
+  for (const mkt of ['MO', 'OU', 'BTTS'] as const) for (const side of ['back', 'lay'] as const) for (const at of ['60', 'close'] as const)
+    DC_VARIANTS.forEach((v, vi) => { for (const wgt of [1, 0.5]) for (const thr of [0.02, 0.05, 0.1]) {
+      rules.push({ name: `${side === 'back' ? 'Back' : 'Lay'} where the model ${wgt === 1 ? '' : '(50/50 with the market) '}gives ${thr * 100}%+ edge, ${mkt === 'MO' ? 'Match Odds' : mkt === 'OU' ? 'Over/Under 2.5' : 'BTTS'}, ${at === '60' ? 'an hour before' : 'at kick-off'}, ${v.name}`,
+        make: x => {
+          if (x.mkt !== mkt) return null
+          const raw = at === '60' ? x.px60 : x.close
+          const pmod = x.pm[vi]
+          if (!raw || !Number.isFinite(pmod)) return null
+          const p = wgt * pmod + (1 - wgt) * x.pmk
+          if (side === 'back') { const P = tickDown(raw); return p * (P - 1) * (1 - C) - (1 - p) >= thr ? { month: x.month, value: 0, actual: backActual(P, x.won) } : null }
+          const P = tickUp(raw); return (1 - p) * (1 - C) - p * (P - 1) >= thr ? { month: x.month, value: 0, actual: layActual(P, x.won) } : null
+        } })
+    } })
+  const F: Filter<DCItem>[] = [{ name: 'all', group: 'all', test: () => true }]
+  for (const k of Object.keys(NAMES) as FSel['key'][]) F.push({ name: NAMES[k], group: 'sel', test: x => x.key === k })
+  for (const cc of Array.from(new Set(items.map(i => i.country)))) F.push({ name: `country ${cc}`, group: 'country', test: x => x.country === cc })
+  for (const [lo, hi] of [[1, 2], [2, 3], [3, 5], [5, 1000]]) F.push({ name: `priced ${lo} to ${hi === 1000 ? 'any' : hi}`, group: 'price', test: x => !!x.close && x.close >= lo && x.close < hi })
+  const res = search(items, rules, F, cut, false)
+  L.push(...resultsBlock('model rules (back or lay where the model disagrees with the price by 2%, 5% or 10%, alone or blended 50/50 with the market; an hour before or at kick-off; four model versions; with selection, country and price filters)', res.found, res.tested, false))
+  return { lines: L, found: res.found }
+}
+
+// ------------------------------------------------------------------ tennis in play: fading or following big swings
+// The free history has the last traded price every 2 minutes in play. A "swing" is when a player's
+// chance jumps by 15 or 25 points between two readings (usually a break of serve). Bet a reading
+// later, only if the swing is still there; then close after 4, 10 or 20 minutes or let it run.
+type TSwing = { month: string; dropFav: boolean; size: number; minute: number; entry: number; exits: (number | null)[]; won: boolean }
+const T_HOLDS = [4, 10, 20, 0]
+function tennisSwings(d: HistDay): TSwing[] {
+  const { markets, snaps } = expandHistory(d, 'tennis')
+  const out: TSwing[] = []
+  for (const m of markets) {
+    if (!m.off_at || !m.winners?.length || m.runners.length !== 2) continue
+    const off = Date.parse(m.off_at)
+    const pts = (snaps.get(m.market_id) ?? []).filter(s => s.inplay).map(s => ({ t: Math.round((Date.parse(s.at) - off) / 60_000), px: new Map(s.runners.map(r => [r[0], r[5] as number])) }))
+    const pre = (snaps.get(m.market_id) ?? []).filter(s => !s.inplay).pop()
+    if (pts.length < 10 || !pre) continue
+    const favId = [...pre.runners].sort((a, b) => (a[5] ?? 99) - (b[5] ?? 99))[0]?.[0]
+    const seen = new Set<string>()
+    for (let i = 1; i < pts.length - 1; i++) for (const r of m.runners) {
+      const a = pts[i - 1].px.get(r.id), b = pts[i].px.get(r.id), c = pts[i + 1].px.get(r.id)
+      if (!a || !b || !c) continue
+      const drop = 1 / a - 1 / b                       // how far this player's chance fell
+      for (const size of [0.15, 0.25]) {
+        if (drop < size || 1 / a - 1 / c < size || seen.has(r.id + ':' + size)) continue   // still down a reading later
+        seen.add(r.id + ':' + size)
+        const tEntry = pts[i + 1].t
+        const exitAt = (h: number) => { if (!h) return null; const q = pts.find(p => p.t >= tEntry + h); return q?.px.get(r.id) ?? null }
+        out.push({ month: m.start_at.slice(0, 7), dropFav: r.id === favId, size, minute: pts[i].t, entry: c, exits: T_HOLDS.map(exitAt), won: m.winners.includes(r.id) })
+      }
+    }
+  }
+  return out
+}
+function tennisInPlay(sw: TSwing[], cut: string): { lines: string[]; found: Found[] } {
+  const L = ['', '### Tennis in play: big swings', '']
+  if (sw.length < 500) { L.push('Not enough tennis in-play history yet.'); return { lines: L, found: [] } }
+  const rules: { name: string; make: (x: TSwing) => Bet | null }[] = []
+  for (const size of [0.15, 0.25]) for (const side of ['back', 'lay'] as const) T_HOLDS.forEach((h, hi) => rules.push({
+    name: `${side === 'back' ? 'Back' : 'Lay'} the player whose chance just fell ${size * 100}+ points, ${h ? `close after ${h} min` : 'let it run'}`,
+    make: x => {
+      if (x.size !== size) return null
+      if (!h) return { month: x.month, value: 0, actual: side === 'back' ? backActual(tickDown(x.entry), x.won) : layActual(tickUp(x.entry), x.won) }
+      const ex = x.exits[hi]
+      return ex ? { month: x.month, value: 0, actual: hedge(side, x.entry, ex) } : { month: x.month, value: 0, actual: side === 'back' ? backActual(tickDown(x.entry), x.won) : layActual(tickUp(x.entry), x.won) }
+    } }))
+  const F: Filter<TSwing>[] = [{ name: 'all matches', group: 'all', test: () => true },
+    { name: 'the pre-match favourite fell', group: 'fav', test: x => x.dropFav }, { name: 'the underdog fell', group: 'fav', test: x => !x.dropFav },
+    { name: 'first 40 min', group: 'time', test: x => x.minute < 40 }, { name: '40 to 90 min', group: 'time', test: x => x.minute >= 40 && x.minute < 90 }, { name: 'after 90 min', group: 'time', test: x => x.minute >= 90 },
+    { name: 'priced under 2.0 after the swing', group: 'price', test: x => x.entry < 2 }, { name: 'priced 2.0 to 4.0', group: 'price', test: x => x.entry >= 2 && x.entry < 4 }, { name: 'priced 4.0+', group: 'price', test: x => x.entry >= 4 }]
+  const res = search(sw, rules, F, cut, false)
+  L.push(`${sw.length.toLocaleString('en-GB')} swings found in the tennis history (a player's chance falling 15+ points between two readings, still down at the next one). Bets go on at the reading after the swing, one tick worse than the last trade.`, '')
+  L.push(...resultsBlock('swing rules (back or lay the player who fell, close after 4, 10 or 20 minutes or let it run; by favourite, time in the match and price)', res.found, res.tested, false))
+  return { lines: L, found: res.found }
 }
 
 function systemsSection(sport: string, found: Found[], tested: number): string[] {
@@ -518,4 +976,6 @@ function resultsBlock(what: string, found: Found[], tested: number, trading: boo
   return L
 }
 
-main().then(() => process.exit(0), e => { log.error('Scout stopped:', errText(e)); process.exit(1) })
+if (process.env.SCOUT_NO_MAIN !== '1') main().then(() => process.exit(0), e => { log.error('Scout stopped:', errText(e)); process.exit(1) })
+
+export { tennisSwings, tennisInPlay }
