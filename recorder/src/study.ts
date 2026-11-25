@@ -52,7 +52,34 @@ function backActual(price: number, won: boolean) { return won ? (price - 1) * (1
 function layValue(price: number, p: number) { return (1 - p) * (1 - C) - p * (price - 1) }
 function layActual(price: number, won: boolean) { return won ? -(price - 1) : 1 - C }
 
-type Bet = { month: string; value: number; actual: number }
+// `ex` (when the market's chance is known): lets the scout run an exact check on the number of winners,
+// which matters for lay bets at big prices (rare, huge losses) where the t-test is badly fooled.
+type Bet = { month: string; value: number; actual: number; ex?: { p: number; won: boolean; lay: boolean } }
+const backBet = (month: string, price: number, p: number, won: boolean): Bet => ({ month, value: backValue(price, p), actual: backActual(price, won), ex: { p, won, lay: false } })
+const layBet = (month: string, price: number, p: number, won: boolean): Bet => ({ month, value: layValue(price, p), actual: layActual(price, won), ex: { p, won, lay: true } })
+
+// Chance of a winner count at least this good if the market's chances were right
+// (lay: this few winners or fewer; back: this many or more). Exact (Poisson-binomial) while
+// the expected number of winners is small, which is where the t-test goes wrong; null otherwise.
+function exactP(bets: Bet[]): number | null {
+  if (!bets.length || bets.some(b => !b.ex) || new Set(bets.map(b => b.ex!.lay)).size > 1) return null
+  const lay = bets[0].ex!.lay
+  const ps = bets.map(b => b.ex!.p), w = bets.filter(b => b.ex!.won).length
+  if (ps.reduce((a, b) => a + b, 0) > 60) return null
+  // dist[k] = chance of exactly k winners, tracked up to K (the rest lumped into the last cell)
+  const K = lay ? w + 1 : w
+  let dist = new Float64Array(K + 1); dist[0] = 1
+  for (const p of ps) {
+    const nx = new Float64Array(K + 1)
+    for (let k = 0; k <= K; k++) { if (!dist[k]) continue; nx[k] += dist[k] * (1 - p); nx[Math.min(K, k + 1)] += dist[k] * p }
+    dist = nx
+  }
+  let below = 0
+  for (let k = 0; k < (lay ? w + 1 : w); k++) below += dist[k]
+  return Math.min(1, Math.max(0, lay ? below : 1 - below))
+}
+// p-value for a set of bets: the t-test, or the exact winner count if that's stricter
+const pBets = (bets: Bet[], t: number) => Math.max(pOf(t), exactP(bets) ?? 0)
 type Summary = { n: number; value: number; roi: number; t: number; vt: number; monthsUp: number; months: number; beatEff: number }
 function summarise(bets: Bet[], beat?: number[]): Summary {
   const byMonth = new Map<string, number>()
@@ -195,7 +222,7 @@ function makeFound(rule: string, bets: Bet[], cut: string, valueCheck: boolean):
   const s = summarise(train)
   if (s.roi <= 0 || s.t < 1.5 || (valueCheck && s.value <= -0.02)) return null
   const t = summarise(test), a = summarise(bets)
-  return { rule, train: s, test: t, all: a, pTrain: pOf(s.t), pTest: pOf(t.t), pAll: pOf(a.t), q: 1, passed: false }
+  return { rule, train: s, test: t, all: a, pTrain: pBets(train, s.t), pTest: pBets(test, t.t), pAll: pBets(bets, a.t), q: 1, passed: false }
 }
 
 type Filter<T> = { name: string; group: string; test: (x: T) => boolean; knownAt?: number }
@@ -257,14 +284,14 @@ async function main() {
   const backAt = (o: number, cautious: boolean) => (x: Runner): Bet | null => {
     const raw = x.px[ri(o)]; if (!raw) return null
     const price = cautious ? tickDown(raw) : raw
-    return { month: x.month, value: backValue(price, x.p), actual: backActual(price, x.won) }
+    return backBet(x.month, price, x.p, x.won)
   }
   const layAt = (o: number, cautious: boolean) => (x: Runner): Bet | null => {
     const raw = x.px[ri(o)]; if (!raw) return null
     const price = cautious ? tickUp(raw) : raw
-    return { month: x.month, value: layValue(price, x.p), actual: layActual(price, x.won) }
+    return layBet(x.month, price, x.p, x.won)
   }
-  const spBack = (x: Runner): Bet => ({ month: x.month, value: backValue(x.sp, x.p), actual: backActual(x.sp, x.won) })
+  const spBack = (x: Runner): Bet => backBet(x.month, x.sp, x.p, x.won)
 
   // 1. Does the 20-minute price beat SP, by rank?
   const rankName = (k: number) => k === 1 ? 'Favourite' : k === 2 ? '2nd fav' : k === 3 ? '3rd fav' : k <= 6 ? '4th to 6th' : '7th or longer'
@@ -338,8 +365,8 @@ async function main() {
     const fm = Array.from(new Set(sels.map(s => s.month))).sort()
     const fcut = fm[Math.floor(fm.length * 2 / 3)] ?? fm[fm.length - 1]
     L.push('', `## Football: back early, let it run`, '', `${fdays.length} days (${fm[0]} to ${fm[fm.length - 1]}), ${sels.length.toLocaleString('en-GB')} selections. The efficient price is the last price before kick-off. Checked on ${fcut} onwards.`, '')
-    const fBack = (o: number, cautious: boolean) => (s: Sel): Bet | null => { const raw = s.px[fi(o)]; if (!raw) return null; const pr = cautious ? tickDown(raw) : raw; return { month: s.month, value: backValue(pr, s.p), actual: backActual(pr, s.won) } }
-    const fLay = (o: number, cautious: boolean) => (s: Sel): Bet | null => { const raw = s.px[fi(o)]; if (!raw) return null; const pr = cautious ? tickUp(raw) : raw; return { month: s.month, value: layValue(pr, s.p), actual: layActual(pr, s.won) } }
+    const fBack = (o: number, cautious: boolean) => (s: Sel): Bet | null => { const raw = s.px[fi(o)]; if (!raw) return null; const pr = cautious ? tickDown(raw) : raw; return backBet(s.month, pr, s.p, s.won) }
+    const fLay = (o: number, cautious: boolean) => (s: Sel): Bet | null => { const raw = s.px[fi(o)]; if (!raw) return null; const pr = cautious ? tickUp(raw) : raw; return layBet(s.month, pr, s.p, s.won) }
     const fClose = (s: Sel): Bet => ({ month: s.month, value: backValue(s.close, s.p), actual: backActual(s.close, s.won) })
     for (const type of ['OVER_UNDER_25', 'BOTH_TEAMS_TO_SCORE', 'MATCH_ODDS']) {
       const ts = sels.filter(s => s.type === type)
@@ -466,7 +493,7 @@ function horseHistory(runners: Runner[], cut: string): { lines: string[]; found:
   for (const side of ['Back', 'Lay'] as const) {
     for (const at of ['20 min', 'SP'] as const) {
       const price = (x: Runner) => at === 'SP' ? x.sp : x.px[ri(1200)] ? (side === 'Back' ? tickDown(x.px[ri(1200)]!) : tickUp(x.px[ri(1200)]!)) : null
-      const bet = (x: Runner): Bet | null => { const p = price(x); if (!p) return null; return side === 'Back' ? { month: x.month, value: backValue(p, x.p), actual: backActual(p, x.won) } : { month: x.month, value: layValue(p, x.p), actual: layActual(p, x.won) } }
+      const bet = (x: Runner): Bet | null => { const p = price(x); if (!p) return null; return side === 'Back' ? backBet(x.month, p, x.p, x.won) : layBet(x.month, p, x.p, x.won) }
       const where = at === 'SP' ? 'at SP' : '20 min out (cautious price)'
       rules.push({ name: `${side} any runner ${where}`, make: bet })
       for (const g of ['favourite', '2nd fav', '3rd fav', '4th to 6th', '7th or longer']) rules.push({ name: `${side} the ${g} ${where}`, make: x => rankName(x.rank[ri(1200)]) === g ? bet(x) : null })
@@ -476,6 +503,7 @@ function horseHistory(runners: Runner[], cut: string): { lines: string[]; found:
   const res = search(items, rules, F, cut, false)
   const L = ['', '### 5. Horse form from the data (back or lay, let it run)', '',
     `Each horse's earlier runs in the history, matched by name (${byHorse.size.toLocaleString('en-GB')} horses, ${items.filter(r => r.h!.runs > 0).length.toLocaleString('en-GB')} runs with at least one earlier run to look back on). Form signals tested: days since the last run, won or lost last time, beaten favourite last time, today's price against last time's SP, steamed or drifted last time, course before or new, distance up or down, switching race type, number of earlier runs; alone and in pairs, and with race type and handicaps. Backed or laid at the 20-minute price (one tick worse) or at Betfair SP (exact). Trainer and jockey aren't in the free history; your recordings have them from 19 November.`, '']
+  L.push('Lay returns are per £1 of the backer\'s stake. Laying at 30 risks £29 to win 95p, so one winner wipes out about 30 winning lays: a rule with very few or no winners can show a huge ROI by luck. Lay rules are therefore also checked on the winner count itself (how likely this few winners would be if SP were right), not only the t-test.', '')
   L.push(...resultsBlock('form rules', res.found, res.tested, false))
   return { lines: L, found: res.found }
 }
@@ -809,12 +837,24 @@ function footballInPlay(matches: Match[], cut: string): { lines: string[]; found
   type R = { name: string; make: (m: Match) => Bet | null }
   const rules: R[] = []
   const idx = (k: number) => k / 5
+  // No stale prices: the price at a minute can come from up to 2 minutes earlier, and a goal suspends
+  // the market, so a price "with 1 goal" could really be from before the goal (laying Under at its
+  // pre-goal price then looks like free money). Only bet when the last goal was 4+ minutes before
+  // and the Over and Under prices agree with each other (their chances add up to 92-110%).
+  const settled = (m: Match, k: number) => {
+    const lastGoal = m.goals.filter(x => x <= k).pop()
+    if (lastGoal !== undefined && lastGoal > k - 4) return false
+    const o = m.over[idx(k)], u = m.under[idx(k)]
+    if (!o || !u) return false
+    const book = 1 / o + 1 / u
+    return book >= 0.92 && book <= 1.10
+  }
   for (const k of [10, 20, 30, 40, 65, 75, 85]) for (const g of [0, 1, 2]) for (const sel of ['Over', 'Under'] as const) for (const side of ['back', 'lay'] as const) {
     const px = (m: Match, kk: number) => (sel === 'Over' ? m.over : m.under)[idx(kk)]
     const won = (m: Match) => sel === 'Over' ? m.overWon : !m.overWon
     const label = `${side === 'back' ? 'Back' : 'Lay'} ${sel} 2.5 at ${k} min with ${g} goal${g === 1 ? '' : 's'}`
-    rules.push({ name: `${label}, let it run`, make: m => { const p = px(m, k); if (!p || goalsBy(m, k) !== g) return null; return mk(m.month, settle(side, side === 'back' ? tickDown(p) : tickUp(p), won(m))) } })
-    for (const h of [10, 20]) rules.push({ name: `${label}, close after ${h} min`, make: m => { const p = px(m, k); if (!p || goalsBy(m, k) !== g || k + h > 150) return null; return mk(m.month, hedgeOrSettle(side, p, px(m, k + h), won(m))) } })
+    rules.push({ name: `${label}, let it run`, make: m => { const p = px(m, k); if (!p || goalsBy(m, k) !== g || !settled(m, k)) return null; return mk(m.month, settle(side, side === 'back' ? tickDown(p) : tickUp(p), won(m))) } })
+    for (const h of [10, 20]) rules.push({ name: `${label}, close after ${h} min`, make: m => { const p = px(m, k); if (!p || goalsBy(m, k) !== g || !settled(m, k) || k + h > 150) return null; return mk(m.month, hedgeOrSettle(side, p, px(m, k + h), won(m))) } })
   }
   // after the first goal: back or lay the Over two minutes later
   for (const by of [20, 35, 60]) for (const side of ['back', 'lay'] as const) {
@@ -848,7 +888,7 @@ function footballInPlay(matches: Match[], cut: string): { lines: string[]; found
   for (const [lo, hi] of [[1, 3.2], [3.2, 3.8], [3.8, 100]]) filters.push({ name: `draw priced ${lo} to ${hi === 100 ? 'any' : hi} at kick-off`, group: 'dprice', test: m => !!m.preDraw && m.preDraw >= lo && m.preDraw < hi })
   const res = search(matches, rules, filters, cut, false)
   const goalRate = avg(matches.map(m => m.goals.length ? 1 : 0))
-  L.push(`${matches.length.toLocaleString('en-GB')} matches with in-play prices. The score isn't in the free history, so goals are worked out from sudden jumps in the Over 2.5 price (a goal was spotted in ${Math.round(goalRate * 100)}% of matches). Minutes are clock minutes from kick-off, so half-time falls at about 47 to 62. Prices one tick worse than the last trade, after commission.`, '')
+  L.push(`${matches.length.toLocaleString('en-GB')} matches with in-play prices. The score isn't in the free history, so goals are worked out from sudden jumps in the Over 2.5 price (a goal was spotted in ${Math.round(goalRate * 100)}% of matches). Minutes are clock minutes from kick-off, so half-time falls at about 47 to 62. Prices one tick worse than the last trade, after commission. To avoid stale prices from before a goal, bets at a set minute are only placed when the last goal was at least 4 minutes earlier and the Over and Under prices agree with each other.`, '')
   L.push(...resultsBlock('in-play rules (Over/Under at each time and score, after the first goal, laying the draw; with country and kick-off price filters)', res.found, res.tested, false))
   return { lines: L, found: res.found }
 }
