@@ -20,7 +20,7 @@
 // Reads only. Places no bets.
 
 import zlib from 'zlib'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { loadConfig } from './config'
 import { installGuard } from './guard'
 import { errText, log } from './log'
@@ -374,6 +374,9 @@ async function main() {
     L.push(...dc.lines)
     dcFound = dc.found
   }
+
+  // ================================================================ your own recordings (real back and lay prices)
+  try { L.push(...await recordingsStudy(db)) } catch (e) { log.warn('Recordings study skipped:', errText(e)); L.push('', '## Your own recordings', '', `Skipped: ${errText(e)}`) }
 
   // ================================================================ tennis
   log.info('Scout: loading tennis history')
@@ -1062,6 +1065,101 @@ function tennisInPlay(sw: TSwing[], cut: string): { lines: string[]; found: Foun
   L.push(`${sw.length.toLocaleString('en-GB')} swings found in the tennis history (a player's chance falling 15+ points between two readings, still down at the next one). Bets go on at the reading after the swing, one tick worse than the last trade.`, '')
   L.push(...resultsBlock('swing rules (back or lay the player who fell, close after 4, 10 or 20 minutes or let it run; by favourite, time in the match and price)', res.found, res.tested, false))
   return { lines: L, found: res.found }
+}
+
+// ------------------------------------------------------------------ your own recordings: real back and lay prices
+// The recorder saves the best back and lay prices (delayed on the free key) for every GB and IE race.
+// Prices here use the geometric midpoint √(back × lay), Betfair's data scientists' best estimate of
+// the "true" price, so a trade bouncing between the back and lay side doesn't look like a move.
+// Trades are priced at what was really on offer: back at the best back, hedge at the best lay.
+type RecSnap = { market_id: string; at: string; inplay?: boolean; runners: [number, number | null, number, number | null, number, number | null][] }
+async function recordingsStudy(db: SupabaseClient): Promise<string[]> {
+  const L = ['', '## Your own recordings (real back and lay prices)', '']
+  const since = new Date(Date.now() - 120 * 86_400_000).toISOString()
+  const markets: { market_id: string; start_at: string; off_at: string | null; runners: { id: number; name: string; jockey?: string | null }[] | null; winners: number[] | null; removed: number[] | null; bsp: Record<string, number> | null; archived_at: string | null }[] = []
+  for (let i = 0; ; i += 1000) {
+    const { data, error } = await db.from('bf_markets').select('market_id, start_at, off_at, runners, winners, removed, bsp, archived_at').eq('sport', 'racing').not('status', 'is', null).not('off_at', 'is', null).gte('start_at', since).order('start_at').range(i, i + 999)
+    if (error) throw new Error(error.message)
+    markets.push(...((data ?? []) as typeof markets))
+    if (!data || data.length < 1000) break
+  }
+  if (markets.length < 50) { L.push(`Only ${markets.length} settled races recorded so far; this section fills in as the recorder builds up.`); return L }
+  // snapshots: from the database, or the day's archive file once moved there
+  const byDay = new Map<string, typeof markets>()
+  for (const m of markets) { const d = m.start_at.slice(0, 10); byDay.set(d, [...(byDay.get(d) ?? []), m]) }
+  type Mid = { mid: number; back: number | null; lay: number | null }
+  const fade: { month: string; ret: number }[] = [], support: { group: string; jockey: string; ret: number; won: boolean }[] = []
+  for (const [day, ms] of byDay) {
+    const snaps = new Map<string, RecSnap[]>()
+    const archived = ms.filter(m => m.archived_at)
+    if (archived.length) {
+      const { data } = await db.storage.from('betfair-archive').download(`${day}.json.gz`)
+      if (data) { const j = JSON.parse(zlib.gunzipSync(Buffer.from(await data.arrayBuffer())).toString('utf8')) as { snaps: RecSnap[] }; for (const sn of j.snaps) snaps.set(sn.market_id, [...(snaps.get(sn.market_id) ?? []), sn]) }
+    }
+    const live = ms.filter(m => !m.archived_at).map(m => m.market_id)
+    for (let i = 0; i < live.length; i += 10) {
+      for (let p = 0; ; p += 1000) {
+        const { data } = await db.from('bf_snaps').select('market_id, at, inplay, runners').in('market_id', live.slice(i, i + 10)).order('market_id').order('at').range(p, p + 999)
+        for (const sn of (data ?? []) as RecSnap[]) snaps.set(sn.market_id, [...(snaps.get(sn.market_id) ?? []), sn])
+        if (!data || data.length < 1000) break
+      }
+    }
+    for (const m of ms) {
+      const off = Date.parse(m.off_at!)
+      const byMin = new Map<number, Map<number, Mid>>()
+      for (const sn of snaps.get(m.market_id) ?? []) {
+        if (sn.inplay) continue
+        const mins = Math.round((off - Date.parse(sn.at)) / 60_000)
+        if (mins < 0 || mins > 75) continue
+        byMin.set(mins, new Map(sn.runners.map(r => [r[0], { mid: r[1] && r[3] ? Math.sqrt(r[1] * r[3]) : (r[5] ?? 0), back: r[1], lay: r[3] }] as const).filter(([, v]) => v.mid > 1)))
+      }
+      const atOff = byMin.get(0) ?? byMin.get(1)
+      if (!atOff) continue
+      // fade-drift on the midpoint: 15+ ticks in 5 min, still out a minute later; back at the best back, hedge 10 min later at the best lay
+      const used = new Set<number>()
+      for (let t = 60; t >= 4; t--) {
+        const now = byMin.get(t), before = byMin.get(t + 5), next = byMin.get(t - 1)
+        if (!now || !before || !next) continue
+        for (const [id, v] of [...now.entries()].sort((a, b) => a[1].mid - b[1].mid).slice(0, 6)) {
+          const was = before.get(id), nx = next.get(id)
+          if (used.has(id) || !was || !nx?.back) continue
+          if (ticksBetween(was.mid, v.mid) < 15 || ticksBetween(was.mid, nx.mid) < 15) continue
+          used.add(id)
+          const exit = (byMin.get(t - 11) ?? atOff).get(id)?.lay
+          if (!exit) continue
+          const g = nx.back / exit - 1
+          fade.push({ month: m.start_at.slice(0, 7), ret: g > 0 ? g * (1 - C) : g })
+        }
+      }
+      // jockey plus market support: did the horse shorten or drift (midpoint) in the last 5 minutes? Back at SP.
+      const five = byMin.get(5)
+      if (five && m.bsp && m.winners) for (const r of m.runners ?? []) {
+        if (m.removed?.includes(r.id)) continue
+        const a = five.get(r.id)?.mid, b = atOff.get(r.id)?.mid, sp = m.bsp[String(r.id)]
+        if (!a || !b || !sp) continue
+        const ch = (1 / b) / (1 / a) - 1
+        const won = m.winners.includes(r.id)
+        support.push({ group: ch >= 0.05 ? 'Shortened 5%+ in the last 5 min' : ch <= -0.05 ? 'Drifted 5%+ in the last 5 min' : 'Steady', jockey: r.jockey ?? '?', ret: backActual(sp, won), won })
+      }
+    }
+  }
+  L.push(`${markets.length.toLocaleString('en-GB')} settled races recorded since ${markets[0].start_at.slice(0, 10)}. Prices are the midpoint √(back × lay); trades use the real best back and lay on offer (delayed on the free key).`, '')
+  const fr = fade.map(f => f.ret)
+  L.push('**Fade-drift on your recordings** (the scout\'s best history system, checked on prices you could really take):', '',
+    fr.length ? `${fr.length} trades, return per £1 ${pct(avg(fr), 2)}, won ${Math.round(fr.filter(x => x > 0).length / fr.length * 100)}%, p ${pfmt(pOf(tStat(fr)))}.${fr.length < 100 ? ' Too few trades to judge yet.' : ''}` : 'No signals yet.', '')
+  const groups = ['Shortened 5%+ in the last 5 min', 'Steady', 'Drifted 5%+ in the last 5 min']
+  L.push('**Market support in the last 5 minutes** (back at Betfair SP):', '', table(['Group', 'Runners', 'Won', 'Return at SP', 'p'], groups.map(g => {
+    const xs = support.filter(x => x.group === g).map(x => x.ret)
+    return [g, xs.length.toLocaleString('en-GB'), xs.length ? Math.round(support.filter(x => x.group === g && x.won).length / xs.length * 100) + '%' : '—', xs.length ? pct(avg(xs), 1) : '—', xs.length > 2 ? pfmt(pOf(tStat(xs))) : '—']
+  })), '')
+  // jockeys with enough rides, by support
+  const jk = new Map<string, number[]>()
+  for (const x of support) if (x.jockey !== '?' && x.group !== 'Steady') { const k = `${x.jockey} · ${x.group.startsWith('Short') ? 'shortened' : 'drifted'}`; jk.set(k, [...(jk.get(k) ?? []), x.ret]) }
+  const jrows = [...jk.entries()].filter(([, v]) => v.length >= 20).map(([k, v]) => ({ k, n: v.length, roi: avg(v), p: pOf(tStat(v)) })).sort((a, b) => a.p - b.p).slice(0, 12)
+  L.push('**Jockey plus market support** (jockeys with 20+ such rides; back at SP):', '',
+    jrows.length ? table(['Jockey · last 5 min', 'Rides', 'Return at SP', 'p'], jrows.map(r => [r.k, r.n, pct(r.roi, 1), pfmt(r.p)])) : 'Not enough rides per jockey yet: this needs a few months of recordings.', '')
+  L.push('These figures have no separate test period yet, so treat them as early readings. Once there are a few months of recordings, a promising result here gets the same checks as the history systems.', '')
+  return L
 }
 
 function systemsSection(sport: string, found: Found[], tested: number): string[] {
