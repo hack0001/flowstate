@@ -10,7 +10,7 @@ Six agents (Scout, Filter, Analyst, Executor, Risk, Logger) trading GB/IE horse-
 | `lib/betfair/live.ts` | Read-only Betfair REST client (login + two read calls) |
 | `lib/betfair/run.ts` | Loads bot state from Supabase, runs one poll, saves trades and log lines |
 | `app/api/betfair/route.ts` | Page API: snapshot, start, stop, reset, one poll |
-| `app/api/betfair/cron/route.ts` | Optional background runner (needs Vercel Pro) |
+| `recorder/` | Always-on server program: records racing prices and keeps both bots running (own README) |
 | `app/betfair/page.tsx` | The terminal-style desk |
 | `supabase/migrations/050_betfair_paper.sql` | Tables `bf_bot`, `bf_trades`, `bf_events`, owner-only RLS |
 
@@ -27,15 +27,7 @@ The API routes are pinned to London (`preferredRegion = 'lhr1'`) because Betfair
 
 ## How it runs
 
-While the page is open and running, it asks the server for one poll every 5 seconds (2s in demo). Close the tab and it pauses; open it again and it carries on from where it was. State lives in Supabase.
-
-To keep it running with the tab closed you need Vercel Pro (Hobby allows one cron a day). Add to `vercel.json`:
-
-```json
-{ "path": "/api/betfair/cron", "schedule": "* * * * *" }
-```
-
-It uses the existing `CRON_SECRET` and `SUPABASE_SERVICE_ROLE_KEY`.
+With the recorder server (`recorder/`, see its README) online, both bots keep running after you press Start, with the tab closed, until you press Stop. The open tab then only watches. Without it, the page drives the bots itself every few seconds while it's open.
 
 ## Settings
 
@@ -53,4 +45,14 @@ Paper fills assume you get the price shown. With a delayed key that price may al
   - Favourite vs longshot: returns by price band.
   - Bounce-back: back teams under-performing market expectations, draw covered.
 
-Run `supabase/migrations/051_betfair_strategies.sql` before first use. Settings are in `STRAT` at the top of `strategies.ts`. Live mode looks once a minute while the page is open (or via the cron on Vercel Pro) and only reads prices.
+Run `supabase/migrations/051_betfair_strategies.sql` before first use. Settings are in `STRAT` at the top of `strategies.ts`. Live mode looks once a minute (from the recorder server, or from the page while it's open) and only reads prices.
+
+## Price recorder and Data tab
+
+Prices are saved to Supabase (migrations `052_betfair_prices.sql` and `053_betfair_recorder.sql`):
+
+- `bf_markets`: every market, with race and runner details, the time of the off and, once settled, winners and Starting Prices.
+- `bf_snaps`: price snapshots (best back/lay, sizes, last traded, total matched). Racing is recorded by the recorder server (every 5 s in the last 10 minutes); football by the strategy tests, once per match before kick-off, for all five markets.
+- Days older than three days are moved to compressed files in the `betfair-archive` storage bucket.
+
+The **Data** tab (`components/betfair/DataTab.tsx`, `app/api/betfair/data`) shows what has been saved, downloads it as CSV, and replays the bots over it in the browser (`lib/betfair/replay.ts`) using the current `CONFIG` and `STRAT`. Recording failures are logged and never stop the bots. The Data tab reads archived days transparently.

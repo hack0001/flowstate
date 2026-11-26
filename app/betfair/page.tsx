@@ -3,9 +3,14 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useRouter } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
 import type { Snapshot } from '@/lib/betfair/run'
+import type { RecorderStatus } from '@/lib/betfair/recorderStatus'
 import { RULES } from '@/lib/betfair/engine'
 import ResearchTab from '@/components/betfair/ResearchTab'
 import StrategiesTab, { type StratData } from '@/components/betfair/StrategiesTab'
+import SetupTab from '@/components/betfair/SetupTab'
+import DataTab from '@/components/betfair/DataTab'
+import BacktestTab from '@/components/betfair/BacktestTab'
+import InsightsTab, { type BacktestPreset } from '@/components/betfair/InsightsTab'
 
 // Betfair paper desk: six agents, hard handoffs, paper fills only.
 // While running, this page drives the bot by calling /api/betfair every few
@@ -25,7 +30,7 @@ const gbps = (v: number) => (v < 0 ? '−' : v > 0 ? '+' : '') + '£' + Math.abs
 const hhmm = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'Europe/London' }) : '—'
 const TYPE_COL: Record<string, string> = { KILL: C.red, STOP: C.red, LOSS: C.red, ERROR: C.red, WIN: C.teal, PASS: C.grn, ENTER: C.grn, SCORE: C.vio, VOID: C.amb }
 
-type Data = Snapshot & { liveReady: boolean; tickError?: string; error?: string }
+type Data = Snapshot & { liveReady: boolean; tickError?: string; error?: string; server?: RecorderStatus | null }
 
 function Panel({ title, note, children, style }: { title: string; note?: string; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
@@ -154,7 +159,7 @@ export default function BetfairPage() {
   useEffect(() => { call() }, [call])
 
   // --- tabs + the football strategy tests (polled whichever tab is showing)
-  type Tab = 'desk' | 'research' | 'strategies'
+  type Tab = 'desk' | 'research' | 'strategies' | 'data' | 'insights' | 'backtest' | 'setup'
   const [tab, setTab] = useState<Tab>('desk')
   const [focus, setFocus] = useState<string | null>(null)
   const [sd, setSd] = useState<StratData | null>(null)
@@ -175,21 +180,29 @@ export default function BetfairPage() {
   useEffect(() => { sCall() }, [sCall])
   useEffect(() => {
     if (!sd?.running) return
-    const id = setInterval(() => sCall({ action: 'tick' }), sd.mode === 'demo' ? 2500 : 60_000)
+    // When the recorder server is running the tests, this tab only watches.
+    const viaServer = !!sd.server?.alive
+    const id = setInterval(() => sCall(viaServer ? undefined : { action: 'tick' }), viaServer ? 15_000 : sd.mode === 'demo' ? 2500 : 60_000)
     return () => clearInterval(id)
-  }, [sd?.running, sd?.mode, sCall])
+  }, [sd?.running, sd?.mode, sd?.server?.alive, sCall])
   const sAct = async (action: string, mode?: string) => {
     if (action === 'reset' && !confirm(`Delete all ${mode ?? sd?.mode} strategy paper bets and start the tests again?`)) return
     setSBusy(true); await sCall({ action, mode }); setSBusy(false)
   }
   const openConcept = (id: string) => { setFocus(id); setTab('research') }
+  // A rule found on the Insights tab, opened on the Backtest tab (which loads its settings from this browser's storage)
+  const openBacktest = (preset: BacktestPreset) => {
+    try { localStorage.setItem('bf-backtest', JSON.stringify({ ...JSON.parse(localStorage.getItem('bf-backtest') ?? '{}'), ...preset })) } catch { /* private window */ }
+    setTab('backtest')
+  }
   const openStrategy = (id: string) => { setTab('strategies'); setTimeout(() => document.getElementById('strategy-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80) }
   useEffect(() => {
     if (!d) return
     const ms = d.running ? (d.mode === 'demo' ? 2000 : 5000) : 15000
-    const id = setInterval(() => call(d.running ? { action: 'tick' } : undefined), ms)
+    // When the recorder server is running the bot, this tab only watches.
+    const id = setInterval(() => call(d.running && !d.server?.alive ? { action: 'tick' } : undefined), ms)
     return () => clearInterval(id)
-  }, [d?.running, d?.mode, call]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [d?.running, d?.mode, d?.server?.alive, call]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const act = async (action: string, mode?: string) => {
     if (action === 'reset' && !confirm(`Clear all ${mode ?? d?.mode} paper trades and the log, and reset the bank to £500?`)) return
@@ -228,7 +241,7 @@ export default function BetfairPage() {
 
         {/* tabs */}
         <div role="tablist" style={{ display: 'flex', gap: 4, margin: '12px 0 0', borderBottom: '1px solid ' + C.line, flexWrap: 'wrap' }}>
-          {([['desk', 'Desk', d?.running], ['research', 'Research', false], ['strategies', 'Strategies', sd?.running]] as const).map(([id, label, on]) => (
+          {([['desk', 'Desk', d?.running], ['research', 'Research', false], ['strategies', 'Strategies', sd?.running], ['data', 'Data', false], ['insights', 'Insights', false], ['backtest', 'Backtest', false], ['setup', 'Setup', false]] as const).map(([id, label, on]) => (
             <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
               style={{ background: 'none', border: 0, borderBottom: '2px solid ' + (tab === id ? C.vio : 'transparent'), color: tab === id ? '#fff' : C.mut, padding: '8px 14px', cursor: 'pointer', fontFamily: MONO, fontSize: 13, fontWeight: 600, marginBottom: -1 }}>
               {label}{on && <i style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: C.teal, marginLeft: 6, verticalAlign: 'middle' }} />}
@@ -237,6 +250,10 @@ export default function BetfairPage() {
         </div>
 
         {tab === 'research' && <ResearchTab focus={focus} onStrategy={openStrategy} />}
+        {tab === 'data' && <DataTab />}
+        {tab === 'insights' && <InsightsTab onOpenBacktest={openBacktest} />}
+        {tab === 'backtest' && <BacktestTab />}
+        {tab === 'setup' && <SetupTab liveReady={d?.liveReady ?? sd?.liveReady} server={sd?.server ?? d?.server} />}
         {tab === 'strategies' && <StrategiesTab d={sd} err={sErr} busy={sBusy} act={sAct} onConcept={openConcept} />}
 
         {tab === 'desk' && <>
@@ -281,7 +298,7 @@ export default function BetfairPage() {
             <Agent name="EXECUTOR" icon="ϟ" color={C.grn} badge="PAPER" desc="places the paper trades" rule={`max ${Math.round((d?.config.stakePct ?? 0.05) * 100)}% of bank per trade · never a real order`} foot={<>{c?.traded ?? 0} paper entries</>} />
             <Agent name="RISK" icon="⬢" color={C.amb} badge="TRAIL" desc="guards every entry" rule={`stop −${d?.config.stopTicks ?? 3} ticks before entry · trails after +${d?.config.trailAfterTicks ?? 2} · flat before the off`} foot={<>{c?.stops ?? 0} stops hit · {d?.positions.length ?? 0} open</>} />
             <Agent name="LOGGER" icon="≡" color={C.blu} badge="WRITE" desc="writes everything down" rule="every kill and every trade" foot={<>line #{c?.logged ?? 0}</>} />
-            <Agent name="YOU" icon="▮▮" color={C.fg} badge={d?.running ? 'WATCHING' : 'IDLE'} desc="pressed start" rule="keep this tab open while it runs" foot="real money at risk: £0" />
+            <Agent name="YOU" icon="▮▮" color={C.fg} badge={d?.running ? 'WATCHING' : 'IDLE'} desc="pressed start" rule={d?.server?.alive ? 'recorder server is running it · tab can be closed' : 'keep this tab open while it runs'} foot="real money at risk: £0" />
           </div>
 
           <div style={{ display: 'grid', gap: 10, minWidth: 0 }}>

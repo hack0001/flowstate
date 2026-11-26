@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireUser } from '@/lib/supabaseServer'
 import { runOnce, setBot, snapshot } from '@/lib/betfair/run'
 import { hasCredentials } from '@/lib/betfair/live'
+import { recorderStatus } from '@/lib/betfair/recorderStatus'
 
 // Betfair paper desk API.
 //   GET                         -> dashboard snapshot
@@ -17,7 +18,7 @@ export async function GET() {
   const auth = await requireUser()
   if (!auth.ok) return auth.response
   try {
-    return NextResponse.json({ ...(await snapshot(auth.supabase)), liveReady: hasCredentials() })
+    return NextResponse.json({ ...(await snapshot(auth.supabase)), liveReady: hasCredentials(), server: await recorderStatus(auth.supabase) })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }
@@ -31,8 +32,9 @@ export async function POST(req: NextRequest) {
   try {
     switch (body.action) {
       case 'tick': {
+        if ((await recorderStatus(auth.supabase))?.alive) break   // the recorder server is running the bot
         const r = await runOnce(auth.supabase)
-        if (r.error) return NextResponse.json({ ...(await snapshot(auth.supabase)), liveReady: hasCredentials(), tickError: r.error })
+        if (r.error) return NextResponse.json({ ...(await snapshot(auth.supabase)), liveReady: hasCredentials(), server: await recorderStatus(auth.supabase), tickError: r.error })
         break
       }
       case 'start':
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest) {
       default:
         return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
     }
-    return NextResponse.json({ ...(await snapshot(auth.supabase)), liveReady: hasCredentials() })
+    return NextResponse.json({ ...(await snapshot(auth.supabase)), liveReady: hasCredentials(), server: await recorderStatus(auth.supabase) })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }

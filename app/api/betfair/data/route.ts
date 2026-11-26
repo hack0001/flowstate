@@ -1,0 +1,158 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { requireUser } from '@/lib/supabaseServer'
+import { readArchiveDay } from '@/lib/betfair/archiveFile'
+import { recorderStatus } from '@/lib/betfair/recorderStatus'
+import { ticksBetween } from '@/lib/betfair/ticks'
+
+// Recorded Betfair prices (the Data tab of /betfair).
+//   GET ?view=summary                                    -> counts and date range
+//   GET ?view=export&sport=racing|football&from&to&page  -> one page of markets and their snapshots
+//   GET ?view=recent&sport=racing|football|tennis|golf  -> recent and upcoming markets, with snapshot counts
+//   GET ?view=race&id=1.234                              -> one market and all its snapshots (for the price chart)
+//
+// Snapshots older than a week are moved by the recorder server into one
+// compressed file per day (Storage bucket betfair-archive); this reads those
+// transparently, so exports and replays cover every day ever recorded.
+export const dynamic = 'force-dynamic'
+export const maxDuration = 30
+
+const PAGE = 20   // markets per export page (a race has up to ~50 snapshots)
+const SPORTS = ['racing', 'football', 'tennis', 'golf'] as const
+type Sport = (typeof SPORTS)[number]
+// hours back and ahead of now for the "Today's recording" list
+const WINDOW_H: Record<Sport, [number, number]> = { racing: [6, 3], football: [4, 4], tennis: [10, 3], golf: [6 * 24, 4 * 24] }
+const missing = 'The price recorder tables or columns are missing: run supabase/migrations/052_betfair_prices.sql and 053_betfair_recorder.sql in the Supabase SQL editor.'
+
+export async function GET(req: NextRequest) {
+  const auth = await requireUser()
+  if (!auth.ok) return auth.response
+  const db = auth.supabase
+  const q = req.nextUrl.searchParams
+  try {
+    if (q.get('view') === 'summary') {
+      const count = async (table: string, f?: (b: any) => any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        let b = db.from(table).select('*', { count: 'exact', head: true })
+        if (f) b = f(b)
+        const { count: n, error } = await b
+        if (error) throw new Error(/does not exist|schema cache/i.test(error.message) ? missing : error.message)
+        return n ?? 0
+      }
+      const edge = async (asc: boolean) => (await db.from('bf_snaps').select('at').order('at', { ascending: asc }).limit(1)).data?.[0]?.at ?? null
+      const firstMarket = (await db.from('bf_markets').select('start_at').order('start_at', { ascending: true }).limit(1)).data?.[0]?.start_at ?? null
+      const [rm, rr, fm, fr, tm, tr, gm, gr, snaps, archived, first, last, server, gaps] = await Promise.all([
+        count('bf_markets', b => b.eq('sport', 'racing')), count('bf_markets', b => b.eq('sport', 'racing').not('status', 'is', null)),
+        count('bf_markets', b => b.eq('sport', 'football')), count('bf_markets', b => b.eq('sport', 'football').not('status', 'is', null)),
+        count('bf_markets', b => b.eq('sport', 'tennis')), count('bf_markets', b => b.eq('sport', 'tennis').not('status', 'is', null)),
+        count('bf_markets', b => b.eq('sport', 'golf')), count('bf_markets', b => b.eq('sport', 'golf').not('status', 'is', null)),
+        count('bf_snaps'), count('bf_markets', b => b.not('archived_at', 'is', null)).catch(() => 0), edge(true), edge(false),
+        recorderStatus(db),
+        // minutes in the last 24 hours where every Betfair check failed
+        db.from('bf_recorder_min').select('minute', { count: 'exact', head: true }).gt('minute', new Date(Date.now() - 86_400_000).toISOString())
+          .eq('checks_ok', 0).gt('checks_failed', 0).then(r => r.count ?? 0, () => 0),
+      ])
+      return NextResponse.json({ racing: { markets: rm, results: rr }, football: { markets: fm, results: fr }, tennis: { markets: tm, results: tr }, golf: { markets: gm, results: gr }, snaps, archivedMarkets: archived,
+        first: firstMarket && (!first || firstMarket < first) ? firstMarket : first, last, server, failedMinutes24h: gaps })
+    }
+
+    if (q.get('view') === 'recent') {
+      const now = Date.now()
+      const sport = SPORTS.includes(q.get('sport') as Sport) ? q.get('sport') as Sport : 'racing'
+      const [back, ahead] = WINDOW_H[sport]
+      const { data: markets, error } = await db.from('bf_markets')
+        .select('market_id, event, venue, market_name, market_type, race_type, start_at, off_at, runners, status, winners, total_matched, archived_at')
+        .eq('sport', sport).gte('start_at', new Date(now - back * 3600_000).toISOString()).lt('start_at', new Date(now + ahead * 3600_000).toISOString())
+        .order('start_at', { ascending: true }).order('event').order('market_type').limit(sport === 'football' ? 150 : 80)
+      if (error) throw new Error(/does not exist|schema cache/i.test(error.message) ? missing : error.message)
+      // one small request per race: how many snapshots, and when the latest was saved
+      const races = await Promise.all((markets ?? []).map(async m => {
+        const { data, count } = await db.from('bf_snaps').select('at', { count: 'exact' }).eq('market_id', m.market_id).order('at', { ascending: false }).limit(1)
+        const runners = Array.isArray(m.runners) ? m.runners.length : 0
+        return { market_id: m.market_id, event: m.event, venue: m.venue ?? m.event, name: m.market_name, market_type: m.market_type, race_type: m.race_type, start_at: m.start_at, off_at: m.off_at,
+          runners, status: m.status, winners: m.winners, matched: m.total_matched, snaps: count ?? 0, last_snap: data?.[0]?.at ?? null }
+      }))
+      // Volatility meter (racing): how much the top six's prices moved in the last 10 minutes,
+      // in ticks per minute per horse, for races still to go off.
+      const vol: Record<string, number> = {}
+      const live = races.filter(r => !r.off_at && !r.status && new Date(r.start_at).getTime() - now < 80 * 60_000 && new Date(r.start_at).getTime() - now > -20 * 60_000).map(r => r.market_id)
+      if (sport === 'racing' && live.length) {
+        const rows: { market_id: string; at: string; runners: [number, number | null, number, number | null, number, number | null][] }[] = []
+        for (let i = 0; i < 5000; i += 1000) {
+          const { data } = await db.from('bf_snaps').select('market_id, at, runners').in('market_id', live).gte('at', new Date(now - 10 * 60_000).toISOString()).order('market_id').order('at').range(i, i + 999)
+          rows.push(...((data ?? []) as typeof rows))
+          if (!data || data.length < 1000) break
+        }
+        const byMk = new Map<string, typeof rows>()
+        for (const r of rows) byMk.set(r.market_id, [...(byMk.get(r.market_id) ?? []), r])
+        for (const [id, ss] of byMk) {
+          if (ss.length < 2) continue
+          const first = ss[0], lastS = ss[ss.length - 1]
+          const mins = (Date.parse(lastS.at) - Date.parse(first.at)) / 60_000
+          if (mins < 2) continue
+          const top = [...lastS.runners].filter(r => r[1] ?? r[5]).sort((a, b) => (a[1] ?? a[5]!) - (b[1] ?? b[5]!)).slice(0, 6).map(r => r[0])
+          let moved = 0
+          for (let k = 1; k < ss.length; k++) for (const sel of top) {
+            const a = ss[k - 1].runners.find(r => r[0] === sel), b = ss[k].runners.find(r => r[0] === sel)
+            const pa = a?.[1] ?? a?.[5], pb = b?.[1] ?? b?.[5]
+            if (pa && pb) moved += Math.abs(ticksBetween(pa, pb))
+          }
+          vol[id] = Math.round(moved / top.length / mins * 100) / 100
+        }
+      }
+      return NextResponse.json({ races: races.map(r => ({ ...r, vol: vol[r.market_id] ?? null })), sport, window: { back, ahead }, now: new Date(now).toISOString() })
+    }
+
+    if (q.get('view') === 'race') {
+      const id = q.get('id') ?? ''
+      if (!/^1\.\d+$/.test(id)) return NextResponse.json({ error: 'Bad market id' }, { status: 400 })
+      const { data: market, error } = await db.from('bf_markets')
+        .select('market_id, sport, event, venue, market_name, market_type, race_type, start_at, off_at, runners, status, winners, removed, total_matched, bsp').eq('market_id', id).maybeSingle()
+      if (error) throw new Error(error.message)
+      if (!market) return NextResponse.json({ error: 'Race not found' }, { status: 404 })
+      const snaps: unknown[] = []
+      for (let i = 0; i < 5000; i += 1000) {        // Supabase returns at most 1000 rows per request
+        const { data, error: e2 } = await db.from('bf_snaps').select('at, inplay, matched, runners').eq('market_id', id).order('at', { ascending: true }).range(i, i + 999)
+        if (e2) throw new Error(e2.message)
+        snaps.push(...(data ?? []))
+        if (!data || data.length < 1000) break
+      }
+      return NextResponse.json({ market, snaps })
+    }
+
+    if (q.get('view') === 'export') {
+      const sport: Sport = SPORTS.includes(q.get('sport') as Sport) ? q.get('sport') as Sport : 'racing'
+      const from = q.get('from') ?? new Date(Date.now() - 7 * 86_400_000).toISOString()
+      const to = q.get('to') ?? new Date().toISOString()
+      const page = Math.max(0, Number(q.get('page') ?? 0) || 0)
+      const { data: markets, error } = await db.from('bf_markets')
+        .select('*')
+        .eq('sport', sport).gte('start_at', from).lt('start_at', to).order('start_at', { ascending: true }).order('market_id')
+        .range(page * PAGE, page * PAGE + PAGE - 1)
+      if (error) throw new Error(/does not exist|schema cache/i.test(error.message) ? missing : error.message)
+      const live = (markets ?? []).filter(m => !m.archived_at).map(m => m.market_id)
+      const snaps: { market_id: string }[] = []
+      for (let i = 0; live.length && i < 20_000; i += 1000) {     // Supabase returns at most 1000 rows per request
+        const { data, error: e2 } = await db.from('bf_snaps').select('market_id, at, inplay, matched, runners').in('market_id', live).order('id').range(i, i + 999)
+        if (e2) throw new Error(e2.message)
+        snaps.push(...(data ?? []))
+        if (!data || data.length < 1000) break
+      }
+      // Archived markets: read their day's file (see lib/betfair/archiveFile.ts).
+      const archivedDays = new Map<string, Set<string>>()
+      for (const m of (markets ?? []).filter(x => x.archived_at)) {
+        const day = String(m.start_at).slice(0, 10)
+        archivedDays.set(day, (archivedDays.get(day) ?? new Set()).add(m.market_id))
+      }
+      if (archivedDays.size) {
+        for (const [day, ids] of archivedDays) {
+          const parsed = await readArchiveDay(db, day)
+          if ('error' in parsed) throw new Error(parsed.error)
+          snaps.push(...parsed.snaps.filter(x => ids.has(x.market_id)))
+        }
+      }
+      return NextResponse.json({ markets: markets ?? [], snaps, more: (markets?.length ?? 0) === PAGE })
+    }
+    return NextResponse.json({ error: 'Unknown view' }, { status: 400 })
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
+  }
+}

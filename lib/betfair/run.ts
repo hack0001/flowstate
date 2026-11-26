@@ -2,20 +2,20 @@
 // Betfair paper desk -- load state, run one poll, save. SERVER-ONLY.
 //
 // Used by the page's own polling (app/api/betfair, signed-in client) and by
-// the optional cron (app/api/betfair/cron, service-role client).
-// Optimistic locking on bf_bot.version stops two overlapping polls (two
-// tabs, or a tab plus the cron) from double-counting a trade.
+// the recorder server (recorder/, service-role client), which keeps it running
+// with the tab closed. Optimistic locking on bf_bot.version stops two
+// overlapping polls (a tab plus the server) from double-counting a trade.
+// Racing prices are recorded by the recorder server, not here.
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { CONFIG, DemoFeed, freshState, tick, type BotState } from './engine'
+import { CONFIG, DemoFeed, freshState, tick, type BotState, type Feed } from './engine'
 import { LiveFeed, login } from './live'
 
 export type Mode = 'demo' | 'live'
 type BotRow = { mode: Mode; running: boolean; state: BotState; version: number; session_token: string | null; session_at: string | null; last_error: string | null; updated_at: string | null }
 
 const SESSION_MAX_MS = 6 * 60 * 60_000   // Betfair sessions last ~8h in the UK; refresh before that
-
 export async function loadBot(db: SupabaseClient): Promise<BotRow> {
   const { data, error } = await db.from('bf_bot').select('mode, running, state, version, session_token, session_at, last_error, updated_at').eq('id', 1).maybeSingle()
   if (error) throw new Error(error.message.includes('does not exist')
@@ -34,7 +34,7 @@ export async function runOnce(db: SupabaseClient): Promise<{ ran: boolean; error
   const state = bot.state
   let token = bot.session_token, tokenAt = bot.session_at
   let now: Date
-  let feed
+  let feed: Feed
   if (bot.mode === 'demo') {
     now = new Date(state.clock ? new Date(state.clock).getTime() + CONFIG.demoStepMs : Date.now())
     state.clock = now.toISOString()

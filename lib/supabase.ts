@@ -253,6 +253,17 @@ export async function reorderMorningRoutineItems(orderedIds: string[]): Promise<
   return { error: null }
 }
 
+// Used by the routine organiser to move a task to another category, rename
+// it, or change its note/minutes. Existing completion history is untouched.
+export async function updateMorningRoutineItem(
+  id: string,
+  patch: Partial<Pick<MorningRoutineItem, 'title' | 'category' | 'note' | 'minutes'>>,
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('morning_routine_items').update(patch).eq('id', id)
+  if (error) return { error: explainMorningRoutineError(error.message) }
+  return { error: null }
+}
+
 export async function getMorningCompletionsForDate(date: string): Promise<{ itemIds: string[]; error: string | null }> {
   const { data, error } = await supabase
     .from('morning_routine_completions')
@@ -266,6 +277,17 @@ export async function markMorningItemComplete(itemId: string, date: string): Pro
   const { error } = await supabase
     .from('morning_routine_completions')
     .upsert({ item_id: itemId, completed_date: date }, { onConflict: 'item_id,completed_date' })
+  if (error) return { error: explainMorningRoutineError(error.message) }
+  return { error: null }
+}
+
+// Un-ticks an item for `date` (a mis-click, or ticked too early).
+export async function unmarkMorningItemComplete(itemId: string, date: string): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from('morning_routine_completions')
+    .delete()
+    .eq('item_id', itemId)
+    .eq('completed_date', date)
   if (error) return { error: explainMorningRoutineError(error.message) }
   return { error: null }
 }

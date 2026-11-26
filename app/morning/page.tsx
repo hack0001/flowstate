@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Edit3, Check, Flame, Sunrise, Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react'
 import { useLanguage } from '@/context/LanguageContext'
@@ -9,8 +9,10 @@ import {
   addMorningRoutineItem,
   retireMorningRoutineItem,
   reorderMorningRoutineItems,
+  updateMorningRoutineItem,
   getMorningCompletionsForDate,
   markMorningItemComplete,
+  unmarkMorningItemComplete,
   getMorningCompletionCounts,
   getErrorLog,
   addErrorLogEntry,
@@ -30,6 +32,13 @@ const C = {
 const CAT_COLORS: Record<string,string> = {
   Movement: C.cyan, Health: C.green, Fuel: C.amber, Mind: C.purple,
 }
+
+// The routine is shown as these groups, each ticked off with ONE click,
+// instead of stepping through every task one at a time. Anything with a
+// category outside this list (or none) lands in a trailing "Routine" group so
+// no task can silently disappear from the page.
+const CATEGORY_ORDER = ['Movement', 'Health', 'Fuel', 'Mind']
+const OTHER_GROUP = 'Routine'
 
 const MORNING_TIPS = [
   { icon:'&#128640;', tip:'Take action within 5 seconds. If you have the impulse, count 5-4-3-2-1 and move. Your brain kills ideas after 5 seconds of hesitation.' },
@@ -150,81 +159,125 @@ function todayStr() {
 // Add / retire happen immediately against Supabase (so they can't be "lost"
 // by closing without saving); reordering is batched and persisted on Save.
 function EditPanel({ items, completionCounts, onClose, onSave }:{ items:MorningRoutineItem[]; completionCounts:Record<string,number>; onClose:()=>void; onSave:(i:MorningRoutineItem[])=>void }) {
+  // The organiser: tasks laid out under their category, separate from the
+  // daily tick-off view. Category moves, renames, adds and removes hit the
+  // database immediately; ordering is written when the panel closes.
   const [list, setList] = useState<MorningRoutineItem[]>(items)
-  const [newTitle, setNewTitle] = useState('')
-  const [newNote, setNewNote] = useState('')
-  const [newCat, setNewCat] = useState('Movement')
-  const [adding, setAdding] = useState(false)
+  const [newTitles, setNewTitles] = useState<Record<string,string>>({})
+  const [addingIn, setAddingIn] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  async function addItem() {
-    if (!newTitle.trim() || adding) return
-    setAdding(true)
+  const sections = [...CATEGORY_ORDER, OTHER_GROUP]
+  const belongsTo = (item:MorningRoutineItem, section:string) =>
+    section === OTHER_GROUP ? (!item.category || !CATEGORY_ORDER.includes(item.category)) : item.category === section
+
+  async function addItem(section:string) {
+    const title = (newTitles[section] ?? '').trim()
+    if (!title || addingIn) return
+    setAddingIn(section)
     const { item, error } = await addMorningRoutineItem({
-      title: newTitle.trim(), minutes: 5, note: newNote.trim() || null, category: newCat, sort_order: list.length,
+      title, minutes: 5, note: null, category: section === OTHER_GROUP ? null : section, sort_order: list.length,
     })
-    setAdding(false)
+    setAddingIn(null)
     if (error || !item) { alert(error ?? 'Could not add item.'); return }
     setList(l => [...l, item])
-    setNewTitle(''); setNewNote('')
+    setNewTitles(t => ({ ...t, [section]: '' }))
   }
   async function remove(id:string) {
     setList(l => l.filter(x => x.id!==id))
     const { error } = await retireMorningRoutineItem(id)
     if (error) alert(error)
   }
+  async function changeCategory(id:string, category:string) {
+    const value = category === OTHER_GROUP ? null : category
+    setList(l => l.map(x => x.id===id ? { ...x, category: value } : x))
+    const { error } = await updateMorningRoutineItem(id, { category: value })
+    if (error) alert(error)
+  }
+  function renameLocal(id:string, title:string) {
+    setList(l => l.map(x => x.id===id ? { ...x, title } : x))
+  }
+  async function saveTitle(id:string, title:string) {
+    const clean = title.trim()
+    if (!clean) return
+    const { error } = await updateMorningRoutineItem(id, { title: clean })
+    if (error) alert(error)
+  }
+  // Swap with the neighbouring task that is in the SAME section, so the arrows
+  // always move a task up/down within the section you're looking at.
   function move(id:string, dir:-1|1) {
     setList(l => {
       const i = l.findIndex(x => x.id===id); if (i<0) return l
-      const j = i+dir; if (j<0||j>=l.length) return l
+      const section = sections.find(s => belongsTo(l[i], s))!
+      let j = i + dir
+      while (j>=0 && j<l.length && !belongsTo(l[j], section)) j += dir
+      if (j<0 || j>=l.length) return l
       const n=[...l];[n[i],n[j]]=[n[j],n[i]]; return n
     })
   }
-  async function handleSave() {
+  async function finish() {
     setSaving(true)
     await onSave(list)
     setSaving(false)
     onClose()
   }
+  const selectStyle: CSSProperties = { background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'0.4rem', color:C.sec, fontFamily:'inherit', fontSize:'0.68rem', padding:'0.2rem 0.3rem', cursor:'pointer', outline:'none' }
+
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60 }}>
-      <div style={{ background:'#1a1a26', border:'1px solid #2a2a3a', borderRadius:'1rem', padding:'1.5rem', width:'90%', maxWidth:'30rem', maxHeight:'85vh', overflow:'auto', position:'relative' }}>
-        <button onClick={onClose} style={{ position:'absolute', top:'1rem', right:'1rem', background:'none', border:'none', color:C.muted, cursor:'pointer' }}><X size={16}/></button>
-        <h2 style={{ margin:'0 0 0.2rem', fontSize:'0.95rem', fontWeight:800, color:C.text }}>Edit Morning Routine</h2>
-        <p style={{ margin:'0 0 1rem', fontSize:'0.65rem', color:C.muted }}>Completion count = last 30 days</p>
-        <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem', marginBottom:'1rem' }}>
-          {list.map((item,i) => (
-            <div key={item.id} style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.5rem 0.75rem', background:C.surface, border:'1px solid #2a2a3a', borderRadius:'0.5rem' }}>
-              <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:CAT_COLORS[item.category??'']??C.muted, flexShrink:0 }}/>
-              <div style={{ flex:1, minWidth:0 }}>
-                <p style={{ fontSize:'0.8rem', fontWeight:600, color:C.text, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</p>
-                {item.note&&<p style={{ fontSize:'0.65rem', color:C.muted, margin:0 }}>{item.note}</p>}
+      <div style={{ background:'#1a1a26', border:'1px solid #2a2a3a', borderRadius:'1rem', padding:'1.5rem', width:'94%', maxWidth:'38rem', maxHeight:'88vh', overflow:'auto', position:'relative' }}>
+        <button onClick={finish} aria-label="Close" style={{ position:'absolute', top:'1rem', right:'1rem', background:'none', border:'none', color:C.muted, cursor:'pointer' }}><X size={16}/></button>
+        <h2 style={{ margin:'0 0 0.2rem', fontSize:'1rem', fontWeight:800, color:C.text }}>Organise morning routine</h2>
+        <p style={{ margin:'0 0 1.25rem', fontSize:'0.68rem', color:C.muted, lineHeight:1.5 }}>
+          Put each task in the right section, rename it, reorder it or add new ones. Changes save as you go. Numbers show completions in the last 30 days.
+        </p>
+
+        {sections.map(section => {
+          const inSection = list.filter(x => belongsTo(x, section))
+          if (section === OTHER_GROUP && inSection.length === 0) return null
+          const color = CAT_COLORS[section] ?? C.muted
+          return (
+            <div key={section} style={{ marginBottom:'1.25rem' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', margin:'0 0 0.5rem' }}>
+                <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:color }}/>
+                <span style={{ fontSize:'0.72rem', fontWeight:800, letterSpacing:'0.15em', textTransform:'uppercase', color }}>{section}</span>
+                <span style={{ fontSize:'0.64rem', color:C.muted }}>{inSection.length}</span>
               </div>
-              <span style={{ fontSize:'0.62rem', fontWeight:700, color:C.sec, flexShrink:0 }}>{completionCounts[item.id] ?? 0}/30</span>
-              <button onClick={()=>move(item.id,-1)} disabled={i===0} style={{ background:'none', border:'none', color:i===0?C.muted:C.sec, cursor:i===0?'default':'pointer', padding:'2px' }}><ChevronUp size={13}/></button>
-              <button onClick={()=>move(item.id,1)} disabled={i===list.length-1} style={{ background:'none', border:'none', color:i===list.length-1?C.muted:C.sec, cursor:i===list.length-1?'default':'pointer', padding:'2px' }}><ChevronDown size={13}/></button>
-              <button onClick={()=>remove(item.id)} style={{ background:'none', border:'none', color:C.red, cursor:'pointer', padding:'2px' }}><Trash2 size={13}/></button>
+
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+                {inSection.length === 0 && <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0 0 0 0.9rem' }}>No tasks yet.</p>}
+                {inSection.map((item, idx) => (
+                  <div key={item.id} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.4rem 0.6rem', background:C.surface, border:'1px solid #2a2a3a', borderRadius:'0.5rem' }}>
+                    <input value={item.title} onChange={e=>renameLocal(item.id, e.target.value)} onBlur={e=>saveTitle(item.id, e.target.value)}
+                      style={{ flex:1, minWidth:0, background:'transparent', border:'none', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', fontWeight:600, outline:'none', padding:'0.15rem 0' }}/>
+                    <span title="Completions, last 30 days" style={{ fontSize:'0.62rem', fontWeight:700, color:C.muted, flexShrink:0 }}>{completionCounts[item.id] ?? 0}/30</span>
+                    <select value={belongsTo(item, OTHER_GROUP) ? OTHER_GROUP : (item.category ?? OTHER_GROUP)} onChange={e=>changeCategory(item.id, e.target.value)} aria-label="Move to section" style={selectStyle}>
+                      {CATEGORY_ORDER.map(c => <option key={c} value={c}>{c}</option>)}
+                      <option value={OTHER_GROUP}>{OTHER_GROUP} (none)</option>
+                    </select>
+                    <button onClick={()=>move(item.id,-1)} disabled={idx===0} aria-label="Move up" style={{ background:'none', border:'none', color:idx===0?C.muted:C.sec, cursor:idx===0?'default':'pointer', padding:'2px', opacity:idx===0?0.4:1 }}><ChevronUp size={14}/></button>
+                    <button onClick={()=>move(item.id,1)} disabled={idx===inSection.length-1} aria-label="Move down" style={{ background:'none', border:'none', color:idx===inSection.length-1?C.muted:C.sec, cursor:idx===inSection.length-1?'default':'pointer', padding:'2px', opacity:idx===inSection.length-1?0.4:1 }}><ChevronDown size={14}/></button>
+                    <button onClick={()=>remove(item.id)} aria-label="Remove task" style={{ background:'none', border:'none', color:C.red, cursor:'pointer', padding:'2px' }}><Trash2 size={13}/></button>
+                  </div>
+                ))}
+
+                {section !== OTHER_GROUP && (
+                  <div style={{ display:'flex', gap:'0.4rem', marginTop:'0.15rem' }}>
+                    <input value={newTitles[section] ?? ''} onChange={e=>setNewTitles(t=>({ ...t, [section]: e.target.value }))} placeholder={'Add a task to ' + section}
+                      onKeyDown={e=>e.key==='Enter'&&addItem(section)}
+                      style={{ flex:1, background:'#12121a', border:'1px dashed #2a2a3a', borderRadius:'0.5rem', padding:'0.4rem 0.6rem', color:C.text, fontFamily:'inherit', fontSize:'0.76rem', outline:'none' }}/>
+                    <button onClick={()=>addItem(section)} disabled={!!addingIn || !(newTitles[section] ?? '').trim()} style={{ display:'flex', alignItems:'center', gap:'0.25rem', padding:'0.35rem 0.7rem', background:color+'18', border:'1px solid '+color+'55', borderRadius:'0.5rem', color, cursor:addingIn?'default':'pointer', fontFamily:'inherit', fontSize:'0.72rem', fontWeight:700, opacity:(!!addingIn || !(newTitles[section] ?? '').trim())?0.5:1 }}>
+                      <Plus size={12}/>{addingIn===section?'Adding…':'Add'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          ))}
-        </div>
-        <div style={{ padding:'0.75rem', background:C.surface, border:'1px solid #2a2a3a', borderRadius:'0.75rem', marginBottom:'1rem' }}>
-          <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.cyan, margin:'0 0 0.5rem' }}>Add item</p>
-          <input value={newTitle} onChange={e=>setNewTitle(e.target.value)} placeholder="Task title" onKeyDown={e=>e.key==='Enter'&&addItem()}
-            style={{ width:'100%', background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'0.5rem', padding:'0.4rem 0.6rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', marginBottom:'0.4rem', boxSizing:'border-box' }}/>
-          <input value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Note (optional)"
-            style={{ width:'100%', background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'0.5rem', padding:'0.4rem 0.6rem', color:C.sec, fontFamily:'inherit', fontSize:'0.75rem', outline:'none', marginBottom:'0.4rem', boxSizing:'border-box' }}/>
-          <div style={{ display:'flex', gap:'0.3rem', marginBottom:'0.5rem' }}>
-            {Object.keys(CAT_COLORS).map(cat=>(
-              <button key={cat} onClick={()=>setNewCat(cat)} style={{ fontSize:'0.6rem', padding:'0.15rem 0.4rem', borderRadius:'0.25rem', border:'1px solid '+(newCat===cat?CAT_COLORS[cat]:'#2a2a3a'), background:newCat===cat?'rgba(255,255,255,0.05)':'transparent', color:newCat===cat?CAT_COLORS[cat]:C.muted, cursor:'pointer', fontFamily:'inherit' }}>{cat}</button>
-            ))}
-          </div>
-          <button onClick={addItem} disabled={adding} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.35rem 0.7rem', background:'rgba(0,212,255,0.1)', border:'1px solid rgba(0,212,255,0.3)', borderRadius:'0.5rem', color:C.cyan, cursor:adding?'default':'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, opacity:adding?0.6:1 }}>
-            <Plus size={12}/>{adding?'Adding...':'Add'}
-          </button>
-        </div>
-        <div style={{ display:'flex', gap:'0.5rem', justifyContent:'flex-end' }}>
-          <button onClick={onClose} style={{ padding:'0.5rem 1rem', background:'transparent', border:'1px solid #2a2a3a', borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>Close</button>
-          <button onClick={handleSave} disabled={saving} style={{ padding:'0.5rem 1.25rem', background:C.cyan, border:'none', borderRadius:'0.5rem', color:'#000', fontWeight:700, cursor:saving?'default':'pointer', fontFamily:'inherit', fontSize:'0.8rem', opacity:saving?0.7:1 }}>{saving?'Saving...':'Save order'}</button>
+          )
+        })}
+
+        <div style={{ display:'flex', justifyContent:'flex-end', marginTop:'0.5rem' }}>
+          <button onClick={finish} disabled={saving} style={{ padding:'0.55rem 1.4rem', background:C.cyan, border:'none', borderRadius:'0.5rem', color:'#000', fontWeight:800, cursor:saving?'default':'pointer', fontFamily:'inherit', fontSize:'0.82rem', opacity:saving?0.7:1 }}>{saving?'Saving…':'Done'}</button>
         </div>
       </div>
     </div>
@@ -239,6 +292,7 @@ export default function MorningPage() {
   const [completionCounts, setCompletionCounts] = useState<Record<string,number>>({})
   const [streak, setStreak]       = useState(0)
   const [editing, setEditing]     = useState(false)
+  const [viewName, setViewName]   = useState<string | null>(null)
   const [celebrating, setCelebrating] = useState(false)
   const [loaded, setLoaded]       = useState(false)
   const [loadErr, setLoadErr]     = useState<string | null>(null)
@@ -291,16 +345,51 @@ export default function MorningPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const pending   = items.filter(i => !completed.includes(i.id))
-  const current   = pending[0] ?? null
   const doneCount = completed.length
   const totalCount = items.length
-  const catColor  = current ? (CAT_COLORS[current.category??'']??C.muted) : C.cyan
 
-  async function markComplete(id:string) {
-    const next = [...completed, id]
+  // Items bucketed by category, in the fixed Movement/Health/Fuel/Mind order
+  // (empty groups are dropped). Order within a group is the routine's own
+  // sort order, so reordering in the Edit panel still works.
+  const groups = (() => {
+    const known = new Set(CATEGORY_ORDER)
+    const named = CATEGORY_ORDER.map(name => ({ name, items: items.filter(i => i.category === name) }))
+    const other = items.filter(i => !i.category || !known.has(i.category))
+    return [...named, { name: OTHER_GROUP, items: other }].filter(g => g.items.length > 0)
+  })()
+
+  // One section on screen at a time: the one you picked (tap a progress
+  // segment), otherwise the first section that still has something to do.
+  const isGroupDone = (g:{ items:MorningRoutineItem[] }, ids:string[] = completed) => g.items.every(i => ids.includes(i.id))
+  const current = groups.find(g => g.name === viewName) ?? groups.find(g => !isGroupDone(g)) ?? groups[0]
+
+  // Click a task to tick it, click again to un-tick (a mis-click shouldn't be
+  // permanent). The "Tick all" button in each section header does a whole
+  // category in one click.
+  function toggleItem(id:string) {
+    if (completed.includes(id)) {
+      setCompleted(prev => prev.filter(x => x !== id))
+      unmarkMorningItemComplete(id, today)
+    } else {
+      completeItems([id])
+    }
+  }
+
+  // Marks the given items complete. If that finishes the whole routine, same
+  // completion handling as before (streak, habit tick, celebration, Home event).
+  async function completeItems(wanted:string[]) {
+    const ids = wanted.filter(id => !completed.includes(id))
+    if (ids.length === 0) return
+    const next = [...completed, ...ids]
     setCompleted(next)
-    markMorningItemComplete(id, today)
+    if (current) setViewName(current.name) // hold on this card until the delayed advance
+    ids.forEach(id => markMorningItemComplete(id, today))
+    // Section just finished -> after a beat, move on to the next unfinished one.
+    const justDone = groups.find(g => g.items.some(i => ids.includes(i.id)) && isGroupDone(g, next))
+    if (justDone && next.length < items.length) {
+      const nextGroup = groups.find(g => !isGroupDone(g, next))
+      if (nextGroup) setTimeout(() => setViewName(nextGroup.name), 600)
+    }
     if (next.length >= items.length) {
       const { error } = await supabase.from('routine_completions').upsert({ routine_date:today }, { onConflict:'routine_date' })
       if (error) console.error('[routine_completions upsert failed]', error.message)
@@ -318,8 +407,8 @@ export default function MorningPage() {
     }
   }
 
-  function skip(id:string) { markComplete(id) }
-
+  // Called whenever the organiser closes: whatever it holds (moved categories,
+  // renamed/added/removed tasks, new order) becomes the page's list.
   async function handleSaveItems(newItems:MorningRoutineItem[]) {
     setItems(newItems)
     await reorderMorningRoutineItems(newItems.map(i => i.id))
@@ -369,7 +458,7 @@ export default function MorningPage() {
             </span>
           )}
           <button onClick={() => setEditing(true)} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.35rem 0.75rem', background:'transparent', border:'1px solid #2a2a3a', borderRadius:'0.5rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem' }}>
-            <Edit3 size={11}/>{t('edit')}
+            <Edit3 size={11}/>Organise
           </button>
         </div>
       </div>
@@ -401,18 +490,16 @@ export default function MorningPage() {
           </div>
         ) : (
           <>
-            {/* Progress dots */}
-            <div style={{ display:'flex', alignItems:'center', gap:'0.3rem', marginBottom:'2rem' }}>
-              {items.map(item => {
-                const done   = completed.includes(item.id)
-                const active = current?.id === item.id
+            {/* Progress: one segment per category, filled when it's done */}
+            <div style={{ display:'flex', alignItems:'center', gap:'0.35rem', marginBottom:'2rem' }}>
+              {groups.map(g => {
+                const done = g.items.every(i => completed.includes(i.id))
                 return (
-                  <div key={item.id} style={{
-                    height:'8px', borderRadius:'4px',
-                    width:active?'26px':'8px',
-                    background:done ? C.green : active ? C.cyan : '#2a2a3a',
+                  <div key={g.name} title={g.name} onClick={() => setViewName(g.name)} style={{
+                    height:'8px', width:'38px', borderRadius:'4px',
+                    background: done ? (CAT_COLORS[g.name] ?? C.green) : (current?.name === g.name ? (CAT_COLORS[g.name] ?? C.cyan)+'66' : '#2a2a3a'),
                     transition:'all 0.4s ease',
-                    flexShrink:0,
+                    flexShrink:0, cursor:'pointer',
                   }}/>
                 )
               })}
@@ -453,92 +540,89 @@ export default function MorningPage() {
               </div>
             </div>
 
-            {/* Task card */}
-            {current ? (
-              <div style={{ width:'100%', maxWidth:'26rem', animation:'fadeInUp 0.35s ease both' }}>
-                <div style={{
-                  background:'rgba(18,18,26,0.75)', border:'1px solid #2a2a3a',
-                  borderRadius:'1.25rem', padding:'1.5rem 1.5rem 1.25rem',
-                  backdropFilter:'blur(16px)',
-                  boxShadow:'0 8px 40px rgba(0,0,0,0.4)',
-                  borderTop:'1px solid '+catColor+'44',
-                  marginBottom:'1.75rem',
-                }}>
-                  {/* Category row */}
-                  <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.875rem' }}>
-                    <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:catColor, flexShrink:0 }}/>
-                    <span style={{ fontSize:'0.6rem', fontWeight:800, letterSpacing:'0.15em', textTransform:'uppercase', color:catColor }}>
-                      {current.category ?? 'Routine'}
-                    </span>
-                  </div>
-
-                  {/* Task title */}
-                  <p style={{ fontSize:'clamp(1rem,2.5vw,1.25rem)', fontWeight:800, color:C.text, lineHeight:1.35, margin:'0 0 0.625rem', textAlign:'left' }}>
-                    {current.title}
-                  </p>
-
-                  {current.id === 'mr-mobility' && mobilityPlan ? (
-                    <div style={{ textAlign:'left', marginBottom:'0.375rem' }}>
-                      <p style={{ fontSize:'0.72rem', fontWeight:700, color:C.purple, margin:'0 0 0.5rem' }}>
-                        Week {mobilityPlan.weekNumber} &#8212; {mobilityPlan.focus}
-                      </p>
-                      <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
-                        {mobilityPlan.exercises.map(ex => (
-                          <div key={ex.id} style={{ fontSize:'0.78rem', color:C.sec, lineHeight:1.5 }}>
-                            <span style={{ color:C.text, fontWeight:600 }}>{ex.name}</span>
-                            {ex.cue && <span style={{ color:C.muted }}> &#8212; {ex.cue}</span>}
-                          </div>
-                        ))}
+            {/* Category cards -- one click completes everything in a group */}
+            {groups.length > 0 ? (
+              <div style={{ width:'100%', maxWidth:'26rem', display:'flex', flexDirection:'column', gap:'1rem', animation:'fadeInUp 0.35s ease both' }}>
+                {(current ? [current] : []).map(g => {
+                  const color = CAT_COLORS[g.name] ?? C.muted
+                  const pendingInGroup = g.items.filter(i => !completed.includes(i.id))
+                  const groupDone = pendingInGroup.length === 0
+                  const minutes = g.items.reduce((sum, i) => sum + (i.minutes ?? 0), 0)
+                  return (
+                    <div key={g.name} style={{
+                      background:'rgba(18,18,26,0.75)', border:'1px solid '+(groupDone ? color+'55' : '#2a2a3a'),
+                      borderTop:'1px solid '+color+'66',
+                      borderRadius:'1.25rem', padding:'1.1rem 1.25rem 1.1rem',
+                      backdropFilter:'blur(16px)', boxShadow:'0 8px 40px rgba(0,0,0,0.4)',
+                      opacity: groupDone ? 0.7 : 1, transition:'opacity 0.3s',
+                      textAlign:'left',
+                    }}>
+                      {/* Header */}
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                          <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:color, flexShrink:0 }}/>
+                          <span style={{ fontSize:'0.72rem', fontWeight:800, letterSpacing:'0.15em', textTransform:'uppercase', color }}>{g.name}</span>
+                        </div>
+                        <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
+                          <span style={{ fontSize:'0.66rem', color:C.muted }}>
+                            {g.items.length - pendingInGroup.length}/{g.items.length}{minutes > 0 ? ' · ~'+minutes+' min' : ''}
+                          </span>
+                          {!groupDone && (
+                            <button onClick={() => completeItems(pendingInGroup.map(i => i.id))} style={{ background:'none', border:'1px solid '+color+'66', borderRadius:'9999px', color, cursor:'pointer', fontFamily:'inherit', fontSize:'0.66rem', fontWeight:800, padding:'0.2rem 0.6rem' }}>
+                              Tick all
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <p style={{ fontSize:'0.68rem', color:C.muted, margin:'0.6rem 0 0', fontStyle:'italic' }}>Full checklist &amp; program structure on the Physical page.</p>
-                      <p style={{ fontSize:'0.7rem', color:C.amber, margin:'0.5rem 0 0', lineHeight:1.5, fontStyle:'italic' }}>
-                        Muscle building &#8212; Grease the Groove: ~2/3 max reps per set, 2&#8211;3 sessions a week, add weight/reps gradually and track it.
-                      </p>
+
+                      {/* Tasks -- click any row to tick / un-tick it */}
+                      <div style={{ display:'flex', flexDirection:'column', gap:'0.2rem' }}>
+                        {g.items.map(item => {
+                          const done = completed.includes(item.id)
+                          return (
+                            <div key={item.id} role="button" tabIndex={0} aria-pressed={done}
+                              onClick={() => toggleItem(item.id)}
+                              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleItem(item.id) } }}
+                              style={{ display:'flex', gap:'0.7rem', alignItems:'flex-start', width:'100%', boxSizing:'border-box', textAlign:'left', background: done ? 'transparent' : 'rgba(255,255,255,0.02)', border:'1px solid '+(done ? 'transparent' : '#2a2a3a'), borderRadius:'0.75rem', padding:'0.6rem 0.7rem', cursor:'pointer', userSelect:'none' }}>
+                              <div style={{ width:'20px', height:'20px', borderRadius:'50%', flexShrink:0, marginTop:'1px', border:'2px solid '+(done ? color : '#4a4a5a'), background: done ? color : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                {done && <Check size={12} strokeWidth={4} color="#000"/>}
+                              </div>
+                              <div style={{ minWidth:0 }}>
+                                <p style={{ fontSize:'0.88rem', fontWeight:700, color: done ? C.muted : C.text, lineHeight:1.4, margin:0, textDecoration: done ? 'line-through' : 'none' }}>{item.title}</p>
+
+                                {item.id === 'mr-mobility' && mobilityPlan ? (
+                                  <div style={{ marginTop:'0.3rem' }}>
+                                    <p style={{ fontSize:'0.7rem', fontWeight:700, color:C.purple, margin:'0 0 0.3rem' }}>
+                                      Week {mobilityPlan.weekNumber} &#8212; {mobilityPlan.focus}
+                                    </p>
+                                    <div style={{ display:'flex', flexDirection:'column', gap:'0.2rem' }}>
+                                      {mobilityPlan.exercises.map(ex => (
+                                        <div key={ex.id} style={{ fontSize:'0.74rem', color:C.sec, lineHeight:1.45 }}>
+                                          <span style={{ color:C.text, fontWeight:600 }}>{ex.name}</span>
+                                          {ex.cue && <span style={{ color:C.muted }}> &#8212; {ex.cue}</span>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <p style={{ fontSize:'0.66rem', color:C.muted, margin:'0.4rem 0 0', fontStyle:'italic' }}>Full checklist &amp; program structure on the Physical page.</p>
+                                    <p style={{ fontSize:'0.68rem', color:C.amber, margin:'0.3rem 0 0', lineHeight:1.5, fontStyle:'italic' }}>
+                                      Muscle building &#8212; Grease the Groove: ~2/3 max reps per set, 2&#8211;3 sessions a week, add weight/reps gradually and track it.
+                                    </p>
+                                  </div>
+                                ) : item.note && (
+                                  <p style={{ fontSize:'0.74rem', color:C.sec, margin:'0.15rem 0 0', fontStyle:'italic', lineHeight:1.45 }}>{item.note}</p>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
-                  ) : current.note && (
-                    <p style={{ fontSize:'0.78rem', color:C.sec, margin:'0 0 0.375rem', fontStyle:'italic', textAlign:'left' }}>{current.note}</p>
-                  )}
-                  {current.minutes && (
-                    <p style={{ fontSize:'0.68rem', color:C.muted, margin:0, textAlign:'left' }}>~{current.minutes} min</p>
-                  )}
-                </div>
-
-                {/* Up next preview */}
-                {pending.length > 1 && (
-                  <div style={{ display:'flex', alignItems:'center', gap:'1rem', justifyContent:'center', marginBottom:'1.75rem' }}>
-                    <span style={{ fontSize:'0.62rem', fontWeight:600, color:C.muted, textTransform:'uppercase', letterSpacing:'0.08em' }}>Up next:</span>
-                    {pending.slice(1,3).map((item) => (
-                      <span key={item.id} style={{ display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', color:C.sec }}>
-                        <div style={{ width:'5px', height:'5px', borderRadius:'50%', background:CAT_COLORS[item.category??'']??C.muted }}/>
-                        {item.title.length > 22 ? item.title.slice(0,22)+'...' : item.title}
-                      </span>
-                    ))}
-                    {pending.length > 3 && <span style={{ fontSize:'0.7rem', color:C.muted }}>+{pending.length-3} more</span>}
-                  </div>
-                )}
-
-                {/* Controls */}
-                <button onClick={() => markComplete(current.id)} style={{
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:'0.5rem',
-                  width:'100%', padding:'0.9rem',
-                  background:'linear-gradient(135deg,'+catColor+','+catColor+'cc)',
-                  border:'none', borderRadius:'9999px', cursor:'pointer', fontFamily:'inherit',
-                  fontWeight:900, fontSize:'1rem', color:'#000',
-                  boxShadow:'0 4px 24px '+catColor+'44',
-                  transition:'transform 0.15s',
-                }}>
-                  <Check size={19} strokeWidth={3}/>Done
-                </button>
-
-                <div style={{ marginTop:'0.875rem' }}>
-                  <button onClick={() => skip(current.id)} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', textDecoration:'underline' }}>
-                    Skip for today
-                  </button>
-                </div>
+                  )
+                })}
               </div>
             ) : (
               <div style={{ textAlign:'center' }}>
-                <p style={{ color:C.sec }}>All tasks complete for today.</p>
+                <p style={{ color:C.sec }}>No routine tasks set up yet — use Organise to add some.</p>
                 <button onClick={() => router.push('/')} style={{ marginTop:'1rem', padding:'0.75rem 2rem', background:C.cyan, border:'none', borderRadius:'9999px', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>Go home</button>
               </div>
             )}

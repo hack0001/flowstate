@@ -16,6 +16,7 @@ import type { Book, Feed, Market } from './engine'
 
 const SSO = 'https://identitysso.betfair.com/api/login'
 const API = 'https://api.betfair.com/exchange/betting/rest/v1.0/'
+const REQUEST_TIMEOUT_MS = 15_000   // never wait on Betfair longer than this
 
 export class BetfairError extends Error {
   constructor(message: string, public code?: string) { super(message) }
@@ -40,8 +41,19 @@ export async function login(): Promise<string> {
     headers: { 'X-Application': appKey, Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ username, password }).toString(),
     cache: 'no-store',
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
   const j = await res.json().catch(() => ({})) as { token?: string; status?: string; error?: string }
+  if (res.status === 403 && !j.status) {
+    // Betfair's firewall answered, not its login service: the request came from somewhere it blocks.
+    const region = process.env.VERCEL_REGION ?? 'unknown'
+    throw new BetfairError(
+      `Betfair login failed: refused from this server (HTTP 403). It ran in Vercel region "${region}". ` +
+      (region.startsWith('lhr') || region.startsWith('dub')
+        ? 'That region should be allowed, so Betfair may be blocking this server\'s address: see the Setup tab.'
+        : 'Betfair blocks the US and some other countries. In Vercel → Settings → Functions → Function Regions, choose London (lhr1), save, then redeploy.'),
+      'BLOCKED_LOCATION')
+  }
   if (j.status !== 'SUCCESS' || !j.token) {
     const hint: Record<string, string> = {
       INVALID_USERNAME_OR_PASSWORD: 'username or password is wrong',
@@ -63,6 +75,7 @@ async function call<T>(op: string, body: unknown, token: string): Promise<T> {
     headers: { 'X-Application': appKey, 'X-Authentication': token, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(body),
     cache: 'no-store',
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
   const j = await res.json().catch(() => null)
   if (!res.ok) {
@@ -72,7 +85,7 @@ async function call<T>(op: string, body: unknown, token: string): Promise<T> {
   return j as T
 }
 
-type RawCatalogue = { marketId: string; marketStartTime: string; event: { name: string; venue?: string } }
+type RawCatalogue = { marketId: string; marketStartTime: string; totalMatched?: number; event: { id?: string; name: string; venue?: string }; runners?: { selectionId: number; runnerName: string }[] }
 
 export class LiveFeed implements Feed {
   constructor(private getToken: (forceNew?: boolean) => Promise<string>) {}
@@ -98,6 +111,8 @@ export class LiveFeed implements Feed {
       id: c.marketId,
       name: `${c.event.venue ?? c.event.name} ${new Date(c.marketStartTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}`,
       start: c.marketStartTime,
+      eventId: c.event.id, venue: c.event.venue,
+      matched: c.totalMatched,
     }))
   }
 

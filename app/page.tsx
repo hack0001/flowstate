@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, Plus, Flame, GripVertical, ShoppingCart, Bell, Sparkles, Palette, Disc3, FileEdit, TrendingUp, LineChart } from 'lucide-react'
+import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, Plus, Flame, GripVertical, ShoppingCart, Bell, Sparkles, Palette, Library, Disc3, FileEdit, TrendingUp, LineChart } from 'lucide-react'
 import SignOutButton from '@/components/SignOutButton'
 import { getActiveFocusVideos } from '@/lib/supabase'
 import { supabase, getPageVisits, recordPageVisit, getEveningReview, getDailyChecklistState, setDailyChecklistItem } from '@/lib/supabase'
@@ -1084,7 +1084,7 @@ export default function Home() {
   const [taskRefresh, setTaskRefresh] = useState(0)
   const [openGroup, setOpenGroup] = useState<string | null>('Today')
 
-  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas','adobe-skills','motion','music','script-editor','seo']
+  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas','adobe-skills','motion','references','music','script-editor','seo']
 
   const today = toDateStr(new Date())
   const quote = QUOTES[new Date().getDate() % QUOTES.length]
@@ -1513,7 +1513,7 @@ export default function Home() {
       { route:'tasks', label:t('tasks') }, { route:'evening', label:t('evening') } ] },
     { label:'Create', color:'#ff4466', icon:<Film size={14}/>, items:[
       { route:'content', label:'Content' }, { route:'youtube', label:t('youtube') }, { route:'ideas', label:'Ideas' },
-      { route:'script-editor', label:'Script Editor' }, { route:'motion', label:'Motion Studio' },
+      { route:'script-editor', label:'Script Editor' }, { route:'motion', label:'Motion Studio' }, { route:'references', label:'Reference Bank' },
       { route:'music', label:'Music' }, { route:'adobe-skills', label:'Adobe Skills' } ] },
     { label:'Grow', color:'#f97316', icon:<TrendingUp size={14}/>, items:[
       { route:'seo', label:'SEO' }, { route:'x', label:'X / Social' }, { route:'instagram', label:'Instagram' },

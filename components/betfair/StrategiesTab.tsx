@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { CONCEPTS, STRATEGIES, type StrategyInfo } from '@/lib/betfair/playbook'
 import type { StrategiesSnapshot } from '@/lib/betfair/stratRun'
+import type { RecorderStatus } from '@/lib/betfair/recorderStatus'
 import type { Line, StratStats, Verdict } from '@/lib/betfair/strategies'
 
 // Strategies tab of /betfair: three paper tests with rules fixed up front,
@@ -17,7 +18,7 @@ const VERDICT: Record<Verdict, { label: string; color: string }> = {
 }
 const UNIT: Record<string, string> = { dc: 'bets', bands: 'bets per band', form: 'matches' }
 
-export type StratData = StrategiesSnapshot & { liveReady: boolean; tickError?: string; error?: string }
+export type StratData = StrategiesSnapshot & { liveReady: boolean; tickError?: string; error?: string; server?: RecorderStatus | null }
 type Recent = { id: number; placed_at: string; event: string; market_type: string; selection: string; side: string; price: number; stake: number; model_prob: number | null; edge: number | null; band: string | null; status: string; pl: number | null }
 
 function Figures({ l, unit, gross }: { l: Line; unit: string; gross?: boolean }) {
@@ -142,8 +143,8 @@ export default function StrategiesTab({ d, err, busy, act, onConcept }: { d: Str
           <summary style={{ cursor: 'pointer', color: C.blu, fontSize: 13 }}>How to run the test, step by step</summary>
           <ol style={{ margin: '8px 0 0', paddingLeft: 20 }}>
             <li>Press <b>Start demo</b> and give it about ten minutes. Check the verdicts settle on “Fail” or “Inconclusive”. Then press <b>Reset</b>.</li>
-            <li>Switch to <b>Live prices</b> and press <b>Start</b>. Leave this page open in a tab around kick-off times (weekend afternoons and midweek evenings give the most matches).</li>
-            <li>The desk looks once a minute. It takes each match 1–12 minutes before kick-off, and collects results about two hours later. If the tab is closed at kick-off, that match is simply missed; open bets still settle next time you open the page.</li>
+            <li>Switch to <b>Live prices</b> and press <b>Start</b>. With the recorder server online you can close the tab; without it, leave this page open around kick-off times. Weekend afternoons and midweek evenings give the most matches.</li>
+            <li>The desk looks once a minute. It takes each match 1–12 minutes before kick-off, and collects results about two hours later. Without the recorder server, a match kicking off while the tab is closed is simply missed; open bets still settle later.</li>
             <li>Don&apos;t change the rules mid-test. If you want different settings, edit <code style={{ fontFamily: MONO, fontSize: 12 }}>STRAT</code> in <code style={{ fontFamily: MONO, fontSize: 12 }}>lib/betfair/strategies.ts</code>, press <b>Reset</b> and start again.</li>
             <li>Read the verdict only when a card stops saying “Collecting”. “Margin of error” is how far the return could be from the truth by luck alone; while it is wider than the return itself, the number means nothing yet.</li>
             <li>A “Pass” earns a second run on fresh matches, not real money. Paper fills are kinder than real ones.</li>

@@ -44,9 +44,9 @@ export const RULES = [
 
 // ---------------------------------------------------------------- types
 export type PriceSize = { price: number; size: number }
-export type Runner = { selectionId: number; status: string; ex?: { availableToBack?: PriceSize[]; availableToLay?: PriceSize[] } }
+export type Runner = { selectionId: number; status: string; lastPriceTraded?: number; ex?: { availableToBack?: PriceSize[]; availableToLay?: PriceSize[] } }
 export type Book = { marketId: string; status: string; inplay: boolean; totalMatched: number; runners: Runner[] }
-export type Market = { id: string; name: string; start: string }
+export type Market = { id: string; name: string; start: string; eventId?: string; venue?: string; runnerNames?: { id: number; name: string }[]; matched?: number }
 export type Side = 'BACK' | 'LAY'
 export type Signals = { weight_of_money: number; momentum: number; spread: number; volume: number; depth: number }
 
@@ -189,6 +189,8 @@ export async function tick(state: BotState, feed: Feed, now: Date) {
   })
   const ids = Array.from(new Set([...upcoming.map(m => m.id), ...Object.keys(state.positions)]))
   const books = ids.length ? await feed.books(ids, now) : {}
+  // Betfair's free delayed key leaves total matched out of price data; the market list has it.
+  for (const m of state.catalogue) { const b = books[m.id]; if (b && m.matched && !(b.totalMatched > 0)) b.totalMatched = m.matched }
 
   // RISK: manage open paper positions
   for (const [mid, pos] of Object.entries(state.positions)) {

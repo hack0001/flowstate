@@ -9,6 +9,7 @@ import { ChevronLeft, Save, Download, Copy, Trash2, FolderOpen, Plus, RotateCcw,
 import { KineticShort, type ShortContent } from '@/motion/templates/kinetic-short/KineticShort'
 import { KINETIC_SHORT } from '@/motion/templates/kinetic-short/meta'
 import { ICON_NAMES } from '@/motion/system/icons'
+import { SceneReferences } from '@/components/motion/SceneReferences'
 import { listMotionProjects, saveMotionProject, deleteMotionProject, type MotionProject } from '@/lib/motion'
 
 const C = {
@@ -107,6 +108,8 @@ export default function MotionStudio() {
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showProjects, setShowProjects] = useState(false)
+  // Reference Bank clips attached per scene: { s4: [clipId, …] }
+  const [refs, setRefs] = useState<Record<string, string[]>>({})
   // Player + editor are browser-only; skip server prerender to avoid hydration mismatches.
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -130,7 +133,7 @@ export default function MotionStudio() {
 
   const save = async () => {
     setSaving(true)
-    const { project, error } = await saveMotionProject({ id: projectId, name, template: T.id, content })
+    const { project, error } = await saveMotionProject({ id: projectId, name, template: T.id, content, refs })
     setSaving(false)
     if (error || !project) { setStatus({ msg: error ?? 'Save failed', err: true }); return }
     setProjectId(project.id)
@@ -138,7 +141,7 @@ export default function MotionStudio() {
     refresh()
   }
   const load = (p: MotionProject) => {
-    setContent(p.content as ShortContent); setName(p.name); setProjectId(p.id); setShowProjects(false)
+    setContent(p.content as ShortContent); setRefs(p.refs ?? {}); setName(p.name); setProjectId(p.id); setShowProjects(false)
     setStatus({ msg: 'Loaded ' + p.name })
   }
   const remove = async (p: MotionProject) => {
@@ -150,7 +153,7 @@ export default function MotionStudio() {
   }
   const startFrom = (id: string) => {
     const p = T.presets.find(x => x.id === id)!
-    setPresetId(id); setContent(clone(p.content)); setProjectId(undefined); setName(p.name)
+    setPresetId(id); setContent(clone(p.content)); setRefs({}); setProjectId(undefined); setName(p.name)
   }
   const downloadProps = () => {
     const blob = new Blob([JSON.stringify({ content }, null, 2)], { type: 'application/json' })
@@ -235,6 +238,13 @@ export default function MotionStudio() {
             Text auto-shrinks to fit. Keep lines short: the template is built for 1–4 words per line.
             Media: put files in <code>public/motion/media/</code> and set the slot&apos;s src to <code>motion/media/yourfile.mp4</code>; tick video for clips.
           </div>
+          <SceneReferences
+            key={scene}
+            sceneKey={scene} sceneName={sc.name} projectName={name}
+            sceneContent={(content as Record<string, unknown>)[scene]}
+            attached={refs[scene] ?? []}
+            onChange={ids => setRefs(r => ({ ...r, [scene]: ids }))}
+          />
         </div>
 
         <div style={{ borderLeft:'1px solid '+C.border, padding:'1rem', position:'sticky', top:0 }}>

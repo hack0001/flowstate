@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { CONCEPTS, COVERAGE, GROUPS, STRATEGIES, type Concept } from '@/lib/betfair/playbook'
+import { DS_NOTES } from '@/lib/betfair/dsNotes'
 
 // Research tab of /betfair: the betting ideas from the Sports Hacker articles,
 // in plain English, each with the article(s) and script(s) it comes from.
@@ -72,6 +73,19 @@ export default function ResearchTab({ focus, onStrategy }: { focus: string | nul
           </div>
         </section>
       ))}
+
+      <h2 style={{ fontFamily: SANS, fontSize: 20, fontWeight: 600, color: '#fff', margin: '30px 0 6px' }}>What Betfair&apos;s data scientists teach</h2>
+      <p style={{ fontFamily: SANS, fontSize: 14, lineHeight: 1.6, color: C.mut, margin: '0 0 10px' }}>Lessons from Betfair&apos;s own Data Scientists hub and related research, and what FlowState does about each.</p>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {DS_NOTES.map(n => (
+          <details key={n.title} style={{ background: C.panel, border: '1px solid ' + C.line, borderRadius: 10, padding: '12px 14px', fontFamily: SANS }}>
+            <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 600, color: '#fff' }}>{n.title}</summary>
+            <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.6, color: C.fg }}>{n.plain}</p>
+            <p style={{ margin: '8px 0 0', fontSize: 13, lineHeight: 1.6, color: '#c8d2ee' }}><b style={{ color: C.blu }}>For us: </b>{n.forUs}</p>
+            <p style={{ margin: '8px 0 0', fontSize: 12, color: C.mut }}><a href={n.link} target="_blank" rel="noreferrer" style={{ color: C.blu }}>{n.source}</a></p>
+          </details>
+        ))}
+      </div>
     </div>
   )
 }

@@ -10,6 +10,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { BetfairReader, login } from './live'
+import { saveMarkets, saveResults, saveSnaps, toResult, toSnap, unresolved, type MarketRec, type SnapRec } from './recorder'
 import {
   MARKET_TYPES, STRAT, evaluateMatch, newSim, scoreStrategies, settleBet, simulateMatch, updateForm,
   type Form, type MarketResult, type MarketSnap, type MarketType, type MatchSnap, type PaperBet, type Pending, type Row, type Sel, type Sim, type StrategyId,
@@ -54,7 +55,7 @@ function reader(db: SupabaseClient): BetfairReader {
 type RawRunner = { selectionId: number; runnerName: string; sortPriority: number }
 type RawCat = { marketId: string; marketName: string; marketStartTime: string; totalMatched?: number; event: { id: string; name: string }; runners: RawRunner[]; description?: { marketType?: string } }
 type RawBook = { marketId: string; status: string; inplay: boolean; totalMatched: number
-  runners: { selectionId: number; status: string; ex?: { availableToBack?: { price: number; size: number }[]; availableToLay?: { price: number; size: number }[] } }[] }
+  runners: { selectionId: number; status: string; lastPriceTraded?: number; ex?: { availableToBack?: { price: number; size: number }[]; availableToLay?: { price: number; size: number }[] } }[] }
 
 const typeOf = (c: RawCat): MarketType | null => {
   const t = c.description?.marketType
@@ -73,7 +74,9 @@ async function books(bf: BetfairReader, ids: string[], prices: boolean, chunk: n
   return out
 }
 
-async function liveSnapshots(bf: BetfairReader, state: State, now: Date): Promise<MatchSnap[]> {
+type Recorded = { markets: MarketRec[]; snaps: SnapRec[] }
+
+async function liveSnapshots(bf: BetfairReader, state: State, now: Date, recorded: Recorded): Promise<MatchSnap[]> {
   const at = (min: number) => new Date(now.getTime() + min * 60_000).toISOString()
   const cats = await bf.read<RawCat[]>('listMarketCatalogue', {
     filter: { eventTypeIds: ['1'], marketTypeCodes: ['MATCH_ODDS'], inPlayOnly: false, marketStartTime: { from: at(WINDOW_MIN[0]), to: at(WINDOW_MIN[1]) } },
@@ -92,6 +95,17 @@ async function liveSnapshots(bf: BetfairReader, state: State, now: Date): Promis
   const all = [...picks, ...others]
   const bk = await books(bf, all.map(c => c.marketId), true, 10)
 
+  // keep a copy of every market and its prices for the recorder
+  const snapAt = now.toISOString()
+  for (const c of all) {
+    const t = c.description?.marketType ?? (picks.includes(c) ? 'MATCH_ODDS' : typeOf(c))
+    const start = c.marketStartTime ?? picks.find(p => p.event.id === c.event.id)?.marketStartTime
+    if (!t || !start) continue
+    recorded.markets.push({ market_id: c.marketId, sport: 'football', market_type: t, event_id: c.event.id, event: c.event.name, venue: null, start_at: start,
+      runners: c.runners.map(r => ({ id: r.selectionId, name: r.runnerName })) })
+    if (bk[c.marketId]) recorded.snaps.push(toSnap(bk[c.marketId], snapAt))
+  }
+
   const snapOf = (c: RawCat, type: MarketType): MarketSnap | null => {
     const b = bk[c.marketId]
     if (!b || b.status !== 'OPEN' || b.inplay) return null
@@ -100,7 +114,8 @@ async function liveSnapshots(bf: BetfairReader, state: State, now: Date): Promis
       const bb = q?.status === 'ACTIVE' ? q.ex?.availableToBack?.[0] : undefined, ll = q?.status === 'ACTIVE' ? q.ex?.availableToLay?.[0] : undefined
       return { id: r.selectionId, name: r.runnerName, back: bb?.price ?? null, backSize: bb?.size ?? 0, lay: ll?.price ?? null, laySize: ll?.size ?? 0 }
     })
-    return { marketId: c.marketId, type, matched: b.totalMatched ?? 0, runners }
+    // Betfair's free delayed key leaves total matched out of price data; the market list has it.
+    return { marketId: c.marketId, type, matched: Math.max(b.totalMatched ?? 0, c.totalMatched ?? 0), runners }
   }
 
   const snaps: MatchSnap[] = []
@@ -153,7 +168,9 @@ export async function runStrategiesOnce(db: SupabaseClient): Promise<{ ran: bool
         .eq('mode', mode).eq('status', 'open').lt('placed_at', cutoff).order('placed_at', { ascending: true }).limit(400)
       const openBets = (open ?? []) as (PaperBet & { id: number })[]
       const pendingIds = Object.values(state.pending).filter(p => p.kickoff < cutoff).map(p => p.marketId)
-      const marketIds = Array.from(new Set([...openBets.map(b => b.market_id), ...pendingIds])).slice(0, 50)
+      const needed = Array.from(new Set([...openBets.map(b => b.market_id), ...pendingIds]))
+      const toRecord = await unresolved(db, 'football', cutoff, 50 - needed.length)   // recorded markets still waiting for a result
+      const marketIds = Array.from(new Set([...needed, ...toRecord])).slice(0, 50)
       if (marketIds.length) {
         const bk = await books(bf, marketIds, false, 25)
         const results: Record<string, MarketResult> = {}
@@ -161,12 +178,17 @@ export async function runStrategiesOnce(db: SupabaseClient): Promise<{ ran: bool
           const b = bk[id]
           if (b?.status === 'CLOSED') results[id] = { winners: b.runners.filter(r => r.status === 'WINNER').map(r => r.selectionId), removed: b.runners.filter(r => r.status === 'REMOVED').map(r => r.selectionId) }
         }
+        await saveResults(db, Object.values(bk).map(toResult).filter((r): r is NonNullable<typeof r> => !!r))
         for (const b of openBets) if (results[b.market_id]) { const s = settleBet(b, results[b.market_id]); settles.push({ id: b.id, status: s.status, pl: s.pl, settled_at: now.toISOString() }) }
         for (const [ev, p] of Object.entries(state.pending)) if (results[p.marketId]) { updateForm(state.form, p, results[p.marketId]); delete state.pending[ev] }
       }
 
       // 2) new matches about to kick off
-      for (const snap of await liveSnapshots(bf, state, now)) {
+      const recorded: Recorded = { markets: [], snaps: [] }
+      const snapsNow = await liveSnapshots(bf, state, now, recorded)
+      await saveMarkets(db, recorded.markets)
+      await saveSnaps(db, recorded.snaps)
+      for (const snap of snapsNow) {
         const { bets, pending, skipped } = evaluateMatch(snap, state.form, now.toISOString())
         state.seen[snap.eventId] = snap.kickoff
         state.counts.matches++; if (skipped) state.counts.skipped++
