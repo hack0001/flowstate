@@ -1082,6 +1082,7 @@ export default function Home() {
   const [top5, setTop5] = useState<Partial<Record<'tasks'|'vault'|'etsy'|'x'|'youtube', RankableItem[]>>>({})
   const [showAddTask, setShowAddTask] = useState(false)
   const [taskRefresh, setTaskRefresh] = useState(0)
+  const [openGroup, setOpenGroup] = useState<string | null>('Today')
 
   const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas','adobe-skills','motion','references','music','script-editor','seo']
 
@@ -1468,8 +1469,69 @@ export default function Home() {
   const isEveningReady = h >= 20 && !eveningDone
   const ctaState: 'morning' | 'evening' | 'focus' = !routineDone ? 'morning' : isEveningReady ? 'evening' : 'focus'
 
+  // ---- Dashboard helpers ----
+  const routeFor = (s: DailyPlanSection) => (s === 'youtube' ? 'content' : s)
+  // The #1 item from the first three areas that have anything queued.
+  const topPicks = (['tasks', 'youtube', 'etsy', 'x'] as DailyPlanSection[])
+    .map(section => ({ section, item: (top5[section] ?? [])[0] as RankableItem | undefined }))
+    .filter((p): p is { section: DailyPlanSection; item: RankableItem } => !!p.item)
+    .slice(0, 3)
+
+  const renderList = (section: DailyPlanSection, n = 3) => {
+    const items = (top5[section] ?? []).slice(0, n)
+    const accent = TOP5_COLOR[section]
+    if (items.length === 0) return <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.2rem 0' }}>Nothing queued</p>
+    return (
+      <div style={{ display:'flex', flexDirection:'column' }}>
+        {items.map(item => (
+          <button key={item.id} onClick={() => section === 'youtube' ? focusYoutubeItem(item.id) : navToItem(routeFor(section), item.id)}
+            style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'none', border:'none', borderTop:'1px solid '+C.border, padding:'0.45rem 0', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
+            <span style={{ width:'8px', height:'8px', borderRadius:'50%', border:'1.5px solid '+accent, flexShrink:0 }} />
+            <span style={{ flex:1, minWidth:0, fontSize:'0.78rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</span>
+            {section === 'youtube' && item.pipeline_stage && <span style={{ fontSize:'0.6rem', color:C.muted, flexShrink:0 }}>{item.pipeline_stage}</span>}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  const areaCard = (title: string, color: string, icon: JSX.Element, route: string, body: JSX.Element) => (
+    <div key={title} style={{ padding:'0.85rem 1rem', background:C.surface, border:'1px solid '+C.border, borderTop:'2px solid '+color, borderRadius:'0.75rem', minWidth:0 }}>
+      <button onClick={() => navTo(route)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', width:'100%', background:'none', border:'none', padding:0, marginBottom:'0.4rem', cursor:'pointer', fontFamily:'inherit' }}>
+        {icon}
+        <span style={{ fontSize:'0.68rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color }}>{title}</span>
+        <ChevronRight size={12} color={C.muted} style={{ marginLeft:'auto' }} />
+      </button>
+      {body}
+    </div>
+  )
+
+  // Sidebar: the ~26 pages condensed into five groups.
+  const NAV_GROUPS: { label: string; color: string; icon: JSX.Element; items: { route: string; label: string }[] }[] = [
+    { label:'Today', color:C.green, icon:<Sunrise size={14}/>, items:[
+      { route:'morning', label:t('morning') }, { route:'calendar', label:t('calendar') },
+      { route:'tasks', label:t('tasks') }, { route:'evening', label:t('evening') } ] },
+    { label:'Create', color:'#ff4466', icon:<Film size={14}/>, items:[
+      { route:'content', label:'Content' }, { route:'youtube', label:t('youtube') }, { route:'ideas', label:'Ideas' },
+      { route:'script-editor', label:'Script Editor' }, { route:'motion', label:'Motion Studio' }, { route:'references', label:'Reference Bank' },
+      { route:'music', label:'Music' }, { route:'adobe-skills', label:'Adobe Skills' } ] },
+    { label:'Grow', color:'#f97316', icon:<TrendingUp size={14}/>, items:[
+      { route:'seo', label:'SEO' }, { route:'x', label:'X / Social' }, { route:'instagram', label:'Instagram' },
+      { route:'etsy', label:t('etsy') }, { route:'betfair', label:'Betfair Desk' } ] },
+    { label:'Life', color:C.cyan, icon:<Activity size={14}/>, items:[
+      { route:'physical', label:'Physical' }, { route:'nsdr', label:'NSDR' }, { route:'welsh', label:'Welsh' },
+      { route:'tracking', label:t('tracking') }, { route:'goals', label:'Goals' }, { route:'personal', label:t('personal') } ] },
+    { label:'Library', color:C.purple, icon:<BookOpen size={14}/>, items:[
+      { route:'vault', label:'Vault' }, { route:'projects', label:t('projects') },
+      { route:'links', label:'Links' }, { route:'tabs', label:'Tab Sheet' } ] },
+  ]
+  const alertColor = (route: string) => {
+    const a = pageAlerts[route]
+    return a === 'red' ? '#ff4466' : a === 'orange' ? C.amber : a === 'green' ? C.green : pageWarn.has(route) ? C.amber : null
+  }
+
   return (
-    <main style={{ minHeight:'100vh', display:'flex', flexDirection:'column', background:C.bg, position:'relative', overflow:'hidden' }}>
+    <main className="fs-shell" style={{ minHeight:'100vh', display:'flex', flexDirection:'row', background:C.bg, position:'relative', overflowX:'clip' }}>
 
       {/* Ambient background orbs */}
       <div aria-hidden="true" style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0 }}>
@@ -1477,6 +1539,43 @@ export default function Home() {
         <div style={{ position:'absolute', bottom:'-100px', right:'-60px', width:'420px', height:'420px', borderRadius:'50%', background:'radial-gradient(circle,rgba(139,92,246,0.045) 0%,transparent 65%)', animation:'orbFloat2 22s ease-in-out infinite' }} />
         <div style={{ position:'absolute', top:'45%', left:'55%', width:'300px', height:'300px', borderRadius:'50%', background:'radial-gradient(circle,'+(routineDone?'rgba(0,255,136,0.03)':'rgba(0,212,255,0.028)')+' 0%,transparent 70%)', animation:'orbFloat3 28s ease-in-out infinite', transform:'translate(-50%,-50%)' }} />
       </div>
+
+      {/* Sidebar -- five groups instead of 26 buttons */}
+      <aside className="fs-side" style={{ width:'200px', flexShrink:0, position:'sticky', top:0, alignSelf:'flex-start', height:'100vh', overflowY:'auto', padding:'1.25rem 0.7rem', borderRight:'1px solid '+C.border, background:'rgba(18,18,26,0.7)', zIndex:3 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'0.45rem', padding:'0 0.4rem', marginBottom:'1.1rem' }}>
+          <Zap size={15} color={accentColor} />
+          <span style={{ fontSize:'0.7rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:accentColor }}>FlowState</span>
+        </div>
+        {NAV_GROUPS.map(g => {
+          const open = openGroup === g.label
+          const groupWarn = g.items.some(i => pageWarn.has(i.route))
+          return (
+            <div key={g.label} style={{ marginBottom:'0.2rem' }}>
+              <button onClick={() => setOpenGroup(open ? null : g.label)} style={{ display:'flex', alignItems:'center', gap:'0.55rem', width:'100%', padding:'0.5rem 0.55rem', background: open ? g.color+'14' : 'transparent', border:'none', borderRadius:'0.55rem', color: open ? g.color : C.text, cursor:'pointer', fontFamily:'inherit', fontSize:'0.82rem', fontWeight:700, textAlign:'left' }}>
+                {g.icon}
+                <span style={{ flex:1 }}>{g.label}</span>
+                {groupWarn && !open && <span style={{ width:'7px', height:'7px', borderRadius:'50%', background:C.amber }} />}
+                <ChevronRight size={12} color={C.muted} style={{ transform: open ? 'rotate(90deg)' : 'none', transition:'transform 0.15s' }} />
+              </button>
+              {open && (
+                <div style={{ display:'flex', flexDirection:'column', gap:'1px', margin:'0.15rem 0 0.4rem 1.35rem', borderLeft:'1px solid '+C.border }}>
+                  {g.items.map(i => {
+                    const ac = alertColor(i.route)
+                    return (
+                      <button key={i.route} onClick={() => navTo(i.route)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.35rem 0.6rem', background:'none', border:'none', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.76rem', textAlign:'left' }}>
+                        <span style={{ flex:1 }}>{i.label}</span>
+                        {ac && <span title="Not visited recently" style={{ width:'6px', height:'6px', borderRadius:'50%', background:ac }} />}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </aside>
+
+      <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', position:'relative', zIndex:1 }}>
 
       {/* Header */}
       <div style={{
@@ -1532,48 +1631,6 @@ export default function Home() {
             <button onClick={toggle} title={lang === 'en' ? 'Switch to Welsh' : 'Newid i Saesneg'} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background: lang === 'cy' ? 'rgba(0,192,75,0.12)' : 'rgba(255,255,255,0.04)', border:'1px solid '+(lang === 'cy' ? 'rgba(0,192,75,0.3)' : C.border), borderRadius:'0.75rem', color: lang === 'cy' ? '#00c04b' : C.muted, cursor:'pointer', fontSize:'0.75rem', fontWeight:700, fontFamily:'inherit', letterSpacing:'0.05em' }}>
               {lang === 'en' ? 'CY' : 'EN'}
             </button>
-            {([
-              { route:'morning', icon:<Sunrise size={14}/>, label:t('morning'), bg:'rgba(255,184,0,0.08)', border:'rgba(255,184,0,0.25)', color:C.amber },
-              { route:'calendar', icon:<CalendarDays size={14}/>, label:t('calendar'), bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:C.cyan },
-              { route:'tracking', icon:<BarChart2 size={14}/>, label:t('tracking'), bg:'rgba(139,92,246,0.08)', border:'rgba(139,92,246,0.25)', color:C.purple },
-              { route:'evening', icon:<Moon size={14}/>, label:t('evening'), bg:'rgba(139,92,246,0.06)', border:'rgba(139,92,246,0.18)', color:'#8b5cf6' },
-              { route:'welsh', icon:<span style={{ fontSize:'0.8rem' }}>&#127988;&#917607;&#917602;&#917623;&#917612;&#917619;&#917631;</span>, label:'Welsh', bg:'rgba(0,192,75,0.07)', border:'rgba(0,192,75,0.25)', color:'#00c04b' },
-              { route:'vault', icon:<BookOpen size={14}/>, label:'Vault', bg:'rgba(139,92,246,0.06)', border:'rgba(139,92,246,0.18)', color:'#8b5cf6' },
-              { route:'content', icon:<Film size={14}/>, label:'Content', bg:'rgba(255,107,53,0.07)', border:'rgba(255,107,53,0.2)', color:'#ff6b35' },
-              { route:'projects', icon:<FolderOpen size={14}/>, label:t('projects'), bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
-              { route:'tasks', icon:<CheckSquare size={14}/>, label:t('tasks'), bg:'rgba(0,255,136,0.06)', border:'rgba(0,255,136,0.18)', color:'#00ff88' },
-              { route:'personal', icon:<User size={14}/>, label:t('personal'), bg:'rgba(139,92,246,0.06)', border:'rgba(139,92,246,0.18)', color:'#8b5cf6' },
-              { route:'youtube', icon:<Tv size={14}/>, label:t('youtube'), bg:'rgba(255,68,102,0.07)', border:'rgba(255,68,102,0.2)', color:'#ff4466' },
-              { route:'etsy', icon:<ShoppingBag size={14}/>, label:t('etsy'), bg:'rgba(249,115,22,0.07)', border:'rgba(249,115,22,0.22)', color:'#f97316' },
-              { route:'x', icon:<X size={14}/>, label:'X / Social', bg:'rgba(249,115,22,0.07)', border:'rgba(249,115,22,0.22)', color:'#f97316' },
-              { route:'nsdr', icon:<Moon size={14}/>, label:'NSDR', bg:'rgba(139,92,246,0.07)', border:'rgba(139,92,246,0.22)', color:'#8b5cf6' },
-              { route:'physical', icon:<Activity size={14}/>, label:'Physical', bg:'rgba(0,255,136,0.06)', border:'rgba(0,255,136,0.2)', color:'#00ff88' },
-              { route:'instagram', icon:<Camera size={14}/>, label:'Instagram', bg:'rgba(225,48,108,0.07)', border:'rgba(225,48,108,0.22)', color:'#e1306c' },
-              { route:'tabs', icon:<Layers size={14}/>, label:'Tab Sheet', bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
-              { route:'ideas', icon:<Lightbulb size={14}/>, label:'Ideas', bg:'rgba(139,92,246,0.06)', border:'rgba(139,92,246,0.18)', color:'#8b5cf6' },
-              { route:'adobe-skills', icon:<Palette size={14}/>, label:'Adobe Skills', bg:'rgba(145,97,242,0.07)', border:'rgba(145,97,242,0.22)', color:'#9161f2' },
-              { route:'motion', icon:<Film size={14}/>, label:'Motion Studio', bg:'rgba(47,184,172,0.07)', border:'rgba(47,184,172,0.22)', color:'#2FB8AC' },
-              { route:'references', icon:<Library size={14}/>, label:'Reference Bank', bg:'rgba(184,147,90,0.07)', border:'rgba(184,147,90,0.22)', color:'#B8935A' },
-              { route:'music', icon:<Disc3 size={14}/>, label:'Music', bg:'rgba(255,79,163,0.07)', border:'rgba(255,79,163,0.22)', color:'#ff4fa3' },
-              { route:'script-editor', icon:<FileEdit size={14}/>, label:'Script Editor', bg:'rgba(0,212,255,0.06)', border:'rgba(0,212,255,0.18)', color:'#00d4ff' },
-              { route:'seo', icon:<TrendingUp size={14}/>, label:'SEO Dashboard', bg:'rgba(47,184,172,0.07)', border:'rgba(47,184,172,0.22)', color:'#2fb8ac' },
-              { route:'betfair', icon:<LineChart size={14}/>, label:'Betfair Desk', bg:'rgba(155,140,255,0.07)', border:'rgba(155,140,255,0.22)', color:'#9b8cff' },
-            ] as { route:string; icon:JSX.Element; label:string; bg:string; border:string; color:string; bold?:boolean }[]).map(({ route, icon, label, bg, border, color, bold }) => {
-              const alert = pageAlerts[route]
-              const alertBg     = alert === 'red' ? 'rgba(255,68,102,0.15)' : alert === 'orange' ? 'rgba(255,184,0,0.13)' : alert === 'green' ? 'rgba(0,255,136,0.11)' : null
-              const alertBorder = alert === 'red' ? 'rgba(255,68,102,0.5)'  : alert === 'orange' ? 'rgba(255,184,0,0.45)'  : alert === 'green' ? 'rgba(0,255,136,0.4)'   : null
-              const finalBg     = alertBg ?? bg
-              const finalBorder = alertBorder ?? border
-              const showWarn = pageWarn.has(route)
-              return (
-                <button key={route} onClick={() => navTo(route)} style={{ position:'relative', display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.6rem 1.1rem', background:finalBg, border:finalBorder==='none'?'none':'1px solid '+finalBorder, borderRadius:'0.75rem', color, cursor:'pointer', fontSize:'0.8rem', fontWeight:bold?700:600, fontFamily:'inherit', transition:'background 0.3s,border-color 0.3s' }}>
-                  {icon}{label}
-                  {showWarn && (
-                    <span style={{ position:'absolute', top:'-7px', right:'-7px', minWidth:'16px', height:'16px', borderRadius:'9999px', background:C.amber, color:'#000', fontSize:'0.55rem', fontWeight:900, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, padding:'0 3px', boxShadow:'0 0 0 2px '+C.bg, pointerEvents:'none' }}>!</span>
-                  )}
-                </button>
-              )
-            })}
           </div>
           {pageVisitsErr && (
             <div style={{ marginTop:'0.75rem', padding:'0.5rem 0.75rem', background:'rgba(255,68,102,0.08)', border:'1px solid rgba(255,68,102,0.25)', borderRadius:'0.6rem', color:'#ff4466', fontSize:'0.72rem' }}>
@@ -1598,53 +1655,6 @@ export default function Home() {
             }} style={{ background:'none', border:'none', color:'#4a4a6a', cursor:'pointer', display:'flex', alignItems:'center', padding:'0.25rem', borderRadius:'0.25rem' }}>
               <X size={15} />
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* Today's physical — moved directly under the afternoon check-in bar.
-          Component renders nothing (no wrapper) if nothing's queued for today */}
-      {!loading && <TodaysPhysical />}
-
-      {/* Streaks row — always visible, today-relevant at a glance */}
-      {!loading && (streaks.length > 0 || consistencyPct !== null) && (
-        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.012)' }}>
-          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1rem 2rem' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', flexWrap:'wrap' }}>
-              {consistencyPct !== null && (() => {
-                const cColor = consistencyPct >= 80 ? C.green : consistencyPct >= 50 ? C.amber : C.red
-                return (
-                  <div title="% of active habits completed over the last 7 days" style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.35rem 0.7rem', background:cColor+'14', border:'1px solid '+cColor+'50', borderRadius:'9999px' }}>
-                    <span style={{ fontSize:'0.85rem', fontWeight:900, color:cColor }}>{consistencyPct}%</span>
-                    <span style={{ fontSize:'0.72rem', color:C.sec }}>consistency (7d)</span>
-                  </div>
-                )
-              })()}
-              {streaks.map(s => (
-                <div key={s.id} title={s.title} style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.35rem 0.7rem', background:s.color+'14', border:'1px solid '+s.color+'40', borderRadius:'9999px' }}>
-                  <Flame size={12} color={s.color} />
-                  {s.emoji && <span style={{ fontSize:'0.8rem', lineHeight:1 }}>{s.emoji}</span>}
-                  <span style={{ fontSize:'0.72rem', fontWeight:700, color:s.color }}>{s.streak}</span>
-                  <span style={{ fontSize:'0.72rem', color:C.sec }}>{s.title}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!loading && <FocusSessionsToday />}
-
-      {/* Next 5 days — full calendar-day view: tasks, reminders, and
-          recurring habit blocks, same content and functionality as the
-          Calendar tab for these days, plus drag-to-move-day and inline time
-          editing right here. Directly under the streak bar so it's the first
-          thing seen after the morning/evening status. Wider max-width than
-          the rest of the page's sections -- five columns need the room. */}
-      {!loading && (
-        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
-          <div style={{ maxWidth:'1500px', margin:'0 auto', padding:'1.25rem 2rem' }}>
-            <HomeDaysBoard refreshKey={taskRefresh} />
           </div>
         </div>
       )}
@@ -1788,96 +1798,101 @@ export default function Home() {
         </div>
       )}
 
-      {/* This week's overview — top 5 per workflow + weekly targets. */}
+      {/* Dashboard: top picks across everything, then one card per area */}
+      {!loading && (
+        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border }}>
+          <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'1.5rem 2rem' }}>
+
+            {topPicks.length > 0 && (
+              <div style={{ padding:'0.85rem 1rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.75rem', marginBottom:'0.85rem' }}>
+                <p style={{ fontSize:'0.65rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color:C.cyan, margin:'0 0 0.3rem' }}>Top picks across everything</p>
+                {topPicks.map(({ section, item }) => (
+                  <button key={section} onClick={() => section === 'youtube' ? focusYoutubeItem(item.id) : navToItem(routeFor(section), item.id)}
+                    style={{ display:'flex', alignItems:'center', gap:'0.6rem', background:'none', border:'none', borderTop:'1px solid '+C.border, padding:'0.5rem 0', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
+                    <span style={{ width:'9px', height:'9px', borderRadius:'50%', border:'1.5px solid '+TOP5_COLOR[section], flexShrink:0 }} />
+                    <span style={{ flex:1, minWidth:0, fontSize:'0.85rem', fontWeight:600, color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</span>
+                    <span style={{ fontSize:'0.62rem', fontWeight:700, color:TOP5_COLOR[section], flexShrink:0 }}>{SECTION_LABEL[section]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:'0.85rem' }}>
+              {areaCard('Today', C.green, <CheckSquare size={13} color={C.green} />, 'tasks', renderList('tasks'))}
+              {areaCard('Create', '#ff4466', <Film size={13} color="#ff4466" />, 'content', renderList('youtube'))}
+              {areaCard('Grow', '#f97316', <TrendingUp size={13} color="#f97316" />, 'seo', (
+                <>
+                  <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0.1rem 0 0' }}>Etsy</p>
+                  {renderList('etsy', 2)}
+                  <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0.5rem 0 0' }}>X</p>
+                  {renderList('x', 2)}
+                </>
+              ))}
+              {areaCard('Life', C.cyan, <Activity size={13} color={C.cyan} />, 'tracking', (
+                <div style={{ display:'flex', flexWrap:'wrap', gap:'0.4rem', paddingTop:'0.2rem' }}>
+                  {consistencyPct !== null && (() => {
+                    const cColor = consistencyPct >= 80 ? C.green : consistencyPct >= 50 ? C.amber : C.red
+                    return (
+                      <div title="% of active habits completed over the last 7 days" style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.25rem 0.6rem', background:cColor+'14', border:'1px solid '+cColor+'50', borderRadius:'9999px' }}>
+                        <span style={{ fontSize:'0.8rem', fontWeight:900, color:cColor }}>{consistencyPct}%</span>
+                        <span style={{ fontSize:'0.68rem', color:C.sec }}>7d</span>
+                      </div>
+                    )
+                  })()}
+                  {streaks.slice(0, 5).map(s => (
+                    <div key={s.id} title={s.title} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.25rem 0.6rem', background:s.color+'14', border:'1px solid '+s.color+'40', borderRadius:'9999px' }}>
+                      <Flame size={11} color={s.color} />
+                      <span style={{ fontSize:'0.7rem', fontWeight:700, color:s.color }}>{s.streak}</span>
+                      <span style={{ fontSize:'0.68rem', color:C.sec }}>{s.title}</span>
+                    </div>
+                  ))}
+                  {streaks.length === 0 && consistencyPct === null && <p style={{ fontSize:'0.72rem', color:C.muted, margin:0 }}>No streaks yet</p>}
+                </div>
+              ))}
+              {areaCard('Library', C.purple, <BookOpen size={13} color={C.purple} />, 'vault', (
+                <>
+                  {renderList('vault', 2)}
+                  <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0.5rem 0 0' }}>Site and app ideas</p>
+                  {ideas.length === 0 ? (
+                    <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.2rem 0' }}>{ideasLoading ? 'Loading...' : 'Nothing parked'}</p>
+                  ) : ideas.slice(0, 2).map(idea => (
+                    <button key={idea.id} onClick={() => navTo('ideas')}
+                      style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'none', border:'none', borderTop:'1px solid '+C.border, padding:'0.45rem 0', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
+                      <Lightbulb size={11} color={C.purple} style={{ flexShrink:0 }} />
+                      <span style={{ flex:1, minWidth:0, fontSize:'0.78rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{idea.title}</span>
+                    </button>
+                  ))}
+                </>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Today's physical -- renders nothing if nothing's queued for today */}
+      {!loading && <TodaysPhysical />}
+      {!loading && <FocusSessionsToday />}
+
+      {/* Next 5 days -- tasks, reminders and habit blocks, same as Calendar */}
+      {!loading && (
+        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
+          <div style={{ maxWidth:'1500px', margin:'0 auto', padding:'1.25rem 2rem' }}>
+            <HomeDaysBoard refreshKey={taskRefresh} />
+          </div>
+        </div>
+      )}
+
+      {/* Weekly targets */}
       {!loading && (
         <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.015)' }}>
-          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.5rem 2rem' }}>
-            <div style={{ display:'flex', alignItems:'baseline', gap:'0.5rem', marginBottom:'0.9rem' }}>
-              <span style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted }}>This week&apos;s overview</span>
-              <span style={{ fontSize:'0.68rem', color:C.muted }}>&mdash; priorities &amp; targets</span>
-            </div>
-
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))', gap:'0.7rem', marginBottom:'1.5rem' }}>
-              {(['youtube','etsy','tasks','vault','x'] as DailyPlanSection[]).map(section => {
-                const items: RankableItem[] = top5[section] ?? []
-                const route = section === 'tasks' ? 'tasks' : section === 'youtube' ? 'content' : section === 'x' ? 'x' : section
-                const accent = TOP5_COLOR[section]
-                return (
-                  <div key={section} style={{ padding:'0.8rem 0.85rem', background:C.surface, border:'1px solid '+accent+'35', borderTop:'2px solid '+accent, borderRadius:'0.75rem' }}>
-                    <button onClick={() => navTo(route)} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'0.35rem', width:'100%', textAlign:'left', marginBottom:'0.55rem' }}>
-                      {SECTION_ICON[section]}
-                      <p style={{ fontSize:'0.65rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase', color:accent, margin:0 }}>
-                        {SECTION_LABEL[section]}
-                      </p>
-                    </button>
-                    {items.length === 0 ? (
-                      <p style={{ fontSize:'0.72rem', color:C.muted, margin:0 }}>Nothing queued</p>
-                    ) : section === 'youtube' ? (
-                      <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
-                        {items.map(item => (
-                          <button key={item.id} onClick={() => focusYoutubeItem(item.id)}
-                            style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'rgba(255,255,255,0.02)', border:'1px solid '+C.border, borderRadius:'0.6rem', padding:'0.45rem 0.55rem', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
-                            <div style={{ width:'1.5rem', height:'1.5rem', borderRadius:'0.4rem', background:C.card, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                              <Tv size={11} color={accent}/>
-                            </div>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <p style={{ fontSize:'0.76rem', fontWeight:600, color:C.text, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</p>
-                              <p style={{ fontSize:'0.63rem', color:C.muted, margin:0 }}>{item.pipeline_stage ?? 'Idea'}{item.format ? ' · '+item.format : ''}</p>
-                            </div>
-                            {item.is_active_focus
-                              ? <Star size={10} color={C.amber} fill="currentColor" style={{ flexShrink:0 }}/>
-                              : <ChevronRight size={12} color={C.muted} style={{ flexShrink:0 }}/>}
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
-                        {items.map((item, i) => (
-                          <button key={item.id} onClick={() => navToItem(route, item.id)}
-                            style={{ display:'flex', alignItems:'center', gap:'0.45rem', background:'none', border:'none', borderLeft:'2px solid '+accent+'50', padding:'0.2rem 0 0.2rem 0.5rem', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
-                            <span style={{ fontSize:'0.65rem', color:accent, fontWeight:800, flexShrink:0 }}>{i+1}</span>
-                            <span style={{ flex:1, fontSize:'0.78rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</span>
-                            <ChevronRight size={11} color={C.muted} style={{ flexShrink:0 }}/>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-
-              {/* Website / app ideas -- 6th tile, same visual treatment as the
-                  workflow cards above, so the backlog can't be missed the way
-                  it was when it lived collapsed at the very bottom of the page. */}
-              <div style={{ padding:'0.8rem 0.85rem', background:C.surface, border:'1px solid '+C.purple+'35', borderTop:'2px solid '+C.purple, borderRadius:'0.75rem' }}>
-                <button onClick={() => navTo('ideas')} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'0.35rem', width:'100%', textAlign:'left', marginBottom:'0.55rem' }}>
-                  <Lightbulb size={12} color={C.purple} />
-                  <p style={{ fontSize:'0.65rem', fontWeight:800, letterSpacing:'0.06em', textTransform:'uppercase', color:C.purple, margin:0 }}>
-                    Website &amp; App Ideas
-                  </p>
-                </button>
-                {ideas.length === 0 ? (
-                  <p style={{ fontSize:'0.72rem', color:C.muted, margin:0 }}>{ideasLoading ? 'Loading...' : 'Nothing parked'}</p>
-                ) : (
-                  <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
-                    {ideas.slice(0, 5).map((idea, i) => (
-                      <button key={idea.id} onClick={() => navTo('ideas')}
-                        style={{ display:'flex', alignItems:'center', gap:'0.45rem', background:'none', border:'none', borderLeft:'2px solid '+C.purple+'50', padding:'0.2rem 0 0.2rem 0.5rem', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
-                        <span style={{ fontSize:'0.65rem', color:C.purple, fontWeight:800, flexShrink:0 }}>{i+1}</span>
-                        <span style={{ flex:1, fontSize:'0.78rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{idea.title}</span>
-                        <ChevronRight size={11} color={C.muted} style={{ flexShrink:0 }}/>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
+          <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'1.25rem 2rem' }}>
             <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.6rem' }}>This week&apos;s targets</p>
             <WeeklyTargets />
           </div>
         </div>
       )}
+
+      </div>
 
       {/* Focus pre-flight check overlay */}
       {showFocusCheck && (
@@ -1894,6 +1909,10 @@ export default function Home() {
         @keyframes breathe { 0%,100%{opacity:0.5;transform:scale(1)} 50%{opacity:1;transform:scale(1.08)} }
         @keyframes fadeInUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
         @keyframes spin { to{transform:rotate(360deg)} }
+        @media (max-width: 760px) {
+          .fs-shell { flex-direction: column !important; }
+          .fs-side { width: 100% !important; height: auto !important; max-height: 60vh; position: static !important; border-right: none !important; border-bottom: 1px solid ${C.border}; }
+        }
       `}</style>
     </main>
   )
