@@ -5,11 +5,7 @@ import { getScriptDocLinks, addScriptDocLink, updateScriptDocLink, deleteScriptD
 import { CHANNEL_BRIEF, SCRIPT_VOICE } from '@/lib/channelBrief'
 import { ChevronLeft, RefreshCw, Wand2, Search, Plus, Check, AlertCircle, FileEdit, X, Pencil, Bookmark, SpellCheck, Target, Sparkles, Clapperboard } from 'lucide-react'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6',
-  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-}
+import { C } from '@/lib/theme'
 
 // Models available for the "Ask Claude" calls — same whitelist as the
 // Content Pipeline's Consult button (app/api/content/consult/route.ts).

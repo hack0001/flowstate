@@ -5,12 +5,7 @@ import { ChevronLeft, Zap, Copy, Check, ExternalLink, ChevronDown, CheckCircle2,
 import { supabase, getDailyChecklistState, setDailyChecklistItem, getTweetModels, addTweetModels, deleteTweetModel } from '@/lib/supabase'
 import type { TweetModelRow } from '@/lib/supabase'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6',
-  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-  orange:'#f97316', pink:'#ec4899', teal:'#14b8a6',
-}
+import { C } from '@/lib/theme'
 
 const FORMATS = [
   { id:'results-post',  label:'Results Post',   desc:'Win + numbers + achievable',  color: C.green },

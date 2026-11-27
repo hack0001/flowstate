@@ -5,11 +5,7 @@ import { ChevronLeft, Plus, X, Check, ChevronDown, ChevronUp, RotateCcw, Target 
 import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/context/LanguageContext'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#00ff88', purple:'#8b5cf6', amber:'#ffb800',
-  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-}
+import { C } from '@/lib/theme'
 
 const STATUS_META: Record<string, { color: string; bg: string }> = {
   Green:  { color: '#00ff88', bg: 'rgba(0,255,136,0.1)' },

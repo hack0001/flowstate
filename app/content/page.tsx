@@ -292,12 +292,7 @@ const AUTO_DRAFT_STAGES: { sopId: string; label: string }[] = [
   { sopId: '08', label: 'Thumbnail & SEO' },
 ]
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6',
-  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-  orange:'#f97316', pink:'#ec4899', teal:'#14b8a6',
-}
+import { C } from '@/lib/theme'
 
 // Shared small-form input style — used by the Channels to Watch add form.
 const CH_INPUT: React.CSSProperties = {

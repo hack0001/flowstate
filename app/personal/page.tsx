@@ -4,11 +4,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, Plus, X, Check, RotateCcw, User, Pencil, Target, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#00ff88', purple:'#8b5cf6', amber:'#ffb800',
-  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-}
+import { C } from '@/lib/theme'
 
 const PRIORITY_META: Record<string, { color: string; bg: string }> = {
   High:   { color:'#ff4466', bg:'rgba(255,68,102,0.1)'  },

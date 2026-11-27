@@ -5,11 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { safeNextPath } from '@/lib/authConfig'
 import { Lock, Mail, AlertCircle } from 'lucide-react'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', red:'#ff4466',
-  text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-}
+import { C } from '@/lib/theme'
 
 const inputStyle: React.CSSProperties = {
   width:'100%', padding:'0.7rem 0.85rem', background:C.surface, border:'1px solid '+C.border,

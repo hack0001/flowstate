@@ -10,10 +10,8 @@ import {
   listClips, saveClip, deleteClip, parseYouTubeId, fmtTime, type MotionReference, type ReferenceClip,
 } from '@/lib/references'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  teal:'#2FB8AC', gold:'#B8935A', red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-}
+import { C as BASE } from '@/lib/theme'
+const C = { ...BASE, teal:'#2FB8AC' }
 const FPS = 30
 const inputStyle: React.CSSProperties = {
   width:'100%', padding:'0.5rem 0.65rem', background:C.surface, border:'1px solid '+C.border,

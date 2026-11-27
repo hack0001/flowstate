@@ -4,13 +4,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, Camera, CheckCircle2, Circle, Copy, Check, ExternalLink, ChevronDown, Hash } from 'lucide-react'
 import { getDailyChecklistState, setDailyChecklistItem } from '@/lib/supabase'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6',
-  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-  orange:'#f97316', pink:'#ec4899', teal:'#14b8a6',
-  insta:'#e1306c',
-}
+import { C } from '@/lib/theme'
 
 const INSTA_GRAD = 'linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)'
 

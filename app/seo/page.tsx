@@ -8,11 +8,8 @@ import {
   type GscSite, type GscDay, type GscMover, type SiteSummary,
 } from '@/lib/gscData'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#3ecf7e', amber:'#ffb800', purple:'#8b5cf6', teal:'#2fb8ac',
-  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-}
+import { C as BASE } from '@/lib/theme'
+const C = { ...BASE, green:'#3ecf7e', teal:'#2fb8ac' }
 
 const WINDOWS = [7, 28, 90] as const
 type Mode = 'top' | 'gaining' | 'losing' | 'rankUp' | 'rankDown'

@@ -3,11 +3,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Calendar } from 'lucide-react'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  green:'#00ff88', purple:'#8b5cf6', red:'#ff4466', amber:'#f59e0b',
-  teal:'#14b8a6', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-}
+import { C as BASE } from '@/lib/theme'
+const C = { ...BASE, amber:'#f59e0b' }
 
 type Entry = {
   month: string

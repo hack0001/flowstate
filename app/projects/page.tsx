@@ -4,11 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { ChevronLeft, Plus, X, Target } from 'lucide-react'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6',
-  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-}
+import { C } from '@/lib/theme'
 
 const STATUS_META: Record<string, { color: string; bg: string }> = {
   'Not started': { color:'#4a4a6a', bg:'rgba(74,74,106,0.15)' },

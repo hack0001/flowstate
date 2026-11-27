@@ -6,11 +6,7 @@ import { sounds } from '@/lib/sounds'
 import { useCelebration } from '@/hooks/useCelebration'
 import { ChevronLeft, Search, X, CheckSquare, Download, Plus, Edit3, Trash2, Zap, TrendingUp, ChevronDown, BookOpen } from 'lucide-react'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6',
-  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-}
+import { C } from '@/lib/theme'
 
 // Local-date helpers for the reschedule quick-picks — avoid toISOString's
 // UTC shift, which can land on the wrong day near midnight.

@@ -33,11 +33,7 @@ import BrandAssets from '@/components/BrandAssets'
 // Pipeline + SOP data (that legacy system has since been removed).
 // ============================================================
 
-const C = {
-  bg: '#0a0a0f', surface: '#12121a', card: '#1a1a26', border: '#2a2a3a',
-  cyan: '#00d4ff', green: '#00ff88', amber: '#ffb800', purple: '#8b5cf6',
-  text: '#f0f0ff', sec: '#8888aa', muted: '#4a4a6a',
-}
+import { C } from '@/lib/theme'
 
 // Kept in sync with app/content/page.tsx's own VIDEO_TYPES list.
 const VIDEO_TYPES = ['How-To', 'Listicle', 'Case Study', 'Explainer', 'Testimonial/Interview']

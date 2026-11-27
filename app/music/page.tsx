@@ -7,11 +7,8 @@ import {
 } from '@/lib/supabase'
 import { ChevronLeft, Plus, X, ExternalLink, Edit3, Trash2, CheckCircle2, Circle, Youtube, Globe, Music, Disc3 } from 'lucide-react'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', pink:'#ff4fa3',
-  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-}
+import { C as BASE } from '@/lib/theme'
+const C = { ...BASE, pink:'#ff4fa3' }
 
 // Mood/genre colors, used consistently for badges/filters.
 const GENRE_META: Record<MusicGenre, { color: string; emoji: string }> = {

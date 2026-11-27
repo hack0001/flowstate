@@ -4,11 +4,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, RotateCcw, Plus, Trash2, CheckCircle2, SkipForward } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  green:'#00ff88', purple:'#8b5cf6', red:'#ff4466', amber:'#ffb800',
-  cyan:'#00d4ff', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a',
-}
+import { C } from '@/lib/theme'
 
 const VOCAB: { en:string; cy:string }[] = [
   // Greetings
