@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Plus, Flame, CheckCircle2, Circle, Trash2, Edit3, X, ChevronLeft, AlertTriangle, Trophy, Target, Sparkles } from 'lucide-react'
 import { calcHabitStreak, isHabitScheduledOn } from '@/lib/habitStreak'
@@ -228,8 +227,7 @@ function WeekDots({ habit, completions }: { habit: Habit; completions: Completio
   )
 }
 
-export default function TrackingPage() {
-  const router = useRouter()
+export function HabitTracker() {
   const today = toDateStr(new Date())
   const todayDowNum = todayDow()
   const todayLabel = new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' })
@@ -288,6 +286,7 @@ export default function TrackingPage() {
       }
     }
     setSaving(null)
+    try { window.dispatchEvent(new Event('flowstate:routine-complete')) } catch {} // refresh Home streak tiles
   }
 
   async function saveHabit(data: Omit<Habit,'id'|'created_at'>) {
@@ -332,15 +331,10 @@ export default function TrackingPage() {
   const longestStreak = habits.reduce((max, h) => Math.max(max, streakFor(h, completions)), 0)
 
   return (
-    <main style={{ minHeight:'100vh', background:C.bg, color:C.text, fontFamily:'inherit' }}>
+    <section id="habits" style={{ color:C.text, fontFamily:'inherit' }}>
       {/* Header */}
       <div style={{ padding:'1.75rem 2rem 1.5rem', borderBottom:'1px solid '+C.border, background:'linear-gradient(160deg,rgba(139,92,246,0.06) 0%,transparent 100%)' }}>
         <div style={{ maxWidth:'860px', margin:'0 auto' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', marginBottom:'1rem' }}>
-            <button onClick={() => router.push('/')} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', alignItems:'center', gap:'0.3rem', fontSize:'0.8rem', fontFamily:'inherit' }}>
-              <ChevronLeft size={14}/> Home
-            </button>
-          </div>
           <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
             <div>
               <h1 style={{ fontSize:'clamp(1.4rem,3vw,1.9rem)', fontWeight:900, margin:'0 0 0.25rem', letterSpacing:'-0.02em' }}>
@@ -547,10 +541,10 @@ export default function TrackingPage() {
         @keyframes toastIn { from{opacity:0;transform:translate(-50%,12px)} to{opacity:1;transform:translate(-50%,0)} }
         @keyframes toastOut { from{opacity:1} to{opacity:0} }
         @keyframes fadeInUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-        input, select { outline:none; }
-        input:focus, select:focus { border-color: #8b5cf6 !important; }
-        button:hover { opacity:0.85; }
+        #habits input, #habits select { outline:none; }
+        #habits input:focus, #habits select:focus { border-color: #8b5cf6 !important; }
+        #habits button:hover { opacity:0.85; }
       `}</style>
-    </main>
+    </section>
   )
 }

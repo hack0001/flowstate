@@ -38,7 +38,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       { route:'etsy', label:t('etsy') }, { route:'betfair', label:'Betfair Desk' } ] },
     { label:'Life', color:C.cyan, icon:<Activity size={14}/>, items:[
       { route:'physical', label:'Physical' }, { route:'nsdr', label:'NSDR' }, { route:'welsh', label:'Welsh' },
-      { route:'tracking', label:t('tracking') }, { route:'goals', label:'Goals' }, { route:'personal', label:t('personal') } ] },
+      { route:'goals', label:'Goals' }, { route:'personal', label:t('personal') } ] },
     { label:'Library', color:C.purple, icon:<BookOpen size={14}/>, items:[
       { route:'vault', label:'Vault' }, { route:'projects', label:t('projects') },
       { route:'links', label:'Links' }, { route:'tabs', label:'Tab Sheet' } ] },

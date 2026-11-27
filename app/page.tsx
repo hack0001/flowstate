@@ -21,6 +21,7 @@ import { HomeDaysBoard } from '@/components/home/HomeDaysBoard'
 import { FocusSessionsToday } from '@/components/home/FocusSessionsToday'
 import { TodaysPhysical } from '@/components/home/TodaysPhysical'
 import { WeeklyTargets } from '@/components/home/WeeklyTargets'
+import { HabitTracker } from '@/components/home/HabitTracker'
 import { LiveClock } from '@/components/home/LiveClock'
 import { FocusCheck } from '@/components/home/FocusCheck'
 import { AddTaskModal } from '@/components/home/AddTaskModal'
@@ -91,7 +92,7 @@ export default function Home() {
   const [showAddTask, setShowAddTask] = useState(false)
   const [taskRefresh, setTaskRefresh] = useState(0)
 
-  const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas','adobe-skills','motion','references','music','script-editor','seo']
+  const TRACKED_ROUTES = ['morning','calendar','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas','adobe-skills','motion','references','music','script-editor','seo']
 
   const today = toDateStr(new Date())
   const quote = QUOTES[new Date().getDate() % QUOTES.length]
@@ -464,6 +465,8 @@ export default function Home() {
   const isEveningReady = h >= 20 && !eveningDone
   const routeFor = (s: DailyPlanSection) => (s === 'youtube' ? 'content' : s)
   const n = (k: string) => counts[k] ?? 0
+  // The habit tracker lives on this page now (no separate Tracking tab).
+  const goHabits = () => document.getElementById('habits')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   // Thin wrappers over the shared templates in components/ui.
   const tile = (label: string, value: string, sub: string, color: string, onClick?: () => void) =>
@@ -482,7 +485,7 @@ export default function Home() {
     )
 
   const panel = (title: string, color: string, note: string, route: string, body: ReactNode) =>
-    <Panel key={title} title={title} color={color} note={note} onTitleClick={() => navTo(route)}>{body}</Panel>
+    <Panel key={title} title={title} color={color} note={note} onTitleClick={() => route === 'habits' ? goHabits() : navTo(route)}>{body}</Panel>
 
   // One-line "what to do right now" bar.
   const nextUp = !routineDone
@@ -556,8 +559,8 @@ export default function Home() {
               {tile('X / Social', String(n('x')), 'ideas to post', n('x') ? TOP5_COLOR.x : D.teal, () => navTo('x'))}
               {tile('Vault', String(n('vault')), 'to read', n('vault') ? TOP5_COLOR.vault : D.teal, () => navTo('vault'))}
               {tile('Site ideas', String(ideas.length), 'parked', D.vio, () => navTo('ideas'))}
-              {tile('Consistency', consistencyPct !== null ? consistencyPct + '%' : '—', 'habits, 7 days', consistencyPct === null ? D.dim : consistencyPct >= 80 ? D.teal : consistencyPct >= 50 ? D.amb : D.red, () => navTo('tracking'))}
-              {tile('Best streak', streaks[0] ? streaks[0].streak + 'd' : '—', streaks[0] ? streaks[0].title : 'none yet', D.amb, () => navTo('tracking'))}
+              {tile('Consistency', consistencyPct !== null ? consistencyPct + '%' : '—', 'habits, 7 days', consistencyPct === null ? D.dim : consistencyPct >= 80 ? D.teal : consistencyPct >= 50 ? D.amb : D.red, goHabits)}
+              {tile('Best streak', streaks[0] ? streaks[0].streak + 'd' : '—', streaks[0] ? streaks[0].title : 'none yet', D.amb, goHabits)}
             </Grid>
 
             {/* Top 3 in each */}
@@ -569,8 +572,8 @@ export default function Home() {
               {panel('Vault', TOP5_COLOR.vault, n('vault') + ' to read', 'vault', renderList('vault'))}
               {panel('Site ideas', D.vio, ideas.length + ' parked', 'ideas',
                 rows(ideas.slice(0, 3).map(i => ({ id: i.id, title: i.title })), D.vio, () => navTo('ideas')))}
-              {panel('Streaks', D.amb, 'habits', 'tracking',
-                rows(streaks.slice(0, 3).map(s => ({ id: s.id, title: (s.emoji ? s.emoji + ' ' : '') + s.title, badge: s.streak + 'd' })), D.amb, () => navTo('tracking')))}
+              {panel('Streaks', D.amb, 'habits', 'habits',
+                rows(streaks.slice(0, 3).map(s => ({ id: s.id, title: (s.emoji ? s.emoji + ' ' : '') + s.title, badge: s.streak + 'd' })), D.amb, goHabits))}
             </Grid>
           </>
         )}
@@ -584,6 +587,7 @@ export default function Home() {
         <p style={{ fontSize:10, letterSpacing:'.16em', textTransform:'uppercase', color:D.mut, margin:'0 0 8px' }}>This week&apos;s targets</p>
         <WeeklyTargets />
       </>, 'targets')}
+      {!loading && wrap(<HabitTracker />, 'habits')}
 
       {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} onAdded={() => setTaskRefresh(k => k + 1)} />}
       {showFocusCheck && <FocusCheck onProceed={proceedToFocus} onClose={() => setShowFocusCheck(false)} />}
