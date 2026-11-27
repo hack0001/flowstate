@@ -149,7 +149,11 @@ export function anchorForTask(t: Task): number {
   return TL_ANCHOR_MIDDAY
 }
 
-export type TLBlock = { id: string; kind: 'task' | 'reminder' | 'habit'; title: string; color: string; start: number; duration: number; timed: boolean; task?: Task; reminder?: Reminder; habit?: HabitBlock }
+// A Google Calendar event (read-only on this page; fetched via /api/gcal).
+export type GEvent = { id: string; title: string; date: string; startMin: number | null; endMin: number | null; allDay: boolean; link: string | null }
+export const GCAL_COLOR = '#4d9fff'
+
+export type TLBlock = { id: string; kind: 'task' | 'reminder' | 'habit' | 'gcal'; title: string; color: string; start: number; duration: number; timed: boolean; task?: Task; reminder?: Reminder; habit?: HabitBlock; gcal?: GEvent }
 
 // Any task without an explicit start_time gets stacked sequentially from its
 // type's default anchor, in is_frog-first order, purely for display.

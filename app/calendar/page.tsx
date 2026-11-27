@@ -7,7 +7,7 @@ import { generateDailyPlan, getDailyPlanSettings, saveDailyPlanSettings, getDail
 import { type Reminder, type ReminderRecurrence, reminderOccursOn, describeRecurrence } from '@/lib/reminders'
 
 import { C } from '@/lib/theme'
-import { MONTHS, DAY_ABBR, Task, HoverTip, OrgMove, OverdueMove, HabitBlock, TYPE_LIMITS, getMondayOfWeek, centeredStart, addDays, toDateStr, rescheduleOptions, fmtWeekRange, TL_START_MIN, TL_END_MIN, TL_SNAP_MIN, TL_ZOOM_LEVELS, TL_DEFAULT_ZOOM_IDX, TL_DEFAULT_DURATION, minutesToHHMM, hhmmToMinutes, parseTimeLabel, TLBlock, autoPlaceTasks, buildOrganisePlan } from '@/lib/calendarUtils'
+import { GEvent, MONTHS, DAY_ABBR, Task, HoverTip, OrgMove, OverdueMove, HabitBlock, TYPE_LIMITS, getMondayOfWeek, centeredStart, addDays, toDateStr, rescheduleOptions, fmtWeekRange, TL_START_MIN, TL_END_MIN, TL_SNAP_MIN, TL_ZOOM_LEVELS, TL_DEFAULT_ZOOM_IDX, TL_DEFAULT_DURATION, minutesToHHMM, hhmmToMinutes, parseTimeLabel, TLBlock, autoPlaceTasks, buildOrganisePlan } from '@/lib/calendarUtils'
 import { TaskCard } from '@/components/calendar/TaskCard'
 import { TimelineBlock } from '@/components/calendar/TimelineBlock'
 import { TimelineDay } from '@/components/calendar/TimelineDay'
@@ -174,6 +174,36 @@ function CalendarPageInner() {
 
   useEffect(() => { fetchWeek() }, [fetchWeek])
 
+  // Google Calendar (read-only blocks for the visible days). Failures -- most
+  // often "scope not authorised yet" -- show as a small banner, never break the page.
+  const [gcalByDate, setGcalByDate] = useState<Record<string, GEvent[]>>({})
+  const [gcalErr, setGcalErr] = useState<string | null>(null)
+  const gcalRange = weekDates[0] + '|' + weekDates[weekDates.length - 1]
+  useEffect(() => {
+    const [from, to] = gcalRange.split('|')
+    let cancelled = false
+    fetch(`/api/gcal?from=${from}&to=${to}`)
+      .then(async r => ({ ok: r.ok, body: await r.json().catch(() => ({})) as { events?: GEvent[]; error?: string } }))
+      .then(({ ok, body }) => {
+        if (cancelled) return
+        if (!ok) { setGcalErr(body.error ?? 'Google Calendar unavailable'); return }
+        setGcalErr(null)
+        const map: Record<string, GEvent[]> = {}
+        for (const e of body.events ?? []) (map[e.date] ??= []).push(e)
+        setGcalByDate(map)
+      })
+      .catch(() => { if (!cancelled) setGcalErr('Google Calendar unavailable') })
+    return () => { cancelled = true }
+  }, [gcalRange])
+
+  // Push (or remove) a task's Google event. Fire-and-forget: the task itself is
+  // already saved, a failed sync just surfaces in the banner.
+  function syncTask(taskId: string, action: 'push' | 'remove' = 'push') {
+    fetch('/api/gcal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, taskId }) })
+      .then(async r => { if (!r.ok) setGcalErr(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Google Calendar sync failed') })
+      .catch(() => {})
+  }
+
   useEffect(() => {
     // Show local cache instantly, then fetch Supabase (authoritative)
     try {
@@ -327,6 +357,7 @@ function CalendarPageInner() {
   async function handleComplete(id: string, date: string) {
     try {
       await supabase.from('master_tasks').update({ status: 'Done' }).eq('id', id)
+      syncTask(id, 'remove')
       setWeekTasks(prev => ({ ...prev, [date]: (prev[date] ?? []).filter(t => t.id !== id) }))
     } catch {}
   }
@@ -334,6 +365,7 @@ function CalendarPageInner() {
   async function handleDelete(id: string, date: string) {
     try {
       await supabase.from('master_tasks').update({ archived: true }).eq('id', id)
+      syncTask(id, 'remove')
       setWeekTasks(prev => ({ ...prev, [date]: (prev[date] ?? []).filter(t => t.id !== id) }))
     } catch {}
   }
@@ -377,7 +409,7 @@ function CalendarPageInner() {
       ...prev,
       [date]: (prev[date] ?? []).map(t => t.id === task.id ? { ...t, start_time, duration_min: durationMin } : t),
     }))
-    try { await supabase.from('master_tasks').update({ start_time, duration_min: durationMin }).eq('id', task.id) } catch {}
+    try { await supabase.from('master_tasks').update({ start_time, duration_min: durationMin }).eq('id', task.id); syncTask(task.id) } catch {}
   }
 
   // Same drag-move / drag-resize commit for reminders and habit blocks —
@@ -592,6 +624,7 @@ function CalendarPageInner() {
           .single()
         if (!error && data) {
           setWeekTasks(prev => ({ ...prev, [editDueDate]: [...(prev[editDueDate] ?? []), data as Task] }))
+          syncTask((data as Task).id)
         }
       } else {
         await supabase.from('master_tasks').update({
@@ -599,6 +632,7 @@ function CalendarPageInner() {
           urgency: editUrgency || null, is_frog: editIsFrog, status: editStatus,
           ...timeFields,
         }).eq('id', editingTask.id)
+        syncTask(editingTask.id)
         const oldDate = editingTask.due_date ?? todayStr
         if (editStatus === 'Done') {
           // Same fetch (.neq('status','Done')) that keeps completed tasks out
@@ -779,6 +813,12 @@ function CalendarPageInner() {
           </button>
         </div>
       </div>
+
+      {gcalErr && (
+        <div style={{ margin:'0 1.25rem 0.5rem', padding:'0.5rem 0.75rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.6rem', color:C.amber, fontSize:'0.72rem', lineHeight:1.5 }}>
+          <b>Google Calendar not syncing:</b> {gcalErr}
+        </div>
+      )}
 
       {/* Tab bar */}
       <div style={{ display:'flex', gap:'0', borderBottom:'1px solid '+C.border, flexShrink:0 }}>
@@ -1097,6 +1137,7 @@ function CalendarPageInner() {
                   tasks={tasks}
                   reminders={dateReminders}
                   habits={dateHabits}
+                  gcal={gcalByDate[date] ?? []}
                   isToday={date === todayStr}
                   isPast={date < todayStr}
                   pxPerMin={tlPxPerMin}

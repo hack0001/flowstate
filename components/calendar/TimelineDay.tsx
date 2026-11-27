@@ -5,20 +5,21 @@ import { supabase } from '@/lib/supabase'
 import { generateDailyPlan, getDailyPlanSettings, saveDailyPlanSettings, getDailyPlanCandidates, commitDailyPlan, SECTION_LABEL, type DailyPlanSettings, type PlanCandidate } from '@/lib/dailyPlan'
 import { type Reminder, type ReminderRecurrence, reminderOccursOn, describeRecurrence } from '@/lib/reminders'
 import { C } from '@/lib/theme'
-import { DAY_ABBR, Task, HabitBlock, TL_START_MIN, TL_END_MIN, TL_ANCHOR_MIDDAY, TL_DEFAULT_DURATION, hhmmToMinutes, fmtHour12, parseTimeLabel, TLBlock, autoPlaceTasks, layoutTimelineBlocks } from '@/lib/calendarUtils'
+import { GEvent, GCAL_COLOR, DAY_ABBR, Task, HabitBlock, TL_START_MIN, TL_END_MIN, TL_ANCHOR_MIDDAY, TL_DEFAULT_DURATION, hhmmToMinutes, fmtHour12, parseTimeLabel, TLBlock, autoPlaceTasks, layoutTimelineBlocks } from '@/lib/calendarUtils'
 import { TimelineBlock } from '@/components/calendar/TimelineBlock'
 
 // One day's vertical timeline: hour gridlines in a left gutter, blocks laid
 // out by time with lane-splitting for overlaps, plus an "Anytime" strip
 // above the grid for reminders/habits with no parseable time.
 export function TimelineDay({
-  date, tasks, reminders, habits, isToday, isPast, pxPerMin,
+  date, tasks, reminders, habits, gcal = [], isToday, isPast, pxPerMin,
   onCommitTask, onCommitReminder, onCommitHabit, onMoveItemDay, onOpenTask, onOpenReminder, onOpenHabit, onHoverTask, onHoverGeneric, onHoverEnd, onCreateAt,
 }: {
   date: string
   tasks: Task[]
   reminders: Reminder[]
   habits: HabitBlock[]
+  gcal?: GEvent[]
   isToday: boolean
   isPast: boolean
   pxPerMin: number
@@ -58,7 +59,11 @@ export function TimelineDay({
   const anytimeHabits = habits.filter(h => parseTimeLabel(h.timeLabel) === null)
   const habitBlocks: TLBlock[] = timedHabits.map(({ h, min }) => ({ id:'h-'+h.id, kind:'habit', title:(h.emoji?h.emoji+' ':'')+h.title, color:h.color, start:min, duration:h.durationMin ?? 30, timed:true, habit:h }))
 
-  const laidOut = layoutTimelineBlocks([...taskBlocks, ...reminderBlocks, ...habitBlocks])
+  const gcalTimed = gcal.filter(g => !g.allDay && g.startMin !== null)
+  const gcalBlocks: TLBlock[] = gcalTimed.map(g => ({ id:'g-'+g.id, kind:'gcal', title:g.title, color:GCAL_COLOR, start:g.startMin as number, duration:Math.max(15, (g.endMin ?? (g.startMin as number) + 30) - (g.startMin as number)), timed:true, gcal:g }))
+  const gcalAllDay = gcal.filter(g => g.allDay)
+
+  const laidOut = layoutTimelineBlocks([...taskBlocks, ...reminderBlocks, ...habitBlocks, ...gcalBlocks])
   // Auto-placed (unscheduled) tasks stack sequentially from their type's
   // anchor time and can run past TL_END_MIN on a busy day (e.g. several
   // Personal/Admin tasks all anchored at 19:00). Grow the grid to fit
@@ -69,7 +74,7 @@ export function TimelineDay({
   const effectiveEndMin = Math.max(TL_END_MIN, latestBlockEnd)
   const hours = Array.from({ length: Math.ceil((effectiveEndMin - TL_START_MIN) / 60) + 1 }, (_, i) => TL_START_MIN + i * 60)
   const gridHeight = (effectiveEndMin - TL_START_MIN) * pxPerMin
-  const anytimeItems = [...anytimeReminders.map(r => ({ kind:'reminder' as const, r })), ...anytimeHabits.map(h => ({ kind:'habit' as const, h }))]
+  const anytimeItems = [...gcalAllDay.map(g => ({ kind:'gcal' as const, g })), ...anytimeReminders.map(r => ({ kind:'reminder' as const, r })), ...anytimeHabits.map(h => ({ kind:'habit' as const, h }))]
 
   const dow = new Date(date+'T12:00:00').getDay()
   const dayName = DAY_ABBR[dow]
@@ -83,7 +88,13 @@ export function TimelineDay({
       </div>
       {anytimeItems.length > 0 && (
         <div style={{ padding:'0.3rem 0.4rem', borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.015)', display:'flex', flexDirection:'column', gap:'0.2rem' }}>
-          {anytimeItems.map((it, i) => it.kind === 'reminder' ? (
+          {anytimeItems.map((it, i) => it.kind === 'gcal' ? (
+            <div key={'ag'+i} onClick={() => { if (it.g.link) window.open(it.g.link, '_blank', 'noopener') }}
+              title="Google Calendar (all day)"
+              style={{ display:'flex', alignItems:'center', gap:'0.25rem', padding:'0.12rem 0.3rem', borderRadius:'0.3rem', background:GCAL_COLOR+'18', border:'1px solid '+GCAL_COLOR+'40', cursor:'pointer' }}>
+              <span style={{ fontSize:'0.58rem', fontWeight:600, color:GCAL_COLOR, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{'📅 ' + it.g.title}</span>
+            </div>
+          ) : it.kind === 'reminder' ? (
             <div key={'ar'+i} onClick={() => onOpenReminder(it.r)}
               onMouseEnter={e => onHoverGeneric(e, it.r.color, (it.r.emoji?it.r.emoji+' ':'')+it.r.title, [describeRecurrence(it.r.recurrence) + ' · Anytime'])}
               onMouseLeave={onHoverEnd}
@@ -137,6 +148,7 @@ export function TimelineDay({
                   if (b.kind === 'task' && b.task) onOpenTask(b.task)
                   else if (b.kind === 'reminder' && b.reminder) onOpenReminder(b.reminder)
                   else if (b.kind === 'habit' && b.habit) onOpenHabit(b.habit)
+                  else if (b.kind === 'gcal' && b.gcal?.link) window.open(b.gcal.link, '_blank', 'noopener')
                 }}
                 onHover={e => b.kind === 'task' && b.task ? onHoverTask(e, b.task) : onHoverGeneric(e, b.color, b.title, [fmtHour12(b.start) + ' · ' + b.duration + 'min'])}
                 onHoverEnd={onHoverEnd}
