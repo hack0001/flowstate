@@ -1082,7 +1082,6 @@ export default function Home() {
   const [top5, setTop5] = useState<Partial<Record<'tasks'|'vault'|'etsy'|'x'|'youtube', RankableItem[]>>>({})
   const [showAddTask, setShowAddTask] = useState(false)
   const [taskRefresh, setTaskRefresh] = useState(0)
-  const [openGroup, setOpenGroup] = useState<string | null>('Today')
 
   const TRACKED_ROUTES = ['morning','calendar','tracking','evening','welsh','vault','content','projects','tasks','personal','youtube','etsy','x','nsdr','physical','instagram','tabs','ideas','adobe-skills','motion','references','music','script-editor','seo']
 
@@ -1477,61 +1476,48 @@ export default function Home() {
     .filter((p): p is { section: DailyPlanSection; item: RankableItem } => !!p.item)
     .slice(0, 3)
 
-  const renderList = (section: DailyPlanSection, n = 3) => {
+  // Betfair-desk look: navy panels, hairline borders, mono type, dense rows.
+  const D = { bg:'#060914', panel:'#0b1122', panel2:'#0e1630', line:'#1a2547', fg:'#dbe3f7', mut:'#7784a6', dim:'#4b5677', teal:'#2fd6b0', red:'#ff5470', amb:'#f6b93b', grn:'#3ee08f', vio:'#9b8cff' }
+  const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
+
+  const tile = (label: string, value: string, sub: string, color: string, onClick?: () => void) => (
+    <div key={label} onClick={onClick} style={{ background:D.panel, border:'1px solid '+D.line, borderRadius:10, padding:'10px 12px', cursor:onClick ? 'pointer' : 'default', minWidth:0 }}>
+      <div style={{ fontSize:9, letterSpacing:'.16em', textTransform:'uppercase', color:D.mut }}>{label}</div>
+      <div style={{ fontSize:22, fontWeight:700, color, margin:'4px 0 2px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{value}</div>
+      <div style={{ fontSize:10, color:D.dim, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sub}</div>
+    </div>
+  )
+
+  const renderList = (section: DailyPlanSection, n = 5) => {
     const items = (top5[section] ?? []).slice(0, n)
-    const accent = TOP5_COLOR[section]
-    if (items.length === 0) return <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.2rem 0' }}>Nothing queued</p>
+    if (items.length === 0) return <div style={{ fontSize:11, color:D.dim, padding:'6px 0' }}>nothing queued</div>
     return (
       <div style={{ display:'flex', flexDirection:'column' }}>
-        {items.map(item => (
+        {items.map((item, i) => (
           <button key={item.id} onClick={() => section === 'youtube' ? focusYoutubeItem(item.id) : navToItem(routeFor(section), item.id)}
-            style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'none', border:'none', borderTop:'1px solid '+C.border, padding:'0.45rem 0', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
-            <span style={{ width:'8px', height:'8px', borderRadius:'50%', border:'1.5px solid '+accent, flexShrink:0 }} />
-            <span style={{ flex:1, minWidth:0, fontSize:'0.78rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</span>
-            {section === 'youtube' && item.pipeline_stage && <span style={{ fontSize:'0.6rem', color:C.muted, flexShrink:0 }}>{item.pipeline_stage}</span>}
+            style={{ display:'flex', alignItems:'center', gap:8, background:'none', border:'none', borderTop:'1px solid '+D.line, padding:'6px 0', cursor:'pointer', fontFamily:MONO, textAlign:'left', width:'100%' }}>
+            <span style={{ fontSize:10, color:TOP5_COLOR[section], width:12, flexShrink:0 }}>{i + 1}</span>
+            <span style={{ flex:1, minWidth:0, fontSize:12, color:D.fg, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</span>
+            {section === 'youtube' && item.pipeline_stage && <span style={{ fontSize:9, color:D.mut, border:'1px solid '+D.line, borderRadius:4, padding:'0 4px', flexShrink:0 }}>{item.pipeline_stage.replace(/^\S+\s/, '')}</span>}
           </button>
         ))}
       </div>
     )
   }
 
-  const areaCard = (title: string, color: string, icon: JSX.Element, route: string, body: JSX.Element) => (
-    <div key={title} style={{ padding:'0.85rem 1rem', background:C.surface, border:'1px solid '+C.border, borderTop:'2px solid '+color, borderRadius:'0.75rem', minWidth:0 }}>
-      <button onClick={() => navTo(route)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', width:'100%', background:'none', border:'none', padding:0, marginBottom:'0.4rem', cursor:'pointer', fontFamily:'inherit' }}>
-        {icon}
-        <span style={{ fontSize:'0.68rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color }}>{title}</span>
-        <ChevronRight size={12} color={C.muted} style={{ marginLeft:'auto' }} />
+  const panel = (title: string, color: string, note: string, route: string, body: JSX.Element) => (
+    <div key={title} style={{ background:D.panel, border:'1px solid '+D.line, borderRadius:10, padding:12, minWidth:0 }}>
+      <button onClick={() => navTo(route)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, width:'100%', background:'none', border:'none', padding:0, marginBottom:8, cursor:'pointer', fontFamily:MONO }}>
+        <span style={{ fontSize:10, letterSpacing:'.16em', textTransform:'uppercase', fontWeight:600, color }}>{title}</span>
+        <span style={{ fontSize:10, color:D.mut }}>{note} &rsaquo;</span>
       </button>
       {body}
     </div>
   )
 
-  // Sidebar: the ~26 pages condensed into five groups.
-  const NAV_GROUPS: { label: string; color: string; icon: JSX.Element; items: { route: string; label: string }[] }[] = [
-    { label:'Today', color:C.green, icon:<Sunrise size={14}/>, items:[
-      { route:'morning', label:t('morning') }, { route:'calendar', label:t('calendar') },
-      { route:'tasks', label:t('tasks') }, { route:'evening', label:t('evening') } ] },
-    { label:'Create', color:'#ff4466', icon:<Film size={14}/>, items:[
-      { route:'content', label:'Content' }, { route:'youtube', label:t('youtube') }, { route:'ideas', label:'Ideas' },
-      { route:'script-editor', label:'Script Editor' }, { route:'motion', label:'Motion Studio' }, { route:'references', label:'Reference Bank' },
-      { route:'music', label:'Music' }, { route:'adobe-skills', label:'Adobe Skills' } ] },
-    { label:'Grow', color:'#f97316', icon:<TrendingUp size={14}/>, items:[
-      { route:'seo', label:'SEO' }, { route:'x', label:'X / Social' }, { route:'instagram', label:'Instagram' },
-      { route:'etsy', label:t('etsy') }, { route:'betfair', label:'Betfair Desk' } ] },
-    { label:'Life', color:C.cyan, icon:<Activity size={14}/>, items:[
-      { route:'physical', label:'Physical' }, { route:'nsdr', label:'NSDR' }, { route:'welsh', label:'Welsh' },
-      { route:'tracking', label:t('tracking') }, { route:'goals', label:'Goals' }, { route:'personal', label:t('personal') } ] },
-    { label:'Library', color:C.purple, icon:<BookOpen size={14}/>, items:[
-      { route:'vault', label:'Vault' }, { route:'projects', label:t('projects') },
-      { route:'links', label:'Links' }, { route:'tabs', label:'Tab Sheet' } ] },
-  ]
-  const alertColor = (route: string) => {
-    const a = pageAlerts[route]
-    return a === 'red' ? '#ff4466' : a === 'orange' ? C.amber : a === 'green' ? C.green : pageWarn.has(route) ? C.amber : null
-  }
 
   return (
-    <main className="fs-shell" style={{ minHeight:'100vh', display:'flex', flexDirection:'row', background:C.bg, position:'relative', overflowX:'clip' }}>
+    <main style={{ minHeight:'100vh', display:'flex', flexDirection:'column', background:C.bg, position:'relative', overflowX:'clip' }}>
 
       {/* Ambient background orbs */}
       <div aria-hidden="true" style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0 }}>
@@ -1539,41 +1525,6 @@ export default function Home() {
         <div style={{ position:'absolute', bottom:'-100px', right:'-60px', width:'420px', height:'420px', borderRadius:'50%', background:'radial-gradient(circle,rgba(139,92,246,0.045) 0%,transparent 65%)', animation:'orbFloat2 22s ease-in-out infinite' }} />
         <div style={{ position:'absolute', top:'45%', left:'55%', width:'300px', height:'300px', borderRadius:'50%', background:'radial-gradient(circle,'+(routineDone?'rgba(0,255,136,0.03)':'rgba(0,212,255,0.028)')+' 0%,transparent 70%)', animation:'orbFloat3 28s ease-in-out infinite', transform:'translate(-50%,-50%)' }} />
       </div>
-
-      {/* Sidebar -- five groups instead of 26 buttons */}
-      <aside className="fs-side" style={{ width:'200px', flexShrink:0, position:'sticky', top:0, alignSelf:'flex-start', height:'100vh', overflowY:'auto', padding:'1.25rem 0.7rem', borderRight:'1px solid '+C.border, background:'rgba(18,18,26,0.7)', zIndex:3 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:'0.45rem', padding:'0 0.4rem', marginBottom:'1.1rem' }}>
-          <Zap size={15} color={accentColor} />
-          <span style={{ fontSize:'0.7rem', fontWeight:800, letterSpacing:'0.12em', textTransform:'uppercase', color:accentColor }}>FlowState</span>
-        </div>
-        {NAV_GROUPS.map(g => {
-          const open = openGroup === g.label
-          const groupWarn = g.items.some(i => pageWarn.has(i.route))
-          return (
-            <div key={g.label} style={{ marginBottom:'0.2rem' }}>
-              <button onClick={() => setOpenGroup(open ? null : g.label)} style={{ display:'flex', alignItems:'center', gap:'0.55rem', width:'100%', padding:'0.5rem 0.55rem', background: open ? g.color+'14' : 'transparent', border:'none', borderRadius:'0.55rem', color: open ? g.color : C.text, cursor:'pointer', fontFamily:'inherit', fontSize:'0.82rem', fontWeight:700, textAlign:'left' }}>
-                {g.icon}
-                <span style={{ flex:1 }}>{g.label}</span>
-                {groupWarn && !open && <span style={{ width:'7px', height:'7px', borderRadius:'50%', background:C.amber }} />}
-                <ChevronRight size={12} color={C.muted} style={{ transform: open ? 'rotate(90deg)' : 'none', transition:'transform 0.15s' }} />
-              </button>
-              {open && (
-                <div style={{ display:'flex', flexDirection:'column', gap:'1px', margin:'0.15rem 0 0.4rem 1.35rem', borderLeft:'1px solid '+C.border }}>
-                  {g.items.map(i => {
-                    const ac = alertColor(i.route)
-                    return (
-                      <button key={i.route} onClick={() => navTo(i.route)} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.35rem 0.6rem', background:'none', border:'none', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.76rem', textAlign:'left' }}>
-                        <span style={{ flex:1 }}>{i.label}</span>
-                        {ac && <span title="Not visited recently" style={{ width:'6px', height:'6px', borderRadius:'50%', background:ac }} />}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </aside>
 
       <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', position:'relative', zIndex:1 }}>
 
@@ -1803,67 +1754,49 @@ export default function Home() {
         <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border }}>
           <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'1.5rem 2rem' }}>
 
-            {topPicks.length > 0 && (
-              <div style={{ padding:'0.85rem 1rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.75rem', marginBottom:'0.85rem' }}>
-                <p style={{ fontSize:'0.65rem', fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase', color:C.cyan, margin:'0 0 0.3rem' }}>Top picks across everything</p>
-                {topPicks.map(({ section, item }) => (
-                  <button key={section} onClick={() => section === 'youtube' ? focusYoutubeItem(item.id) : navToItem(routeFor(section), item.id)}
-                    style={{ display:'flex', alignItems:'center', gap:'0.6rem', background:'none', border:'none', borderTop:'1px solid '+C.border, padding:'0.5rem 0', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
-                    <span style={{ width:'9px', height:'9px', borderRadius:'50%', border:'1.5px solid '+TOP5_COLOR[section], flexShrink:0 }} />
-                    <span style={{ flex:1, minWidth:0, fontSize:'0.85rem', fontWeight:600, color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</span>
-                    <span style={{ fontSize:'0.62rem', fontWeight:700, color:TOP5_COLOR[section], flexShrink:0 }}>{SECTION_LABEL[section]}</span>
-                  </button>
+            <div style={{ fontFamily:MONO, color:D.fg, padding:14, borderRadius:14, border:'1px solid '+D.line, background:'radial-gradient(1200px 500px at 10% -10%, #1b1450 0%, transparent 60%), '+D.bg }}>
+
+              {/* Status tiles */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))', gap:8, marginBottom:10 }}>
+                {tile('Morning', routineDone ? 'done' : 'pending', routineDone ? 'routine complete' : 'tap to start', routineDone ? D.teal : D.amb, () => navTo('morning'))}
+                {tile('Evening', eveningDone ? 'done' : h >= 20 ? 'due' : 'later', eveningDone ? 'review complete' : 'wind-down review', eveningDone ? D.teal : h >= 20 ? D.vio : D.dim, () => navTo('evening'))}
+                {tile('Consistency', consistencyPct !== null ? consistencyPct + '%' : '—', 'habits, last 7 days', consistencyPct === null ? D.dim : consistencyPct >= 80 ? D.teal : consistencyPct >= 50 ? D.amb : D.red, () => navTo('tracking'))}
+                {tile('Best streak', streaks[0] ? streaks[0].streak + 'd' : '—', streaks[0] ? streaks[0].title : 'no streaks yet', D.amb, () => navTo('tracking'))}
+                {tile('Next up', topTask ? (topTaskIsPipeline ? 'focus' : 'task') : 'none', topTask ? topTask.title : 'nothing queued today', D.grn, topTask ? () => { if (topTaskIsPipeline) { setPendingFocusItem(topTask.id); handleFocusClick() } else navToItem('tasks', topTask.id) } : undefined)}
+              </div>
+
+              {/* Section panels */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,250px),1fr))', gap:10 }}>
+                {panel('Tasks', TOP5_COLOR.tasks, 'today', 'tasks', renderList('tasks'))}
+                {panel('YouTube', TOP5_COLOR.youtube, 'pipeline', 'content', renderList('youtube'))}
+                {panel('Etsy', TOP5_COLOR.etsy, 'to do', 'etsy', renderList('etsy'))}
+                {panel('X / Social', TOP5_COLOR.x, 'ideas', 'x', renderList('x'))}
+                {panel('Vault', TOP5_COLOR.vault, 'to read', 'vault', renderList('vault'))}
+                {panel('Site ideas', D.vio, 'parked', 'ideas', ideas.length === 0 ? (
+                  <div style={{ fontSize:11, color:D.dim, padding:'6px 0' }}>{ideasLoading ? 'loading…' : 'nothing parked'}</div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' }}>
+                    {ideas.slice(0, 5).map((idea, i) => (
+                      <button key={idea.id} onClick={() => navTo('ideas')} style={{ display:'flex', alignItems:'center', gap:8, background:'none', border:'none', borderTop:'1px solid '+D.line, padding:'6px 0', cursor:'pointer', fontFamily:MONO, textAlign:'left', width:'100%' }}>
+                        <span style={{ fontSize:10, color:D.vio, width:12, flexShrink:0 }}>{i + 1}</span>
+                        <span style={{ flex:1, minWidth:0, fontSize:12, color:D.fg, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{idea.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+                {panel('Streaks', D.amb, 'habits', 'tracking', streaks.length === 0 ? (
+                  <div style={{ fontSize:11, color:D.dim, padding:'6px 0' }}>no streaks yet</div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' }}>
+                    {streaks.slice(0, 5).map(s => (
+                      <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, borderTop:'1px solid '+D.line, padding:'6px 0' }}>
+                        <span style={{ fontSize:12, color:s.color, fontWeight:700, width:30, flexShrink:0 }}>{s.streak}d</span>
+                        <span style={{ flex:1, minWidth:0, fontSize:12, color:D.fg, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.emoji ? s.emoji + ' ' : ''}{s.title}</span>
+                      </div>
+                    ))}
+                  </div>
                 ))}
               </div>
-            )}
-
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:'0.85rem' }}>
-              {areaCard('Today', C.green, <CheckSquare size={13} color={C.green} />, 'tasks', renderList('tasks'))}
-              {areaCard('Create', '#ff4466', <Film size={13} color="#ff4466" />, 'content', renderList('youtube'))}
-              {areaCard('Grow', '#f97316', <TrendingUp size={13} color="#f97316" />, 'seo', (
-                <>
-                  <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0.1rem 0 0' }}>Etsy</p>
-                  {renderList('etsy', 2)}
-                  <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0.5rem 0 0' }}>X</p>
-                  {renderList('x', 2)}
-                </>
-              ))}
-              {areaCard('Life', C.cyan, <Activity size={13} color={C.cyan} />, 'tracking', (
-                <div style={{ display:'flex', flexWrap:'wrap', gap:'0.4rem', paddingTop:'0.2rem' }}>
-                  {consistencyPct !== null && (() => {
-                    const cColor = consistencyPct >= 80 ? C.green : consistencyPct >= 50 ? C.amber : C.red
-                    return (
-                      <div title="% of active habits completed over the last 7 days" style={{ display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.25rem 0.6rem', background:cColor+'14', border:'1px solid '+cColor+'50', borderRadius:'9999px' }}>
-                        <span style={{ fontSize:'0.8rem', fontWeight:900, color:cColor }}>{consistencyPct}%</span>
-                        <span style={{ fontSize:'0.68rem', color:C.sec }}>7d</span>
-                      </div>
-                    )
-                  })()}
-                  {streaks.slice(0, 5).map(s => (
-                    <div key={s.id} title={s.title} style={{ display:'flex', alignItems:'center', gap:'0.3rem', padding:'0.25rem 0.6rem', background:s.color+'14', border:'1px solid '+s.color+'40', borderRadius:'9999px' }}>
-                      <Flame size={11} color={s.color} />
-                      <span style={{ fontSize:'0.7rem', fontWeight:700, color:s.color }}>{s.streak}</span>
-                      <span style={{ fontSize:'0.68rem', color:C.sec }}>{s.title}</span>
-                    </div>
-                  ))}
-                  {streaks.length === 0 && consistencyPct === null && <p style={{ fontSize:'0.72rem', color:C.muted, margin:0 }}>No streaks yet</p>}
-                </div>
-              ))}
-              {areaCard('Library', C.purple, <BookOpen size={13} color={C.purple} />, 'vault', (
-                <>
-                  {renderList('vault', 2)}
-                  <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0.5rem 0 0' }}>Site and app ideas</p>
-                  {ideas.length === 0 ? (
-                    <p style={{ fontSize:'0.72rem', color:C.muted, margin:'0.2rem 0' }}>{ideasLoading ? 'Loading...' : 'Nothing parked'}</p>
-                  ) : ideas.slice(0, 2).map(idea => (
-                    <button key={idea.id} onClick={() => navTo('ideas')}
-                      style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'none', border:'none', borderTop:'1px solid '+C.border, padding:'0.45rem 0', cursor:'pointer', fontFamily:'inherit', textAlign:'left', width:'100%' }}>
-                      <Lightbulb size={11} color={C.purple} style={{ flexShrink:0 }} />
-                      <span style={{ flex:1, minWidth:0, fontSize:'0.78rem', color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{idea.title}</span>
-                    </button>
-                  ))}
-                </>
-              ))}
             </div>
           </div>
         </div>
@@ -1909,10 +1842,6 @@ export default function Home() {
         @keyframes breathe { 0%,100%{opacity:0.5;transform:scale(1)} 50%{opacity:1;transform:scale(1.08)} }
         @keyframes fadeInUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
         @keyframes spin { to{transform:rotate(360deg)} }
-        @media (max-width: 760px) {
-          .fs-shell { flex-direction: column !important; }
-          .fs-side { width: 100% !important; height: auto !important; max-height: 60vh; position: static !important; border-right: none !important; border-bottom: 1px solid ${C.border}; }
-        }
       `}</style>
     </main>
   )
