@@ -579,7 +579,8 @@ export default function Home() {
         )}
       </div>
 
-      {/* Below the fold: detail */}
+      {/* Below the fold: habits first, then detail */}
+      {!loading && wrap(<HabitTracker />, 'habits')}
       {!loading && <TodaysPhysical />}
       {!loading && <FocusSessionsToday />}
       {!loading && wrap(<HomeDaysBoard refreshKey={taskRefresh} />, 'board')}
@@ -587,7 +588,6 @@ export default function Home() {
         <p style={{ fontSize:10, letterSpacing:'.16em', textTransform:'uppercase', color:D.mut, margin:'0 0 8px' }}>This week&apos;s targets</p>
         <WeeklyTargets />
       </>, 'targets')}
-      {!loading && wrap(<HabitTracker />, 'habits')}
 
       {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} onAdded={() => setTaskRefresh(k => k + 1)} />}
       {showFocusCheck && <FocusCheck onProceed={proceedToFocus} onClose={() => setShowFocusCheck(false)} />}
