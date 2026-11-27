@@ -16,1031 +16,41 @@ import { calcHabitStreak, calcConsistencyPct, type StreakHabit } from '@/lib/hab
 
 import { C, DESK as D, MONO } from '@/lib/theme'
 import { Tile, Panel, ListRow, Grid } from '@/components/ui'
+import { SiteIdea, toDateStr, RankableItem, rankTop, TOP5_COLOR, HabitStreak } from '@/components/home/homeShared'
+import { HomeDaysBoard } from '@/components/home/HomeDaysBoard'
+import { FocusSessionsToday } from '@/components/home/FocusSessionsToday'
+import { TodaysPhysical } from '@/components/home/TodaysPhysical'
+import { WeeklyTargets } from '@/components/home/WeeklyTargets'
+import { LiveClock } from '@/components/home/LiveClock'
+import { FocusCheck } from '@/components/home/FocusCheck'
+import { AddTaskModal } from '@/components/home/AddTaskModal'
+import { QUOTES } from '@/lib/homeQuotes'
 
-const QUOTES = [
-  { q:'The secret of getting ahead is getting started.', a:'Mark Twain' },
-  { q:'Discipline is the bridge between goals and accomplishment.', a:'Jim Rohn' },
-  { q:'Motivation gets you started. Habit keeps you going.', a:'Jim Rohn' },
-  { q:'Done beats perfect.', a:'' },
-  { q:'One task. Full attention. Ship it.', a:'' },
-  { q:'Your future self is watching you right now through memories.', a:'Hal Elrod' },
-  { q:'You never choose the morning — the system chooses it for you. That is the most efficient way.', a:'' },
-  { q:'Efficiency is doing things right; effectiveness is doing the right things.', a:'Peter Drucker' },
-  { q:'There is nothing so useless as doing efficiently that which should not be done at all.', a:'Peter Drucker' },
-  { q:'The key is not to prioritize what’s on your schedule, but to schedule your priorities.', a:'Stephen Covey' },
-  { q:'Work smarter, not harder.', a:'' },
-  { q:'A system is a machine for turning decisions into actions you don’t have to think about.', a:'' },
-  { q:'Remove the decision, remove the friction.', a:'' },
-  { q:'The best system is the one you never have to think about.', a:'' },
-  { q:'Automate the routine so you can focus on the remarkable.', a:'' },
-  { q:'Every decision you skip today is energy saved for the one that matters.', a:'' },
-  { q:'Build the system once. Let it carry you every day after.', a:'' },
-]
 
-// Website / app ideas parked for later -- not active projects, just a backlog
-// to revisit when there's capacity. Stored in Supabase (site_ideas table).
-// Full add/edit/delete UI now lives on its own page (app/ideas/page.tsx) --
-// the home page only needs enough to show a preview tile that links there.
-type SiteIdea = {
-  id: string
-  title: string
-  tag: string
-  summary: string
-  next_step: string
-  sort_order: number
-  created_at: string
-}
 
-// Pre-flight check items -- must all be ticked before focus starts
-const FOCUS_ITEMS = [
-  { id:'desk',   emoji:'&#128187;', label:'Desk cleared',          note:'Remove everything except what you need right now' },
-  { id:'phone',  emoji:'&#128245;', label:'Phone in another room', note:'Not on silent &mdash; physically gone' },
-  { id:'timer',  emoji:'&#9201;',  label:'Timer set',              note:'Know exactly how long this session runs' },
-  { id:'notif',  emoji:'&#128276;', label:'Notifications off',     note:'Do Not Disturb enabled &mdash; no pings' },
-  { id:'water',  emoji:'&#128167;', label:'Drink within reach',    note:'No reason to leave your desk mid-session' },
-  { id:'notepad',emoji:'&#128221;', label:'Notepad close by',      note:'Capture stray thoughts on paper so they don&apos;t hijack your focus' },
-  { id:'distract',emoji:'&#128683;',label:'No distractions',       note:'Close every tab you don&apos;t need &mdash; no social media, email or news open' },
-  { id:'task',   emoji:'&#127919;', label:'Task crystal clear',    note:'You know exactly what you are building' },
-]
 
-function toDateStr(d: Date) {
-  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
-}
 
-// ---- Top 5 per workflow ----
-// Ranks a set of active items by that workflow's own priority_lists order
-// (same list each page's Priority View drag-reorders), items not yet ranked
-// fall in after the ranked ones, then takes the top N. Direct read of the
-// same source of truth each workflow page uses -- no time-budget filtering.
-type RankableItem = {
-  id: string
-  title: string
-  // Optional extras, only populated for the YouTube pipeline list -- lets
-  // its Top 5 card render the same rich row (stage/format/pin) as the old
-  // "Active YouTube Focus" block instead of a plain numbered line.
-  pipeline_stage?: string | null
-  format?: string | null
-  is_active_focus?: boolean
-}
 
-function rankTop<T extends RankableItem>(order: string[], items: T[], n = 5): T[] {
-  const byId = new Map(items.map(i => [i.id, i]))
-  const ranked = [...order.filter(id => byId.has(id)), ...items.map(i => i.id).filter(id => !order.includes(id))]
-  return ranked.map(id => byId.get(id)!).slice(0, n)
-}
 
-// Distinct accent colour + icon per workflow for the Top 5 grid — makes
-// "This week's overview" scannable at a glance instead of five identical
-// grey cards.
-const TOP5_COLOR: Record<DailyPlanSection, string> = {
-  youtube: '#ff4466', etsy: '#f97316', tasks: '#00ff88', vault: '#8b5cf6', x: '#00d4ff',
-}
-const SECTION_ICON: Record<DailyPlanSection, JSX.Element> = {
-  youtube: <Tv size={12} color={TOP5_COLOR.youtube} />,
-  etsy: <ShoppingBag size={12} color={TOP5_COLOR.etsy} />,
-  tasks: <CheckSquare size={12} color={TOP5_COLOR.tasks} />,
-  vault: <BookOpen size={12} color={TOP5_COLOR.vault} />,
-  x: <X size={12} color={TOP5_COLOR.x} />,
-}
 
-// ---- Streaks row (encouragement) ----
-// Streak/consistency math itself now lives in lib/habitStreak.ts, shared
-// with app/tracking/page.tsx so both pages agree on the same number for the
-// same habit (schedule-aware, full history -- see that file for why the old
-// per-page versions of this disagreed with each other).
-type HabitStreak = { id: string; title: string; emoji: string; color: string; streak: number }
 
-// ---- Focus sessions today (Content Pipeline chunked sessions) ----
-// Counts today's content_focus_sessions rows (see 035_content_focus_sessions.sql
-// / lib/sops.ts nextSessionChunk) so "how many focus sessions did I do today,
-// how much progress" is visible at a glance -- nothing surfaced this before.
-// Self-hides entirely if none have happened yet today.
-function FocusSessionsToday() {
-  const [stats, setStats] = useState<{ count: number; tasks: number; mins: number } | null>(null)
-  useEffect(() => {
-    (async () => {
-      const start = new Date(); start.setHours(0, 0, 0, 0)
-      const { data } = await supabase.from('content_focus_sessions')
-        .select('tasks_completed,actual_mins,estimated_mins,status')
-        .gte('started_at', start.toISOString())
-      const rows = (data ?? []) as { tasks_completed: number; actual_mins: number | null; estimated_mins: number; status: string }[]
-      const count = rows.filter(r => r.status !== 'in_progress').length
-      const tasks = rows.reduce((s, r) => s + (r.tasks_completed || 0), 0)
-      const mins = rows.reduce((s, r) => s + (r.actual_mins ?? r.estimated_mins ?? 0), 0)
-      setStats({ count, tasks, mins })
-    })()
-  }, [])
-  if (!stats || stats.count === 0) return null
-  return (
-    <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.012)' }}>
-      <div style={{ maxWidth:'900px', margin:'0 auto', padding:'0.75rem 2rem', display:'flex', alignItems:'center', gap:'0.5rem' }}>
-        <div title="Chunked focus sessions completed today on the Content Pipeline" style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.35rem 0.7rem', background:C.cyan+'14', border:'1px solid '+C.cyan+'40', borderRadius:'9999px' }}>
-          <Zap size={12} color={C.cyan} />
-          <span style={{ fontSize:'0.72rem', fontWeight:700, color:C.cyan }}>{stats.count} focus session{stats.count === 1 ? '' : 's'} today</span>
-          <span style={{ fontSize:'0.72rem', color:C.sec }}>&middot; {stats.tasks} task{stats.tasks === 1 ? '' : 's'} &middot; {stats.mins}m</span>
-        </div>
-      </div>
-    </div>
-  )
-}
 
-// ---- Next-5-days adjustable board ----
-// Pulls straight from master_tasks the same way Calendar does (due_date +
-// start_time/duration_min), and orders each day by start_time first --
-// Calendar is where that time traditionally gets set, but this board can now
-// set it directly too, and can move a task to a different day by dragging it
-// across columns (same due_date-update Calendar's week view drag does).
-// Tasks with no time yet fall back to the shared 'tasks_priority' order
-// (same list /tasks drag-reorders) so reordering here still syncs. Complete
-// / add / reschedule / retime / move-day all write straight to Supabase --
-// cross-device.
-const HOME_DAYS_COUNT = 5
-// Same duration options as Calendar's own time editor (app/calendar/page.tsx)
-// -- kept as a small local literal rather than a shared import since it's a
-// one-line constant, not shared logic.
-const HOME_DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180]
-type HomeTask = { id: string; title: string; status: string; due_date: string | null; is_frog: boolean; start_time: string | null; duration_min: number | null }
 
-// Recurring weekly commitments from the Calendar tab's habit_blocks table
-// (e.g. "Gym - Mon/Wed/Fri"). Distinct from the Tracking-page Habit Tracker.
-type HomeHabitBlock = { id: string; title: string; emoji: string; color: string; days: number[]; timeLabel: string }
 
-function homeAddDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate() + n); return r }
-function homeAddMonths(d: Date, n: number): Date { const r = new Date(d); r.setMonth(r.getMonth() + n); return r }
 
-// Same quick-pick logic as Calendar/Tasks reschedule buttons -- offsets are
-// relative to the task's own current due date, never "today".
-function rescheduleOptions(from: Date): { label: string; date: string }[] {
-  const dow = from.getDay()
-  const daysLeftInWeek = dow === 0 ? 0 : 7 - dow
-  const laterThisWeekStep = Math.min(2, Math.max(1, daysLeftInWeek))
-  const daysUntilNextMonday = ((8 - dow) % 7) || 7
-  return [
-    { label: 'Later this week', date: toDateStr(homeAddDays(from, laterThisWeekStep)) },
-    { label: 'Next week', date: toDateStr(homeAddDays(from, daysUntilNextMonday)) },
-    { label: 'Next month', date: toDateStr(homeAddMonths(from, 1)) },
-    { label: '2 months', date: toDateStr(homeAddMonths(from, 2)) },
-  ]
-}
 
-function fmtTimeLabel(hhmm: string | null): string | null {
-  if (!hhmm) return null
-  const [h, m] = hhmm.split(':').map(Number)
-  if (Number.isNaN(h)) return null
-  const period = h >= 12 ? 'PM' : 'AM'
-  const h12 = h % 12 === 0 ? 12 : h % 12
-  return h12 + ':' + String(m).padStart(2, '0') + ' ' + period
-}
 
-// Minutes-since-midnight for a task's "HH:MM" start_time.
-function homeMinutesFromHHMM(hhmm: string | null): number | null {
-  if (!hhmm) return null
-  const [h, m] = hhmm.split(':').map(Number)
-  if (Number.isNaN(h)) return null
-  return h * 60 + (m || 0)
-}
 
-// Lenient parser for the free-text reminder/habit timeLabel field ("9am",
-// "9:30 PM", "18:00"...) — same as Calendar's own parseTimeLabel
-// (app/calendar/page.tsx), duplicated locally since it's a small pure
-// function, not shared logic. Returns null for "Anytime"/unparseable, which
-// sorts to the end alongside untimed tasks.
-function homeParseTimeLabel(label: string): number | null {
-  if (!label) return null
-  const m = label.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i)
-  if (!m) return null
-  let h = parseInt(m[1], 10)
-  const min = m[2] ? parseInt(m[2], 10) : 0
-  const ap = m[3]?.toLowerCase()
-  if (ap === 'pm' && h < 12) h += 12
-  if (ap === 'am' && h === 12) h = 0
-  if (h > 23 || min > 59) return null
-  return h * 60 + min
-}
 
-// One unified, time-ordered feed per day -- tasks, reminders and habit
-// blocks interleaved by actual time of day, instead of three separate
-// grouped lists (which is how it worked before: all habits, then all
-// reminders, then all tasks, regardless of when any of them actually fall).
-type HomeDayEntry =
-  | { kind: 'habit'; sortMin: number | null; habit: HomeHabitBlock }
-  | { kind: 'reminder'; sortMin: number | null; reminder: Reminder }
-  | { kind: 'task'; sortMin: number | null; task: HomeTask; isFill: boolean }
 
-function HomeDaysBoard({ refreshKey }: { refreshKey?: number }) {
-  const router = useRouter()
-  const { celebrate } = useCelebration()
-  const todayStr = toDateStr(new Date())
-  const [tasks, setTasks] = useState<HomeTask[]>([])
-  const [order, setOrder] = useState<string[]>([])
-  const [reminders, setReminders] = useState<Reminder[]>([])
-  const [habitBlocks, setHabitBlocks] = useState<HomeHabitBlock[]>([])
-  const [ready, setReady] = useState(false)
-  const [dragId, setDragId] = useState<string | null>(null)
-  const [dragOver, setDragOver] = useState<string | null>(null)
-  const [dragOverDay, setDragOverDay] = useState<string | null>(null)
-  const [rescheduleId, setRescheduleId] = useState<string | null>(null)
-  const [editingTimeId, setEditingTimeId] = useState<string | null>(null)
-  const [timeDraft, setTimeDraft] = useState('')
-  const [durationDraft, setDurationDraft] = useState(30)
-  const [editingTitleId, setEditingTitleId] = useState<string | null>(null)
-  const [titleDraft, setTitleDraft] = useState('')
 
-  const load = useCallback(async () => {
-    // Each source is fetched independently -- if reminders or habit_blocks
-    // errors out (missing table, RLS, etc.) it must NOT take the task list
-    // down with it via a rejected Promise.all. Tasks are the load-bearing
-    // piece here, so they always get set even if the extras fail.
-    const results = await Promise.allSettled([
-      // Not filtered to due_date=today/tomorrow only -- also pulls in
-      // undated tasks so the column can fall back to top-priority items
-      // when nothing is actually due, instead of just showing reminders.
-      supabase.from('master_tasks').select('id,title,status,due_date,is_frog,start_time,duration_min')
-        .neq('archived', true).neq('status', 'Done').limit(500),
-      supabase.from('priority_lists').select('ordered_ids').eq('key', 'tasks_priority').maybeSingle(),
-      supabase.from('reminders').select('*'),
-      supabase.from('habit_blocks').select('*'),
-    ])
-    const [taskRes, priorityRes, reminderRes, habitRes] = results
 
-    if (taskRes.status === 'fulfilled') {
-      if (taskRes.value.error) console.error('[home tasks load failed]', taskRes.value.error.message)
-      setTasks((taskRes.value.data ?? []) as HomeTask[])
-    } else {
-      console.error('[home tasks load rejected]', taskRes.reason)
-      setTasks([])
-    }
 
-    if (priorityRes.status === 'fulfilled') {
-      setOrder(((priorityRes.value.data?.ordered_ids as string[]) ?? []))
-    }
 
-    if (reminderRes.status === 'fulfilled' && !reminderRes.value.error) {
-      setReminders(((reminderRes.value.data ?? []) as Parameters<typeof fetchRemindersRow>[0][]).map(fetchRemindersRow))
-    } else {
-      if (reminderRes.status === 'fulfilled') console.error('[home reminders load failed]', reminderRes.value.error?.message)
-      else console.error('[home reminders load rejected]', reminderRes.reason)
-    }
 
-    if (habitRes.status === 'fulfilled' && !habitRes.value.error) {
-      setHabitBlocks(((habitRes.value.data ?? []) as Array<{ id:string; title:string; emoji:string; color:string; days:number[]; time_label:string }>)
-        .map(r => ({ id:r.id, title:r.title, emoji:r.emoji, color:r.color, days:r.days, timeLabel:r.time_label })))
-    } else {
-      if (habitRes.status === 'fulfilled') console.error('[home habit_blocks load failed]', habitRes.value.error?.message)
-      else console.error('[home habit_blocks load rejected]', habitRes.reason)
-    }
 
-    setReady(true)
-  }, [todayStr])
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load() }, [load, refreshKey])
 
-
-  // The next HOME_DAYS_COUNT days (today first), each with its date string,
-  // day-of-week (for habit_blocks matching), and a display label. dateLabel
-  // is the small "day/month" shown under the heading, calendar-cell style --
-  // shown on every column now, not just the later ones, so Today/Tomorrow
-  // still read as an actual date at a glance.
-  const dayInfo = Array.from({ length: HOME_DAYS_COUNT }, (_, i) => {
-    const d = new Date(Date.now() + i * 86400000)
-    const dateStr = toDateStr(d)
-    return {
-      dateStr,
-      dow: d.getDay(),
-      label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-GB', { weekday: 'short' }),
-      dateLabel: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-    }
-  })
-
-  // Fallback fill: when a day has few/no dated tasks, pull in undated
-  // top-priority tasks (same order as the "Tasks" card in This week's
-  // overview) so the column shows real work, not just reminders. Each
-  // undated task is only used once across all the columns -- days are
-  // filled in order (today first), so today still gets first pick exactly
-  // as it did back when there were only two columns.
-  const undatedByPriority = [...tasks.filter(t => !t.due_date)].sort((a, b) => {
-    const ai = order.indexOf(a.id), bi = order.indexOf(b.id)
-    if (ai === -1 && bi === -1) return 0
-    if (ai === -1) return 1
-    if (bi === -1) return -1
-    return ai - bi
-  })
-  const FILL_TARGET = 5
-  const usedFillIds = new Set<string>()
-  const days = dayInfo.map(d => {
-    const due = tasks.filter(t => t.due_date === d.dateStr)
-    let fill: HomeTask[] = []
-    if (due.length < FILL_TARGET) {
-      fill = undatedByPriority.filter(t => !usedFillIds.has(t.id)).slice(0, FILL_TARGET - due.length)
-      fill.forEach(t => usedFillIds.add(t.id))
-    }
-    const dayHabits = habitBlocks.filter(h => h.days.includes(d.dow))
-    const dayReminders = reminders.filter(r => reminderOccursOn(r, d.dateStr))
-
-    // One combined, chronological feed -- a quick snapshot of the day
-    // actually reads top-to-bottom as the day unfolds, not grouped by type.
-    const entries: HomeDayEntry[] = [
-      ...dayHabits.map(habit => ({ kind:'habit' as const, sortMin: homeParseTimeLabel(habit.timeLabel), habit })),
-      ...dayReminders.map(reminder => ({ kind:'reminder' as const, sortMin: homeParseTimeLabel(reminder.timeLabel), reminder })),
-      ...due.map(task => ({ kind:'task' as const, sortMin: homeMinutesFromHHMM(task.start_time), task, isFill:false })),
-      ...fill.map(task => ({ kind:'task' as const, sortMin: null, task, isFill:true })),
-    ]
-    entries.sort((a, b) => {
-      if (a.sortMin !== null && b.sortMin !== null) return a.sortMin - b.sortMin
-      if (a.sortMin !== null) return -1
-      if (b.sortMin !== null) return 1
-      // Both untimed -- two untimed tasks fall back to the shared priority
-      // order; everything else keeps its original (stable-sort) position.
-      if (a.kind === 'task' && b.kind === 'task') {
-        const ai = order.indexOf(a.task.id), bi = order.indexOf(b.task.id)
-        if (ai === -1 && bi === -1) return 0
-        if (ai === -1) return 1
-        if (bi === -1) return -1
-        return ai - bi
-      }
-      return 0
-    })
-
-    return { ...d, entries }
-  })
-
-  async function toggleDone(task: HomeTask) {
-    const next = task.status === 'Done' ? 'Not started' : 'Done'
-    if (next === 'Done') { sounds.playTaskComplete(); celebrate('task') }
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: next } : t))
-    await supabase.from('master_tasks').update({ status: next }).eq('id', task.id)
-  }
-
-  function reorderWithin(list: HomeTask[], fromId: string, toId: string) {
-    if (fromId === toId) return
-    const ids = list.map(t => t.id)
-    const fromIdx = ids.indexOf(fromId)
-    const toIdx = ids.indexOf(toId)
-    if (fromIdx === -1 || toIdx === -1) return
-    const reordered = [...ids]
-    reordered.splice(fromIdx, 1)
-    reordered.splice(toIdx, 0, fromId)
-    const base = order.length > 0 ? order : tasks.map(t => t.id)
-    const withoutDay = base.filter(id => !ids.includes(id))
-    const firstPos = base.findIndex(id => ids.includes(id))
-    const insertAt = firstPos === -1 ? withoutDay.length : Math.min(firstPos, withoutDay.length)
-    const newOrder = [...withoutDay.slice(0, insertAt), ...reordered, ...withoutDay.slice(insertAt)]
-    setOrder(newOrder)
-    supabase.from('priority_lists').upsert({ key: 'tasks_priority', ordered_ids: newOrder, updated_at: new Date().toISOString() }, { onConflict: 'key' }).then()
-  }
-
-  async function reschedule(task: HomeTask, dateStr: string) {
-    setRescheduleId(null)
-    setTasks(prev => prev.filter(t => t.id !== task.id))
-    await supabase.from('master_tasks').update({ due_date: dateStr, start_time: null }).eq('id', task.id)
-  }
-
-  // Drag a task card onto a different day column -- reassigns due_date,
-  // same as Calendar's own week-view drag-to-move (app/calendar/page.tsx
-  // handleDrop). Keeps start_time as-is (a 9am task dragged a day later is
-  // still probably a 9am task); dropping back onto its own day column with
-  // no specific target task is a no-op, dropping onto a specific task in its
-  // own column reorders instead (see reorderWithin above).
-  async function moveToDay(taskId: string, fromDate: string, toDate: string) {
-    if (fromDate === toDate) return
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, due_date: toDate } : t))
-    await supabase.from('master_tasks').update({ due_date: toDate }).eq('id', taskId)
-  }
-
-  function handleTaskDragStart(e: React.DragEvent, taskId: string, columnDate: string) {
-    e.dataTransfer.setData('application/json', JSON.stringify({ id: taskId, fromDate: columnDate }))
-    e.dataTransfer.effectAllowed = 'move'
-    setDragId(taskId)
-  }
-
-  function handleColumnDrop(e: React.DragEvent, columnDate: string, list: HomeTask[], dropOnTaskId?: string) {
-    e.preventDefault()
-    setDragOverDay(null)
-    setDragOver(null)
-    let payload: { id: string; fromDate: string } | null = null
-    try { payload = JSON.parse(e.dataTransfer.getData('application/json')) } catch { payload = null }
-    setDragId(null)
-    if (!payload) return
-    if (payload.fromDate === columnDate) {
-      if (dropOnTaskId) reorderWithin(list, payload.id, dropOnTaskId)
-    } else {
-      moveToDay(payload.id, payload.fromDate, columnDate)
-    }
-  }
-
-  // Inline time editor -- Clock icon opens an <input type="time"> + duration
-  // picker right on the card, same duration options as Calendar's own time
-  // editor. Editing the time on an undated "Priority" filler task (due_date
-  // is null) also assigns it to whichever day column it was edited from --
-  // setting a time is itself a decision to do it that day.
-  function startEditTime(task: HomeTask) {
-    setEditingTimeId(task.id)
-    setTimeDraft(task.start_time ?? '')
-    setDurationDraft(task.duration_min ?? 30)
-    setRescheduleId(null)
-  }
-
-  async function saveTime(task: HomeTask, columnDate: string) {
-    const start_time = timeDraft || null
-    const duration_min = start_time ? durationDraft : null
-    const needsDueDate = !task.due_date
-    setEditingTimeId(null)
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, start_time, duration_min, due_date: needsDueDate ? columnDate : t.due_date } : t))
-    const patch: Record<string, unknown> = { start_time, duration_min }
-    if (needsDueDate) patch.due_date = columnDate
-    await supabase.from('master_tasks').update(patch).eq('id', task.id)
-  }
-
-  // Inline title editing -- click the task text itself to rename it right
-  // here, instead of needing to open the Tasks page for a text-only edit.
-  function startEditTitle(task: HomeTask) {
-    setEditingTitleId(task.id)
-    setTitleDraft(task.title)
-    setEditingTimeId(null)
-    setRescheduleId(null)
-  }
-
-  async function saveTitle(task: HomeTask) {
-    const trimmed = titleDraft.trim()
-    setEditingTitleId(null)
-    if (!trimmed || trimmed === task.title) return
-    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, title: trimmed } : t))
-    await supabase.from('master_tasks').update({ title: trimmed }).eq('id', task.id)
-  }
-
-  function Column({ label, dateLabel, dueDate, entries }: { label: string; dateLabel: string; dueDate: string; entries: HomeDayEntry[] }) {
-    const isColumnOver = dragOverDay === dueDate
-    const isToday = dueDate === todayStr
-    const taskEntries = entries.filter((e): e is Extract<HomeDayEntry, { kind: 'task' }> => e.kind === 'task').map(e => e.task)
-    return (
-      <div
-        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverDay(dueDate) }}
-        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && dragOverDay === dueDate) setDragOverDay(null) }}
-        onDrop={e => handleColumnDrop(e, dueDate, taskEntries)}
-        style={{
-          borderRadius:'0.875rem', padding:'0.65rem', background: isColumnOver ? C.cyan+'0c' : C.card,
-          border:'1px solid '+(isColumnOver ? C.cyan+'60' : isToday ? C.cyan+'40' : C.border),
-          boxShadow: isToday ? '0 0 0 1px '+C.cyan+'15' : 'none',
-          transition:'background 0.1s,border-color 0.1s', display:'flex', flexDirection:'column', minWidth:0,
-        }}>
-        <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:'0.4rem', marginBottom:'0.55rem', paddingBottom:'0.5rem', borderBottom:'1px solid '+C.border }}>
-          <p style={{ fontSize:'0.72rem', fontWeight:800, letterSpacing:'0.04em', textTransform:'uppercase', color: isToday ? C.cyan : C.text, margin:0 }}>{label}</p>
-          <p style={{ fontSize:'0.64rem', color:C.muted, margin:0, flexShrink:0 }}>{dateLabel}</p>
-        </div>
-        <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
-          {entries.length === 0 && (
-            <p style={{ fontSize:'0.75rem', color:C.muted, margin:'0 0 0.25rem' }}>Nothing scheduled.</p>
-          )}
-          {entries.map(entry => {
-            if (entry.kind === 'habit') {
-              const h = entry.habit
-              return (
-                <div
-                  key={'habit-'+h.id}
-                  onClick={() => router.push('/calendar')}
-                  title="Open Calendar to edit"
-                  style={{
-                    display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
-                    background: (h.color || C.border) + '14', border:'1px solid '+(h.color || C.border)+'45', borderRadius:'0.6rem', cursor:'pointer',
-                  }}>
-                  {h.emoji && <span style={{ fontSize:'0.75rem', flexShrink:0 }}>{h.emoji}</span>}
-                  {h.timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:h.color || C.muted, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{h.timeLabel}</span>}
-                  <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color:h.color || C.sec, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{h.title}</span>
-                  <ChevronRight size={12} color={C.muted} style={{ flexShrink:0 }} />
-                </div>
-              )
-            }
-            if (entry.kind === 'reminder') {
-              const r = entry.reminder
-              return (
-                <div
-                  key={'reminder-'+r.id}
-                  onClick={() => router.push('/calendar')}
-                  title="Open Calendar to edit"
-                  style={{
-                    display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
-                    background: C.surface, border:'1px dashed '+C.border, borderRadius:'0.6rem', cursor:'pointer',
-                  }}>
-                  <Bell size={12} color={r.color || C.muted} style={{ flexShrink:0 }} />
-                  {r.emoji && <span style={{ fontSize:'0.7rem', flexShrink:0 }}>{r.emoji}</span>}
-                  {r.timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:C.muted, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{r.timeLabel}</span>}
-                  <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color:C.sec, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.title}</span>
-                  <ChevronRight size={12} color={C.muted} style={{ flexShrink:0 }} />
-                </div>
-              )
-            }
-            const task = entry.task
-            const isFill = entry.isFill
-            const done = task.status === 'Done'
-            const timeLabel = fmtTimeLabel(task.start_time)
-            const rescheduling = rescheduleId === task.id
-            const editingTime = editingTimeId === task.id
-            const editingTitle = editingTitleId === task.id
-            const opts = rescheduling ? rescheduleOptions(task.due_date ? new Date(task.due_date + 'T12:00:00') : new Date()) : []
-            return (
-              <div key={'task-'+task.id}>
-                <div
-                  draggable={!editingTitle}
-                  onDragStart={e => handleTaskDragStart(e, task.id, dueDate)}
-                  onDragEnd={() => { setDragId(null); setDragOver(null) }}
-                  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(task.id) }}
-                  onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && dragOver === task.id) setDragOver(null) }}
-                  onDrop={e => { e.stopPropagation(); handleColumnDrop(e, dueDate, taskEntries, task.id) }}
-                  style={{
-                    display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem',
-                    background: C.surface, border:'1px solid '+(dragOver===task.id?C.cyan+'80':isFill?C.amber+'35':C.border),
-                    borderRadius:'0.6rem', opacity: dragId===task.id ? 0.4 : 1, cursor: editingTitle ? 'default' : 'grab', transition:'opacity 0.1s,border-color 0.1s',
-                  }}>
-                  <GripVertical size={12} color={C.muted} style={{ flexShrink:0 }} />
-                  <button type="button" onClick={() => toggleDone(task)} style={{
-                    width:'16px', height:'16px', borderRadius:'50%', flexShrink:0, padding:0, cursor:'pointer',
-                    border:'2px solid '+(done?C.green:C.muted), background: done ? C.green : 'transparent',
-                    display:'flex', alignItems:'center', justifyContent:'center',
-                  }}>
-                    {done && <span style={{ fontSize:'0.5rem', color:'#000', fontWeight:900 }}>&#10003;</span>}
-                  </button>
-                  {task.is_frog && <span style={{ fontSize:'0.7rem', flexShrink:0 }}>&#128054;</span>}
-                  {timeLabel && <span style={{ fontSize:'0.65rem', fontWeight:700, color:C.cyan, flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{timeLabel}</span>}
-                  {!timeLabel && isFill && <span style={{ fontSize:'0.58rem', fontWeight:700, color:C.amber, flexShrink:0, textTransform:'uppercase', letterSpacing:'0.04em' }}>Priority</span>}
-                  {editingTitle ? (
-                    <input
-                      autoFocus
-                      value={titleDraft}
-                      onChange={e => setTitleDraft(e.target.value)}
-                      onBlur={() => saveTitle(task)}
-                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingTitleId(null) }}
-                      onClick={e => e.stopPropagation()}
-                      style={{ flex:1, minWidth:0, fontSize:'0.8rem', color:C.text, background:C.card, border:'1px solid '+C.cyan, borderRadius:'0.35rem', padding:'0.15rem 0.4rem', fontFamily:'inherit', outline:'none' }}
-                    />
-                  ) : (
-                    <span
-                      onClick={() => startEditTitle(task)}
-                      title="Click to rename"
-                      style={{ flex:1, minWidth:0, fontSize:'0.8rem', color: done?C.muted:C.text, textDecoration: done?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor:'text' }}>
-                      {task.title}
-                    </span>
-                  )}
-                  <button type="button" draggable={false} onClick={() => { startEditTime(task); setRescheduleId(null) }} title={timeLabel ? 'Change time' : 'Set time'} style={{
-                    background:'none', border:'none', color: editingTime ? C.cyan : C.muted, cursor:'pointer', padding:'0.2rem', flexShrink:0, display:'flex', alignItems:'center',
-                  }}>
-                    <Zap size={13} />
-                  </button>
-                  <button type="button" draggable={false} onClick={() => { setRescheduleId(rescheduling ? null : task.id); setEditingTimeId(null) }} title={isFill ? 'Set due date' : 'Reschedule'} style={{
-                    background:'none', border:'none', color: rescheduling ? C.cyan : C.muted, cursor:'pointer', padding:'0.2rem', flexShrink:0, display:'flex', alignItems:'center',
-                  }}>
-                    <CalendarDays size={13} />
-                  </button>
-                </div>
-                {editingTime && (
-                  <div style={{ display:'flex', gap:'0.4rem', alignItems:'center', flexWrap:'wrap', padding:'0.4rem 0.65rem 0.15rem' }}>
-                    <input type="time" value={timeDraft} onChange={e => setTimeDraft(e.target.value)}
-                      style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.text, fontFamily:'inherit', fontSize:'0.72rem', padding:'0.3rem 0.5rem', outline:'none', colorScheme:'dark' }} />
-                    <select value={durationDraft} onChange={e => setDurationDraft(Number(e.target.value))} disabled={!timeDraft}
-                      style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'0.4rem', color:timeDraft?C.text:C.muted, fontFamily:'inherit', fontSize:'0.72rem', padding:'0.3rem 0.5rem', outline:'none', cursor:timeDraft?'pointer':'not-allowed' }}>
-                      {HOME_DURATION_OPTIONS.map(m => <option key={m} value={m}>{m < 60 ? m+' min' : (m/60)+'h'+(m%60?' '+(m%60)+'m':'')}</option>)}
-                    </select>
-                    <button type="button" onClick={() => saveTime(task, dueDate)} style={{
-                      padding:'0.3rem 0.6rem', background:'rgba(0,255,136,0.12)', border:'1px solid rgba(0,255,136,0.35)', borderRadius:'0.4rem',
-                      color:C.green, fontSize:'0.68rem', fontWeight:700, cursor:'pointer', fontFamily:'inherit',
-                    }}>Save</button>
-                    {timeDraft && (
-                      <button type="button" onClick={() => setTimeDraft('')} style={{
-                        padding:'0.3rem 0.55rem', background:'transparent', border:'1px solid '+C.border, borderRadius:'0.4rem',
-                        color:C.muted, fontSize:'0.68rem', fontWeight:600, cursor:'pointer', fontFamily:'inherit',
-                      }}>Clear</button>
-                    )}
-                    <button type="button" onClick={() => setEditingTimeId(null)} style={{
-                      padding:'0.3rem 0.55rem', background:'transparent', border:'none', color:C.muted, fontSize:'0.68rem', cursor:'pointer', fontFamily:'inherit',
-                    }}>Cancel</button>
-                  </div>
-                )}
-                {rescheduling && (
-                  <div style={{ display:'flex', gap:'0.35rem', flexWrap:'wrap', padding:'0.4rem 0.65rem 0.15rem' }}>
-                    {opts.map(o => (
-                      <button key={o.label} type="button" onClick={() => reschedule(task, o.date)} style={{
-                        padding:'0.25rem 0.55rem', background:C.card, border:'1px solid '+C.border, borderRadius:'9999px',
-                        color:C.sec, fontSize:'0.65rem', fontWeight:600, cursor:'pointer', fontFamily:'inherit',
-                      }}>{o.label}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
-
-  if (!ready) return null
-
-  return (
-    <div>
-      {/* Pulls top-priority items from every workflow (Vault/Tasks/Etsy/X/
-          YouTube) onto today's Calendar and assigns each a real start_time by
-          filling open Timeline slots -- same engine as Calendar's own
-          "Recommend & Organise", opened here with today pre-selected so this
-          list updates the moment you confirm. */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.65rem', gap:'0.75rem', flexWrap:'wrap' }}>
-        <p style={{ fontSize:'0.68rem', color:C.muted, margin:0 }}>Drag a card to a different day to move it, click its title to rename, or use <Zap size={10} style={{ verticalAlign:'-1px' }}/> to set its time.</p>
-        <button onClick={() => router.push('/calendar?openRecommend=today')} style={{
-          display:'flex', alignItems:'center', gap:'0.35rem', padding:'0.4rem 0.75rem',
-          background:'linear-gradient(135deg,rgba(0,212,255,0.15),rgba(0,255,136,0.12))',
-          border:'1px solid rgba(0,212,255,0.35)', borderRadius:'0.75rem', color:C.cyan,
-          cursor:'pointer', fontFamily:'inherit', fontSize:'0.75rem', fontWeight:700, flexShrink:0,
-        }}>
-          <Sparkles size={12} />Organise Today
-        </button>
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:'0.75rem' }}>
-        {days.map(d => (
-          <Column key={d.dateStr} label={d.label} dateLabel={d.dateLabel} dueDate={d.dateStr} entries={d.entries} />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ---- Today's physical ----
-// Reads today's row from the Physical page's weekly planner (day_of_week
-// matches JS getDay()) and renders it as a real checklist. Completion is
-// stored under checklist_key 'physical_plan' so ticking here or on the
-// Physical page itself shows the same state either way.
-type PhysicalPlanItem = { id: string; label: string; category: string | null }
-
-function TodaysPhysical() {
-  const router = useRouter()
-  const { celebrate } = useCelebration()
-  const todayStr = toDateStr(new Date())
-  const [items, setItems] = useState<PhysicalPlanItem[]>([])
-  const [done, setDone] = useState<Record<string, boolean>>({})
-  const [ready, setReady] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-
-  useEffect(() => {
-    const dow = new Date().getDay()
-    Promise.all([
-      supabase.from('weekly_exercise_plan').select('id,label,category,sort_order').eq('day_of_week', dow).order('sort_order'),
-      getDailyChecklistState('physical_plan', todayStr),
-    ]).then(([{ data, error }, { state }]) => {
-      if (error) {
-        setErr(error.message.includes('does not exist')
-          ? 'Setup needed: run supabase/migrations/030_weekly_exercise_plan.sql against your database.'
-          : error.message)
-      }
-      setItems((data ?? []) as PhysicalPlanItem[])
-      setDone(state)
-      setReady(true)
-    })
-  }, [todayStr])
-
-  function toggle(id: string) {
-    setDone(prev => {
-      const next = !prev[id]
-      if (next) { sounds.playTaskComplete(); celebrate('task') }
-      setDailyChecklistItem('physical_plan', id, todayStr, next)
-      return { ...prev, [id]: next }
-    })
-  }
-
-  if (!ready) return null
-  const doneCount = items.filter(i => done[i.id]).length
-
-  return (
-    <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
-    <div style={{ maxWidth:'900px', margin:'0 auto', padding:'1.25rem 2rem' }}>
-      <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.5rem' }}>
-        <button onClick={() => router.push('/physical')} style={{ display:'flex', alignItems:'center', gap:'0.4rem', background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit' }}>
-          <Activity size={13} color={C.green} />
-          <span style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted }}>Today&apos;s physical</span>
-        </button>
-        {items.length > 0 && !err && (
-          <span style={{ marginLeft:'auto', fontSize:'0.68rem', fontWeight:700, color: doneCount===items.length ? C.green : C.muted }}>{doneCount} / {items.length}</span>
-        )}
-      </div>
-      {err ? (
-        <p style={{ fontSize:'0.75rem', color:C.amber, margin:0 }}>{err}</p>
-      ) : items.length === 0 ? (
-        <p style={{ fontSize:'0.75rem', color:C.muted, margin:0 }}>Nothing planned for today &#8212; add exercises to today&#39;s column in the Weekly Plan on the Physical page.</p>
-      ) : (
-      <div style={{ display:'flex', flexDirection:'column', gap:'0.35rem' }}>
-        {items.map(item => {
-          const isDone = !!done[item.id]
-          return (
-            <div key={item.id} onClick={() => toggle(item.id)} style={{ display:'flex', alignItems:'center', gap:'0.55rem', padding:'0.5rem 0.65rem', background:C.surface, border:'1px solid '+C.border, borderRadius:'0.6rem', cursor:'pointer' }}>
-              <span style={{ width:'16px', height:'16px', borderRadius:'50%', flexShrink:0, border:'2px solid '+(isDone ? C.green : C.muted), background: isDone ? C.green : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                {isDone && <span style={{ fontSize:'0.5rem', color:'#000', fontWeight:900 }}>&#10003;</span>}
-              </span>
-              <span style={{ flex:1, minWidth:0, fontSize:'0.8rem', color: isDone ? C.muted : C.text, textDecoration: isDone ? 'line-through' : 'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.label}</span>
-              {item.category && <span style={{ fontSize:'0.62rem', color:C.muted, flexShrink:0 }}>{item.category}</span>}
-            </div>
-          )
-        })}
-      </div>
-      )}
-    </div>
-    </div>
-  )
-}
-
-// ---- Weekly Targets ----
-// "3 Shorts, 1 Long-form, 4 Etsy listings, Website work" style counters.
-// Shorts/Long-form auto-count from content_items reaching the Live stage
-// this week (no manual bookkeeping); Etsy/Website have no pipeline table
-// yet so they're a simple cross-device +/- tally against the week.
-type WeeklyTarget = { id: string; label: string; emoji: string; color: string; target_count: number; tracking: string; sort_order: number }
-
-function mondayOf(d: Date): Date {
-  const day = d.getDay() // 0=Sun..6=Sat
-  const diff = day === 0 ? -6 : 1 - day
-  const r = new Date(d)
-  r.setDate(r.getDate() + diff)
-  r.setHours(0, 0, 0, 0)
-  return r
-}
-
-function WeeklyTargets() {
-  const now = new Date()
-  const weekStart = toDateStr(mondayOf(now))
-  const prevWeekStart = toDateStr(new Date(mondayOf(now).getTime() - 7 * 86400000))
-  // Mon=1 .. Sun=7 — used to judge whether progress is on pace for the "health bar" framing.
-  const daysElapsed = ((now.getDay() + 6) % 7) + 1
-  const daysLeft = 7 - daysElapsed
-
-  const [targets, setTargets] = useState<WeeklyTarget[]>([])
-  const [counts, setCounts] = useState<Record<string, number>>({})
-  const [prevCounts, setPrevCounts] = useState<Record<string, number>>({})
-  const [picks, setPicks] = useState<Record<string, string>>({}) // target_id -> picked content title
-  const [ready, setReady] = useState(false)
-
-  const load = useCallback(async () => {
-    const { data: targetRows } = await supabase.from('weekly_targets')
-      .select('id,label,emoji,color,target_count,tracking,sort_order').eq('active', true).order('sort_order')
-    const rows = (targetRows ?? []) as WeeklyTarget[]
-    setTargets(rows)
-
-    const next: Record<string, number> = {}
-    const prevNext: Record<string, number> = {}
-    const nextPicks: Record<string, string> = {}
-    await Promise.all(rows.map(async t => {
-      if (t.tracking === 'auto_shorts' || t.tracking === 'auto_longform') {
-        // NOTE: content_items.format stores "Long-form" (hyphen), not "Long form" —
-        // must match exactly or the long-form count silently stays at 0.
-        const formats = t.tracking === 'auto_shorts' ? ['Short', 'Both'] : ['Long-form', 'Both']
-        const [{ count }, { count: prevCount }] = await Promise.all([
-          supabase.from('content_items').select('id', { count: 'exact', head: true })
-            .ilike('pipeline_stage', '%Live%').in('format', formats).gte('updated_at', weekStart),
-          supabase.from('content_items').select('id', { count: 'exact', head: true })
-            .ilike('pipeline_stage', '%Live%').in('format', formats).gte('updated_at', prevWeekStart).lt('updated_at', weekStart),
-        ])
-        next[t.id] = count ?? 0
-        prevNext[t.id] = prevCount ?? 0
-
-        // This week's pick — selected on the Content page, shown here as the
-        // specific title being worked toward rather than just a bare count.
-        const { data: pick } = await supabase.from('weekly_target_picks')
-          .select('content_item_id').eq('target_id', t.id).eq('week_start', weekStart).maybeSingle()
-        if (pick?.content_item_id) {
-          const { data: ci } = await supabase.from('content_items').select('title').eq('id', pick.content_item_id).maybeSingle()
-          if (ci?.title) nextPicks[t.id] = ci.title
-        }
-      } else {
-        const [{ data }, { data: prevData }] = await Promise.all([
-          supabase.from('weekly_target_progress').select('manual_count').eq('target_id', t.id).eq('week_start', weekStart).maybeSingle(),
-          supabase.from('weekly_target_progress').select('manual_count').eq('target_id', t.id).eq('week_start', prevWeekStart).maybeSingle(),
-        ])
-        next[t.id] = data?.manual_count ?? 0
-        prevNext[t.id] = prevData?.manual_count ?? 0
-      }
-    }))
-    setCounts(next)
-    setPrevCounts(prevNext)
-    setPicks(nextPicks)
-    setReady(true)
-  }, [weekStart, prevWeekStart])
-
-  useEffect(() => { load() }, [load])
-
-  async function bump(t: WeeklyTarget, delta: number) {
-    const current = counts[t.id] ?? 0
-    const next = Math.max(0, current + delta)
-    setCounts(prev => ({ ...prev, [t.id]: next }))
-    await supabase.from('weekly_target_progress').upsert(
-      { target_id: t.id, week_start: weekStart, manual_count: next, updated_at: new Date().toISOString() },
-      { onConflict: 'target_id,week_start' }
-    )
-  }
-
-  if (!ready || targets.length === 0) return null
-
-  return (
-    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))', gap:'0.75rem' }}>
-      {targets.map(t => {
-        const current = counts[t.id] ?? 0
-        const pct = Math.min(100, Math.round((current / Math.max(1, t.target_count)) * 100))
-        const met = current >= t.target_count
-
-        // "Health bar" framing — colour reflects whether you're on pace for
-        // the week, not just raw progress, so a stalled target visibly turns
-        // urgent as days run out rather than sitting there as a neutral bar.
-        const expectedPct = Math.round((daysElapsed / 7) * 100)
-        const paceStatus = met ? 'met' : pct >= expectedPct ? 'ahead' : (expectedPct - pct > 20 ? 'behind' : 'ontrack')
-        const paceColor = paceStatus === 'met' || paceStatus === 'ahead' ? C.green : paceStatus === 'behind' ? C.red : t.color
-        const paceLabel = paceStatus === 'met' ? 'Hit for the week' : daysLeft <= 0 ? 'Last day' : daysLeft + ' day' + (daysLeft===1?'':'s') + ' left'
-
-        const prevCount = prevCounts[t.id] ?? 0
-        const delta = current - prevCount
-        const deltaLabel = delta === 0 ? 'same as last week' : delta > 0 ? '+' + delta + ' vs last week' : delta + ' vs last week'
-        const deltaColor = delta > 0 ? C.green : delta < 0 ? C.muted : C.muted
-
-        return (
-          <div key={t.id} style={{ padding:'0.75rem 0.85rem', background:C.surface, border:'1px solid '+(met?t.color+'50':paceStatus==='behind'?C.red+'40':C.border), borderRadius:'0.75rem' }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.4rem' }}>
-              <span style={{ fontSize:'0.78rem', color:C.text, fontWeight:600 }}>{t.emoji} {t.label}</span>
-              <span style={{ fontSize:'0.75rem', fontWeight:700, color: met?t.color:C.sec }}>{current}/{t.target_count}</span>
-            </div>
-            <div style={{ height:'4px', background:C.border, borderRadius:'2px', overflow:'hidden', marginBottom:'0.4rem' }}>
-              <div style={{ height:'100%', width:pct+'%', background:paceColor, borderRadius:'2px', transition:'width 0.3s ease, background 0.3s ease' }} />
-            </div>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: (t.tracking==='manual' || picks[t.id]) ? '0.5rem' : 0, gap:'0.4rem' }}>
-              <span style={{ fontSize:'0.62rem', fontWeight:700, color:paceColor }}>{paceLabel}</span>
-              <span style={{ fontSize:'0.62rem', color:deltaColor }}>{deltaLabel}</span>
-            </div>
-            {picks[t.id] && (
-              <p style={{ fontSize:'0.68rem', color:C.sec, margin:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={picks[t.id]}>
-                &#127919; {picks[t.id]}
-              </p>
-            )}
-            {t.tracking === 'manual' && (
-              <div style={{ display:'flex', gap:'0.4rem' }}>
-                <button type="button" onClick={() => bump(t, -1)} style={{ flex:1, padding:'0.25rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>-</button>
-                <button type="button" onClick={() => bump(t, 1)} style={{ flex:1, padding:'0.25rem', background:C.card, border:'1px solid '+C.border, borderRadius:'0.4rem', color:C.sec, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem' }}>+</button>
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ---- Isolated clock -- only this re-renders every second ----
-function LiveClock() {
-  const [time, setTime] = useState('')
-  useEffect(() => {
-    const fmt = () => new Date().toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' })
-    setTime(fmt())
-    const t = setInterval(() => setTime(fmt()), 1000)
-    return () => clearInterval(t)
-  }, [])
-  return <span style={{ fontFamily:'monospace', fontSize:'1.1rem', fontWeight:700, color:C.text, letterSpacing:'0.05em' }}>{time}</span>
-}
-
-// ---- Focus environment pre-flight check ----
-function FocusCheck({ onProceed, onClose }: { onProceed: () => void; onClose: () => void }) {
-  const [checked, setChecked] = useState<Set<string>>(new Set())
-  const allDone = checked.size === FOCUS_ITEMS.length
-
-  function toggle(id: string) {
-    setChecked(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
-      return next
-    })
-  }
-
-  return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60, padding:'1rem' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={{ background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'1.5rem', padding:'2rem', width:'100%', maxWidth:'26rem', position:'relative', animation:'fadeInUp 0.3s ease both' }}>
-        {/* Header */}
-        <div style={{ textAlign:'center', marginBottom:'1.75rem' }}>
-          <div style={{ fontSize:'2rem', marginBottom:'0.5rem' }}>&#127919;</div>
-          <h2 style={{ fontSize:'1.25rem', fontWeight:900, color:C.text, margin:'0 0 0.35rem', letterSpacing:'-0.02em' }}>Pre-Flight Check</h2>
-          <p style={{ fontSize:'0.82rem', color:C.sec, margin:0 }}>Get the environment right before you lock in</p>
-        </div>
-
-        {/* Progress bar */}
-        <div style={{ height:'3px', background:'#2a2a3a', borderRadius:'2px', marginBottom:'1.5rem', overflow:'hidden' }}>
-          <div style={{ height:'100%', background:'linear-gradient(90deg,'+C.green+',#00cc6a)', width:(checked.size/FOCUS_ITEMS.length*100)+'%', transition:'width 0.3s ease', borderRadius:'2px' }} />
-        </div>
-
-        {/* Checklist */}
-        <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem', marginBottom:'1.75rem' }}>
-          {FOCUS_ITEMS.map(item => {
-            const done = checked.has(item.id)
-            return (
-              <button key={item.id} onClick={() => toggle(item.id)} style={{
-                display:'flex', alignItems:'center', gap:'0.875rem',
-                padding:'0.75rem 1rem',
-                background: done ? 'rgba(0,255,136,0.06)' : 'rgba(255,255,255,0.02)',
-                border: '1px solid '+(done ? 'rgba(0,255,136,0.25)' : '#2a2a3a'),
-                borderRadius:'0.875rem', cursor:'pointer', fontFamily:'inherit',
-                textAlign:'left', transition:'all 0.15s ease',
-              }}>
-                {/* Checkbox */}
-                <div style={{
-                  width:'20px', height:'20px', borderRadius:'50%', flexShrink:0,
-                  border: '2px solid '+(done ? C.green : '#4a4a6a'),
-                  background: done ? C.green : 'transparent',
-                  display:'flex', alignItems:'center', justifyContent:'center',
-                  transition:'all 0.15s ease',
-                }}>
-                  {done && <span style={{ fontSize:'0.65rem', color:'#000', fontWeight:900 }}>&#10003;</span>}
-                </div>
-                {/* Label */}
-                <div style={{ flex:1 }}>
-                  <p style={{ fontSize:'0.85rem', fontWeight:700, color:done?C.green:C.text, margin:0, transition:'color 0.15s' }}
-                    dangerouslySetInnerHTML={{ __html: item.label }} />
-                  <p style={{ fontSize:'0.7rem', color:C.muted, margin:0, lineHeight:1.4, marginTop:'0.1rem' }}
-                    dangerouslySetInnerHTML={{ __html: item.note }} />
-                </div>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* CTA */}
-        <button onClick={allDone ? onProceed : undefined} style={{
-          width:'100%', padding:'0.95rem',
-          background: allDone ? 'linear-gradient(135deg,'+C.green+',#00cc6a)' : '#1a1a26',
-          border: '1px solid '+(allDone ? 'transparent' : '#2a2a3a'),
-          borderRadius:'1rem', cursor: allDone ? 'pointer' : 'default',
-          fontFamily:'inherit', fontWeight:900, fontSize:'0.95rem',
-          color: allDone ? '#000' : C.muted,
-          transition:'all 0.25s ease',
-          boxShadow: allDone ? '0 4px 24px rgba(0,255,136,0.3)' : 'none',
-        }}>
-          {allDone ? 'Begin deep work →' : checked.size + ' / ' + FOCUS_ITEMS.length + ' checked'}
-        </button>
-
-        <div style={{ textAlign:'center', marginTop:'0.875rem' }}>
-          <button onClick={onClose} style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.72rem', textDecoration:'underline' }}>
-            Skip check &mdash; I&apos;m already set up
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ---- Add Task modal ----
-// Replaces the old inline "+ Add task" boxes inside Today/Tomorrow — opened
-// from a single button in the top-right bar instead, so the list itself
-// doesn't lose vertical space to an input row most of the time.
-function AddTaskModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
-  const [title, setTitle] = useState('')
-  const [dueDate, setDueDate] = useState(toDateStr(new Date()))
-  const [saving, setSaving] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-
-  async function submit() {
-    const t = title.trim()
-    if (!t || saving) return
-    setSaving(true)
-    const { error } = await supabase.from('master_tasks')
-      .insert({ title: t, status: 'Not started', due_date: dueDate || null, task_type: 'Quick Task', archived: false, is_frog: false })
-    setSaving(false)
-    if (error) { setErr(error.message); return }
-    onAdded()
-    onClose()
-  }
-
-  return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:70, padding:'1rem' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div style={{ background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'1.25rem', padding:'1.75rem', width:'100%', maxWidth:'24rem', animation:'fadeInUp 0.25s ease both' }}>
-        <p style={{ fontSize:'0.65rem', fontWeight:800, letterSpacing:'0.1em', textTransform:'uppercase', color:C.cyan, margin:'0 0 1rem' }}>Add task</p>
-        {err && <p style={{ fontSize:'0.75rem', color:C.amber, margin:'0 0 0.75rem' }}>{err}</p>}
-        <input autoFocus value={title} onChange={e => setTitle(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onClose() }}
-          placeholder="Task title..." style={{ width:'100%', padding:'0.65rem 0.8rem', background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'0.6rem', color:C.text, fontFamily:'inherit', fontSize:'0.85rem', outline:'none', marginBottom:'0.75rem', boxSizing:'border-box' }} />
-        <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.4rem' }}>Due date</p>
-        <div style={{ display:'flex', gap:'0.4rem', marginBottom:'0.5rem', flexWrap:'wrap' }}>
-          {[
-            { label:'Today', date: toDateStr(new Date()) },
-            { label:'Tomorrow', date: toDateStr(new Date(Date.now() + 86400000)) },
-            { label:'No date', date:'' },
-          ].map(o => (
-            <button key={o.label} type="button" onClick={() => setDueDate(o.date)} style={{
-              padding:'0.3rem 0.65rem', borderRadius:'9999px', fontFamily:'inherit', fontSize:'0.7rem', fontWeight:700, cursor:'pointer',
-              background: dueDate === o.date ? C.cyan : 'none',
-              color: dueDate === o.date ? '#000' : C.sec,
-              border:'1px solid '+(dueDate === o.date ? C.cyan : '#2a2a3a'),
-            }}>{o.label}</button>
-          ))}
-        </div>
-        <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-          style={{ width:'100%', padding:'0.6rem 0.8rem', background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'0.6rem', color:C.text, fontFamily:'inherit', fontSize:'0.8rem', outline:'none', marginBottom:'1.25rem', boxSizing:'border-box', colorScheme:'dark' }} />
-        <div style={{ display:'flex', gap:'0.6rem' }}>
-          <button onClick={onClose} style={{ flex:1, padding:'0.65rem', background:'none', border:'1px solid #2a2a3a', borderRadius:'0.6rem', color:C.muted, cursor:'pointer', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:600 }}>Cancel</button>
-          <button onClick={submit} disabled={saving || !title.trim()} style={{ flex:1, padding:'0.65rem', background: title.trim() ? C.cyan : '#2a2a3a', border:'none', borderRadius:'0.6rem', color: title.trim() ? '#000' : C.muted, cursor: title.trim() ? 'pointer' : 'default', fontFamily:'inherit', fontSize:'0.8rem', fontWeight:800 }}>{saving ? 'Adding...' : 'Add task'}</button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export default function Home() {
   const router = useRouter()
@@ -1076,6 +86,7 @@ export default function Home() {
   const [ideasLoading, setIdeasLoading] = useState(true)
   const [streaks, setStreaks] = useState<HabitStreak[]>([])
   const [consistencyPct, setConsistencyPct] = useState<number | null>(null)
+  const [counts, setCounts] = useState<Record<string, number>>({})
   const [top5, setTop5] = useState<Partial<Record<'tasks'|'vault'|'etsy'|'x'|'youtube', RankableItem[]>>>({})
   const [showAddTask, setShowAddTask] = useState(false)
   const [taskRefresh, setTaskRefresh] = useState(0)
@@ -1299,6 +310,8 @@ export default function Home() {
         .filter(v => v.pipeline_stage !== '📣 Live' && v.pipeline_stage !== '📊 Post-Published')
         .map(v => ({ id:v.id, title:v.title, pipeline_stage:v.pipeline_stage, format:v.format, is_active_focus:!!v.is_active_focus }))
 
+      // Real totals (top5 below is capped) -- the dashboard shows "N to do".
+      setCounts({ tasks: tasksItems.length, vault: vaultItems.length, x: xItems.length, etsy: etsyItems.length, youtube: ytItems.length })
       setTop5({
         tasks:   rankTop((tasksPl.data?.ordered_ids as string[] | undefined) ?? [], tasksItems),
         vault:   rankTop((vaultPl.data?.ordered_ids as string[] | undefined) ?? [], vaultItems),
@@ -1448,25 +461,9 @@ export default function Home() {
   }
 
   const accentColor = routineDone ? C.green : C.cyan
-  const morningCtaLabel =
-    veryLate  ? 'Still time to win the afternoon' :
-    lateStart ? "Running late — let's go!" :
-    "Let's get the day started"
-  const morningCtaGrad = veryLate
-    ? 'linear-gradient(135deg,'+C.purple+',#6d28d9)'
-    : lateStart
-    ? 'linear-gradient(135deg,'+C.amber+',#cc8800)'
-    : 'linear-gradient(135deg,'+C.cyan+',#0099cc)'
-  const morningCtaGlow = veryLate ? 'rgba(139,92,246,0.3)' : lateStart ? 'rgba(255,184,0,0.3)' : 'rgba(0,212,255,0.25)'
-
-  // Three states for the main CTA card: morning routine not done yet,
-  // evening routine due and not done, or -- the common case -- neither
-  // routine is blocking, so show today's actual highest-priority task.
   const isEveningReady = h >= 20 && !eveningDone
-  const ctaState: 'morning' | 'evening' | 'focus' = !routineDone ? 'morning' : isEveningReady ? 'evening' : 'focus'
-
-  // ---- Dashboard helpers ----
   const routeFor = (s: DailyPlanSection) => (s === 'youtube' ? 'content' : s)
+  const n = (k: string) => counts[k] ?? 0
 
   // Thin wrappers over the shared templates in components/ui.
   const tile = (label: string, value: string, sub: string, color: string, onClick?: () => void) =>
@@ -1474,12 +471,12 @@ export default function Home() {
 
   const rows = (list: { id: string; title: string; badge?: string }[], color: string, onPick: (id: string) => void) =>
     list.length === 0
-      ? <div style={{ fontSize:11, color:D.dim, padding:'6px 0' }}>nothing here</div>
+      ? <div style={{ fontSize:11, color:D.dim, padding:'6px 0' }}>all clear</div>
       : list.map((it, i) => <ListRow key={it.id} index={i + 1} title={it.title} badge={it.badge} color={color} onClick={() => onPick(it.id)} />)
 
-  const renderList = (section: DailyPlanSection, n = 5) =>
+  const renderList = (section: DailyPlanSection, max = 3) =>
     rows(
-      (top5[section] ?? []).slice(0, n).map(i => ({ id: i.id, title: i.title, badge: section === 'youtube' ? i.pipeline_stage?.replace(/^\S+\s/, '') : undefined })),
+      (top5[section] ?? []).slice(0, max).map(i => ({ id: i.id, title: i.title, badge: section === 'youtube' ? i.pipeline_stage?.replace(/^\S+\s/, '') : undefined })),
       TOP5_COLOR[section],
       id => section === 'youtube' ? focusYoutubeItem(id) : navToItem(routeFor(section), id),
     )
@@ -1487,311 +484,111 @@ export default function Home() {
   const panel = (title: string, color: string, note: string, route: string, body: ReactNode) =>
     <Panel key={title} title={title} color={color} note={note} onTitleClick={() => navTo(route)}>{body}</Panel>
 
+  // One-line "what to do right now" bar.
+  const nextUp = !routineDone
+    ? { label: h >= 10 ? 'Morning routine still pending — do it, then lock in' : 'Start your morning routine', cta: 'Begin', color: D.amb, go: () => router.push('/morning') }
+    : isEveningReady
+    ? { label: 'Time to wind down — evening routine', cta: 'Begin', color: D.vio, go: () => router.push('/evening') }
+    : topTask
+    ? { label: topTask.title, cta: topTaskIsPipeline ? 'Start focus' : 'Open', color: D.grn, go: () => { if (topTaskIsPipeline) { setPendingFocusItem(topTask.id); handleFocusClick() } else navToItem('tasks', topTask.id) } }
+    : null
+
+  const chip = (text: string, color: string) => (
+    <span style={{ fontSize:10, fontWeight:700, color, border:'1px solid '+color+'55', background:color+'14', borderRadius:9999, padding:'2px 9px' }}>{text}</span>
+  )
+  const wrap = (children: ReactNode, key?: string) => (
+    <div key={key} style={{ position:'relative', zIndex:1, borderTop:'1px solid '+C.border }}>
+      <div style={{ maxWidth:1400, margin:'0 auto', padding:'1rem 1rem' }}>{children}</div>
+    </div>
+  )
 
   return (
-    <main style={{ minHeight:'100vh', display:'flex', flexDirection:'column', background:C.bg, position:'relative', overflowX:'clip' }}>
+    <main style={{ minHeight:'100vh', background:C.bg, color:D.fg, fontFamily:MONO, overflowX:'clip' }}>
+      <div style={{ maxWidth:1400, margin:'0 auto', padding:'14px 16px 18px' }}>
 
-      {/* Ambient background orbs */}
-      <div aria-hidden="true" style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0 }}>
-        <div style={{ position:'absolute', top:'-120px', left:'-80px', width:'500px', height:'500px', borderRadius:'50%', background:'radial-gradient(circle,'+(routineDone?'rgba(0,255,136,0.055)':'rgba(0,212,255,0.055)')+' 0%,transparent 65%)', animation:'orbFloat1 18s ease-in-out infinite' }} />
-        <div style={{ position:'absolute', bottom:'-100px', right:'-60px', width:'420px', height:'420px', borderRadius:'50%', background:'radial-gradient(circle,rgba(139,92,246,0.045) 0%,transparent 65%)', animation:'orbFloat2 22s ease-in-out infinite' }} />
-        <div style={{ position:'absolute', top:'45%', left:'55%', width:'300px', height:'300px', borderRadius:'50%', background:'radial-gradient(circle,'+(routineDone?'rgba(0,255,136,0.03)':'rgba(0,212,255,0.028)')+' 0%,transparent 70%)', animation:'orbFloat3 28s ease-in-out infinite', transform:'translate(-50%,-50%)' }} />
-      </div>
-
-      <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', position:'relative', zIndex:1 }}>
-
-      {/* Header */}
-      <div style={{
-        position:'relative', zIndex:1, padding:'2.5rem 2rem 2rem',
-        borderBottom:'1px solid '+C.border,
-        background: routineDone
-          ? 'linear-gradient(160deg,rgba(0,255,136,0.05) 0%,rgba(0,212,255,0.03) 60%,transparent 100%)'
-          : 'linear-gradient(160deg,rgba(0,212,255,0.05) 0%,rgba(139,92,246,0.04) 60%,transparent 100%)',
-        transition:'background 0.8s ease',
-      }}>
-        <div style={{ maxWidth:'900px', margin:'0 auto', display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:'1.5rem' }}>
+        {/* Top bar: greeting, status chips, actions */}
+        <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap', marginBottom:12 }}>
           <div>
-            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.4rem' }}>
-              <Zap size={16} color={accentColor} />
-              <span style={{ fontSize:'0.65rem', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:accentColor }}>FlowState</span>
-            </div>
-            <h1 style={{ fontSize:'clamp(1.6rem,3.5vw,2.25rem)', fontWeight:900, color:C.text, margin:'0 0 0.35rem', letterSpacing:'-0.02em' }}>{greeting}</h1>
-            <p style={{ fontSize:'0.9rem', color:C.sec, margin:'0 0 0.75rem' }}>{dateLabel}</p>
-            <div style={{ display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap' }}>
-              <LiveClock />
-              <SignOutButton />
-              {!loading && routineDone && (
-                <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.green, background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem', animation:'fadeInUp 0.35s ease both' }}>
-                  &#10003; Morning routine complete
-                </span>
-              )}
-              {!loading && !routineDone && h >= 6 && (
-                <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.amber, background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem' }}>
-                  Morning routine pending
-                </span>
-              )}
-              {/* Evening routine checker -- only shows once evening is actually
-                  time-relevant (h>=20), same pending/complete treatment as morning */}
-              {!loading && h >= 20 && eveningDone && (
-                <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.green, background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem', animation:'fadeInUp 0.35s ease both' }}>
-                  &#10003; Evening routine complete
-                </span>
-              )}
-              {!loading && h >= 20 && !eveningDone && (
-                <span style={{ display:'inline-flex', alignItems:'center', gap:'0.3rem', fontSize:'0.72rem', fontWeight:700, color:C.purple, background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.2)', borderRadius:'9999px', padding:'0.2rem 0.7rem' }}>
-                  Evening routine pending
-                </span>
-              )}
-            </div>
+            <div style={{ fontSize:18, fontWeight:700, color:C.text, letterSpacing:'-0.01em' }}>{greeting}</div>
+            <div style={{ fontSize:11, color:D.mut }}>{dateLabel}</div>
           </div>
-
-          <div style={{ display:'flex', gap:'0.5rem', flexWrap:'wrap', alignItems:'flex-start' }}>
-            {/* Add task — opens a modal instead of eating space in Today/Tomorrow */}
-            <button onClick={() => setShowAddTask(true)} title="Add task" style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:'0.75rem', color:C.green, cursor:'pointer', fontSize:'0.75rem', fontWeight:700, fontFamily:'inherit' }}>
-              <Plus size={14}/> Task
+          <LiveClock />
+          {!loading && (routineDone ? chip('✓ morning', D.teal) : h >= 6 ? chip('morning pending', D.amb) : null)}
+          {!loading && h >= 20 && (eveningDone ? chip('✓ evening', D.teal) : chip('evening pending', D.vio))}
+          <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
+            <button onClick={() => setShowAddTask(true)} title="Add task" style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 12px', background:'rgba(0,255,136,0.08)', border:'1px solid rgba(0,255,136,0.25)', borderRadius:8, color:C.green, cursor:'pointer', fontSize:12, fontWeight:700, fontFamily:'inherit' }}>
+              <Plus size={13}/> Task
             </button>
-            {/* Welsh / English toggle */}
-            <button onClick={toggle} title={lang === 'en' ? 'Switch to Welsh' : 'Newid i Saesneg'} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.6rem 1rem', background: lang === 'cy' ? 'rgba(0,192,75,0.12)' : 'rgba(255,255,255,0.04)', border:'1px solid '+(lang === 'cy' ? 'rgba(0,192,75,0.3)' : C.border), borderRadius:'0.75rem', color: lang === 'cy' ? '#00c04b' : C.muted, cursor:'pointer', fontSize:'0.75rem', fontWeight:700, fontFamily:'inherit', letterSpacing:'0.05em' }}>
+            <button onClick={toggle} title={lang === 'en' ? 'Switch to Welsh' : 'Newid i Saesneg'} style={{ padding:'6px 12px', background: lang === 'cy' ? 'rgba(0,192,75,0.12)' : 'rgba(255,255,255,0.04)', border:'1px solid '+(lang === 'cy' ? 'rgba(0,192,75,0.3)' : C.border), borderRadius:8, color: lang === 'cy' ? '#00c04b' : C.muted, cursor:'pointer', fontSize:12, fontWeight:700, fontFamily:'inherit' }}>
               {lang === 'en' ? 'CY' : 'EN'}
             </button>
+            <SignOutButton />
           </div>
-          {pageVisitsErr && (
-            <div style={{ marginTop:'0.75rem', padding:'0.5rem 0.75rem', background:'rgba(255,68,102,0.08)', border:'1px solid rgba(255,68,102,0.25)', borderRadius:'0.6rem', color:'#ff4466', fontSize:'0.72rem' }}>
-              {pageVisitsErr}
-            </div>
-          )}
         </div>
+
+        {showReminder && (
+          <div style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 12px', marginBottom:10, background:'rgba(249,115,22,0.08)', border:'1px solid rgba(249,115,22,0.2)', borderRadius:8, fontSize:12 }}>
+            <span style={{ fontWeight:700, color:'#f97316' }}>{t('reminderTitle')}:</span>
+            <span style={{ color:D.mut, flex:1 }}>{t('reminderMemes')} &bull; {t('reminderMewing')}</span>
+            <button onClick={() => { try { localStorage.setItem('flowstate_reminder_dismissed', toDateStr(new Date())) } catch {}; setShowReminder(false) }} aria-label="Dismiss" style={{ background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex' }}><X size={14}/></button>
+          </div>
+        )}
+        {pageVisitsErr && <div style={{ padding:'7px 12px', marginBottom:10, background:'rgba(255,68,102,0.08)', border:'1px solid rgba(255,68,102,0.25)', borderRadius:8, color:'#ff4466', fontSize:12 }}>{pageVisitsErr}</div>}
+        {focusError && <div style={{ padding:'7px 12px', marginBottom:10, background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:8, color:C.amber, fontSize:12 }}>{focusError}</div>}
+        {error && <div style={{ padding:'7px 12px', marginBottom:10, background:C.card, border:'1px solid '+C.border, borderRadius:8, color:C.amber, fontSize:12 }}>Supabase not connected — add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel.</div>}
+
+        {!loading && (
+          <>
+            {/* What to do right now */}
+            {nextUp && (
+              <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 12px', marginBottom:10, background:D.panel, border:'1px solid '+nextUp.color+'55', borderLeft:'3px solid '+nextUp.color, borderRadius:10 }}>
+                <span style={{ fontSize:9, letterSpacing:'.16em', textTransform:'uppercase', color:nextUp.color, flexShrink:0 }}>Next up</span>
+                <span style={{ flex:1, minWidth:0, fontSize:13, color:D.fg, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{nextUp.label}</span>
+                <button onClick={nextUp.go} style={{ padding:'5px 14px', background:nextUp.color, border:'none', borderRadius:7, color:'#06101a', fontWeight:700, fontSize:12, cursor:'pointer', fontFamily:'inherit', flexShrink:0 }}>{nextUp.cta} &rarr;</button>
+              </div>
+            )}
+
+            {/* How much is left, per area */}
+            <Grid min={140} gap={8} style={{ marginBottom:10 }}>
+              {tile('Tasks', String(n('tasks')), n('tasks') === 1 ? 'to do' : 'to do', n('tasks') ? TOP5_COLOR.tasks : D.teal, () => navTo('tasks'))}
+              {tile('YouTube', String(n('youtube')), 'in pipeline', n('youtube') ? TOP5_COLOR.youtube : D.teal, () => navTo('content'))}
+              {tile('Etsy', String(n('etsy')), 'to do', n('etsy') ? TOP5_COLOR.etsy : D.teal, () => navTo('etsy'))}
+              {tile('X / Social', String(n('x')), 'ideas to post', n('x') ? TOP5_COLOR.x : D.teal, () => navTo('x'))}
+              {tile('Vault', String(n('vault')), 'to read', n('vault') ? TOP5_COLOR.vault : D.teal, () => navTo('vault'))}
+              {tile('Site ideas', String(ideas.length), 'parked', D.vio, () => navTo('ideas'))}
+              {tile('Consistency', consistencyPct !== null ? consistencyPct + '%' : '—', 'habits, 7 days', consistencyPct === null ? D.dim : consistencyPct >= 80 ? D.teal : consistencyPct >= 50 ? D.amb : D.red, () => navTo('tracking'))}
+              {tile('Best streak', streaks[0] ? streaks[0].streak + 'd' : '—', streaks[0] ? streaks[0].title : 'none yet', D.amb, () => navTo('tracking'))}
+            </Grid>
+
+            {/* Top 3 in each */}
+            <Grid min={250}>
+              {panel('Tasks', TOP5_COLOR.tasks, n('tasks') + ' to do', 'tasks', renderList('tasks'))}
+              {panel('YouTube', TOP5_COLOR.youtube, n('youtube') + ' in pipeline', 'content', renderList('youtube'))}
+              {panel('Etsy', TOP5_COLOR.etsy, n('etsy') + ' to do', 'etsy', renderList('etsy'))}
+              {panel('X / Social', TOP5_COLOR.x, n('x') + ' ideas', 'x', renderList('x'))}
+              {panel('Vault', TOP5_COLOR.vault, n('vault') + ' to read', 'vault', renderList('vault'))}
+              {panel('Site ideas', D.vio, ideas.length + ' parked', 'ideas',
+                rows(ideas.slice(0, 3).map(i => ({ id: i.id, title: i.title })), D.vio, () => navTo('ideas')))}
+              {panel('Streaks', D.amb, 'habits', 'tracking',
+                rows(streaks.slice(0, 3).map(s => ({ id: s.id, title: (s.emoji ? s.emoji + ' ' : '') + s.title, badge: s.streak + 'd' })), D.amb, () => navTo('tracking')))}
+            </Grid>
+          </>
+        )}
       </div>
 
-      {/* Weekday afternoon reminder banner -- one place above the streaks row */}
-      {showReminder && (
-        <div style={{ position:'relative', zIndex:2, background:'rgba(249,115,22,0.08)', borderBottom:'1px solid rgba(249,115,22,0.2)' }}>
-          <div style={{ maxWidth:'900px', margin:'0 auto', padding:'0.75rem 2rem', display:'flex', alignItems:'center', gap:'1rem', flexWrap:'wrap' }}>
-            <span style={{ fontSize:'1rem' }}>&#9989;</span>
-            <div style={{ flex:1 }}>
-              <span style={{ fontSize:'0.78rem', fontWeight:700, color:'#f97316' }}>{t('reminderTitle')}: </span>
-              <span style={{ fontSize:'0.78rem', color:'#8888aa' }}>{t('reminderMemes')} &nbsp;&bull;&nbsp; {t('reminderMewing')}</span>
-            </div>
-            <button onClick={() => {
-              try { localStorage.setItem('flowstate_reminder_dismissed', toDateStr(new Date())) } catch {}
-              setShowReminder(false)
-            }} style={{ background:'none', border:'none', color:'#4a4a6a', cursor:'pointer', display:'flex', alignItems:'center', padding:'0.25rem', borderRadius:'0.25rem' }}>
-              <X size={15} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} onAdded={() => setTaskRefresh(k => k + 1)} />}
-
-      {/* Next up / routine CTA -- moved up right after streaks so it's one of
-          the first things seen, not buried under Today/Tomorrow and This
-          week's overview. No longer a full-viewport hero (it used to be the
-          last element on the page and filled remaining height) -- now a
-          normal bounded section like everything else below it. */}
-      {!loading && (
-        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
-          <div style={{
-            maxWidth:'900px', margin:'0 auto', padding:'1.75rem 2rem',
-            display:'flex', flexDirection:'column', alignItems:'center',
-            opacity: contentReady ? 1 : 0,
-            transform: contentReady ? 'translateY(0)' : 'translateY(10px)',
-            transition:'opacity 0.4s ease, transform 0.4s ease',
-          }}>
-
-            {error ? (
-              <div style={{ background:C.card, border:'1px solid '+C.border, borderRadius:'1rem', padding:'1.5rem', maxWidth:'28rem', textAlign:'center' }}>
-                <p style={{ fontWeight:700, color:C.amber, marginBottom:'0.5rem' }}>Supabase Not Connected</p>
-                <p style={{ fontSize:'0.875rem', color:C.sec, marginBottom:'1rem' }}>Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel.</p>
-                <button onClick={() => router.push('/content')} style={{ padding:'0.6rem 1.2rem', background:'linear-gradient(135deg,'+C.cyan+',#0099cc)', border:'none', borderRadius:'0.75rem', color:'#000', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>Browse Anyway</button>
-              </div>
-            ) : ctaState === 'morning' ? (
-              /* ---- Morning card ---- */
-              <div style={{ textAlign:'center', animation:'fadeInUp 0.4s ease both' }}>
-                <div style={{ position:'relative', display:'inline-block', marginBottom:'1.5rem' }}>
-                  <div style={{ position:'absolute', inset:'-28px', borderRadius:'50%', background:'radial-gradient(circle,'+morningCtaGlow+' 0%,transparent 70%)', animation:'breathe 3s ease-in-out infinite', pointerEvents:'none' }} />
-                  <button onClick={() => router.push('/morning')} style={{
-                    position:'relative',
-                    display:'flex', flexDirection:'column', alignItems:'center', gap:'0.4rem',
-                    padding:'1.5rem 2.75rem', borderRadius:'1.5rem',
-                    background:morningCtaGrad,
-                    border:'none', cursor:'pointer', fontFamily:'inherit',
-                    boxShadow:'0 8px 32px rgba(0,0,0,0.4)',
-                  }}>
-                    <span style={{ fontSize:'1rem', fontWeight:900, color:'#000', letterSpacing:'-0.01em' }}>{morningCtaLabel}</span>
-                    <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(0,0,0,0.65)' }}>
-                      {veryLate ? 'Do the routine, then lock in' : lateStart ? 'Morning routine — quick version' : 'Start your morning routine'}
-                    </span>
-                    <span style={{ fontSize:'1.1rem', marginTop:'0.15rem' }}>&#8594;</span>
-                  </button>
-                </div>
-                <div style={{ maxWidth:'24rem', margin:'0 auto' }}>
-                  <p style={{ fontSize:'0.85rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
-                  {quote.a && <p style={{ fontSize:'0.72rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
-                </div>
-              </div>
-            ) : ctaState === 'evening' ? (
-              /* ---- Evening card ---- */
-              <div style={{ textAlign:'center', animation:'fadeInUp 0.4s ease both' }}>
-                <div style={{ position:'relative', display:'inline-block', marginBottom:'1.5rem' }}>
-                  <div style={{ position:'absolute', inset:'-28px', borderRadius:'50%', background:'radial-gradient(circle,rgba(139,92,246,0.3) 0%,transparent 70%)', animation:'breathe 3s ease-in-out infinite', pointerEvents:'none' }} />
-                  <button onClick={() => router.push('/evening')} style={{
-                    position:'relative',
-                    display:'flex', flexDirection:'column', alignItems:'center', gap:'0.4rem',
-                    padding:'1.5rem 2.75rem', borderRadius:'1.5rem',
-                    background:'linear-gradient(135deg,'+C.purple+',#6d28d9)',
-                    border:'none', cursor:'pointer', fontFamily:'inherit',
-                    boxShadow:'0 8px 32px rgba(0,0,0,0.4)',
-                  }}>
-                    <span style={{ fontSize:'1rem', fontWeight:900, color:'#fff', letterSpacing:'-0.01em' }}>Time to wind down</span>
-                    <span style={{ fontSize:'0.72rem', fontWeight:600, color:'rgba(255,255,255,0.75)' }}>Evening routine &mdash; reflect &amp; reset</span>
-                    <span style={{ fontSize:'1.1rem', marginTop:'0.15rem' }}>&#8594;</span>
-                  </button>
-                </div>
-                <div style={{ maxWidth:'24rem', margin:'0 auto' }}>
-                  <p style={{ fontSize:'0.85rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
-                  {quote.a && <p style={{ fontSize:'0.72rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
-                </div>
-              </div>
-            ) : (
-              /* ---- Task-focus card ---- */
-              <div style={{
-                width:'100%', maxWidth:'32rem',
-                background:'linear-gradient(135deg,rgba(0,255,136,0.07) 0%,rgba(0,212,255,0.04) 100%)',
-                border:'1px solid rgba(0,255,136,0.22)',
-                borderRadius:'1.5rem', padding:'2rem 2rem 1.75rem',
-                position:'relative', overflow:'hidden',
-                animation:'fadeInUp 0.4s ease both',
-              }}>
-                <div style={{ position:'absolute', top:'-50px', right:'-50px', width:'200px', height:'200px', borderRadius:'50%', background:'radial-gradient(circle,rgba(0,255,136,0.13) 0%,transparent 70%)', pointerEvents:'none' }} />
-                <div style={{ position:'relative' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:'0.6rem', marginBottom:'0.5rem' }}>
-                    <span style={{ fontSize:'1rem' }}>&#128293;</span>
-                    <span style={{ fontSize:'0.62rem', fontWeight:800, letterSpacing:'0.14em', textTransform:'uppercase', color:C.green }}>Next up</span>
-                  </div>
-                  <h2 style={{ fontSize:'1.4rem', fontWeight:900, color:C.text, margin:'0 0 1rem', letterSpacing:'-0.02em', lineHeight:1.25 }}>
-                    {topTask ? topTask.title : 'Nothing queued for today.'}
-                  </h2>
-
-                  {topTask ? (
-                    <>
-                      {topTask.meta && (
-                        <p style={{ fontSize:'0.68rem', fontWeight:700, letterSpacing:'0.04em', textTransform:'uppercase', color:C.green, margin:'0 0 0.75rem' }}>{topTask.meta}</p>
-                      )}
-                      {topTask.instructions && topTask.instructions.length > 0 && (
-                        <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.25rem' }}>
-                          <p style={{ fontSize:'0.6rem', fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:C.green, margin:'0 0 0.5rem' }}>How to do it</p>
-                          <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
-                            {topTask.instructions.map((step, i) => (
-                              <p key={i} style={{ fontSize:'0.82rem', color:C.sec, margin:0, lineHeight:1.5 }}>{i + 1}. {step}</p>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <button onClick={() => { if (topTaskIsPipeline) { setPendingFocusItem(topTask.id); handleFocusClick() } else navToItem('tasks', topTask.id) }} style={{
-                        display:'flex', alignItems:'center', justifyContent:'center', gap:'0.6rem',
-                        width:'100%', padding:'0.95rem 1.5rem',
-                        background:'linear-gradient(135deg,'+C.green+',#00cc6a)',
-                        border:'none', borderRadius:'1rem', cursor:'pointer', fontFamily:'inherit',
-                        fontWeight:800, fontSize:'0.95rem', color:'#000',
-                        boxShadow:'0 4px 24px rgba(0,255,136,0.28)',
-                        marginBottom:'1.25rem',
-                      }}>
-                        &#9654;&nbsp; {topTaskIsPipeline ? 'Start focus session' : 'Open task'}
-                      </button>
-                    </>
-                  ) : (
-                    <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(0,255,136,0.14)', borderRadius:'0.875rem', padding:'0.875rem 1rem', marginBottom:'1.25rem' }}>
-                      <p style={{ fontSize:'0.85rem', color:C.sec, margin:0 }}>No task set &mdash; pin a video in the Content Pipeline or add tasks in Calendar.</p>
-                    </div>
-                  )}
-
-                  <p style={{ fontSize:'0.82rem', color:C.sec, fontStyle:'italic', lineHeight:1.6, margin:0 }}>"{quote.q}"</p>
-                  {quote.a && <p style={{ fontSize:'0.7rem', color:C.muted, marginTop:'0.25rem' }}>-- {quote.a}</p>}
-                </div>
-              </div>
-            )}
-
-            {focusError && (
-              <div style={{ width:'100%', maxWidth:'32rem', marginTop:'0.75rem', padding:'0.75rem 1rem', background:'rgba(255,184,0,0.08)', border:'1px solid rgba(255,184,0,0.25)', borderRadius:'0.75rem' }}>
-                <p style={{ fontSize:'0.75rem', color:C.amber, margin:0, lineHeight:1.5 }}>{focusError}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Dashboard: top picks across everything, then one card per area */}
-      {!loading && (
-        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border }}>
-          <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'1.5rem 2rem' }}>
-
-            <div style={{ fontFamily:MONO, color:D.fg, padding:14, borderRadius:14, border:'1px solid '+D.line, background:'radial-gradient(1200px 500px at 10% -10%, #1b1450 0%, transparent 60%), '+D.bg }}>
-
-              {/* Status tiles */}
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))', gap:8, marginBottom:10 }}>
-                {tile('Morning', routineDone ? 'done' : 'pending', routineDone ? 'routine complete' : 'tap to start', routineDone ? D.teal : D.amb, () => navTo('morning'))}
-                {tile('Evening', eveningDone ? 'done' : h >= 20 ? 'due' : 'later', eveningDone ? 'review complete' : 'wind-down review', eveningDone ? D.teal : h >= 20 ? D.vio : D.dim, () => navTo('evening'))}
-                {tile('Consistency', consistencyPct !== null ? consistencyPct + '%' : '—', 'habits, last 7 days', consistencyPct === null ? D.dim : consistencyPct >= 80 ? D.teal : consistencyPct >= 50 ? D.amb : D.red, () => navTo('tracking'))}
-                {tile('Best streak', streaks[0] ? streaks[0].streak + 'd' : '—', streaks[0] ? streaks[0].title : 'no streaks yet', D.amb, () => navTo('tracking'))}
-                {tile('Next up', topTask ? (topTaskIsPipeline ? 'focus' : 'task') : 'none', topTask ? topTask.title : 'nothing queued today', D.grn, topTask ? () => { if (topTaskIsPipeline) { setPendingFocusItem(topTask.id); handleFocusClick() } else navToItem('tasks', topTask.id) } : undefined)}
-              </div>
-
-              {/* Section panels */}
-              <Grid min={250}>
-                {panel('Tasks', TOP5_COLOR.tasks, 'today', 'tasks', renderList('tasks'))}
-                {panel('YouTube', TOP5_COLOR.youtube, 'pipeline', 'content', renderList('youtube'))}
-                {panel('Etsy', TOP5_COLOR.etsy, 'to do', 'etsy', renderList('etsy'))}
-                {panel('X / Social', TOP5_COLOR.x, 'ideas', 'x', renderList('x'))}
-                {panel('Vault', TOP5_COLOR.vault, 'to read', 'vault', renderList('vault'))}
-                {panel('Site ideas', D.vio, 'parked', 'ideas',
-                  rows(ideas.slice(0, 5).map(i => ({ id: i.id, title: i.title })), D.vio, () => navTo('ideas')))}
-                {panel('Streaks', D.amb, 'habits', 'tracking',
-                  rows(streaks.slice(0, 5).map(s => ({ id: s.id, title: (s.emoji ? s.emoji + ' ' : '') + s.title, badge: s.streak + 'd' })), D.amb, () => navTo('tracking')))}
-              </Grid>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Today's physical -- renders nothing if nothing's queued for today */}
+      {/* Below the fold: detail */}
       {!loading && <TodaysPhysical />}
       {!loading && <FocusSessionsToday />}
+      {!loading && wrap(<HomeDaysBoard refreshKey={taskRefresh} />, 'board')}
+      {!loading && wrap(<>
+        <p style={{ fontSize:10, letterSpacing:'.16em', textTransform:'uppercase', color:D.mut, margin:'0 0 8px' }}>This week&apos;s targets</p>
+        <WeeklyTargets />
+      </>, 'targets')}
 
-      {/* Next 5 days -- tasks, reminders and habit blocks, same as Calendar */}
-      {!loading && (
-        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.006)' }}>
-          <div style={{ maxWidth:'1500px', margin:'0 auto', padding:'1.25rem 2rem' }}>
-            <HomeDaysBoard refreshKey={taskRefresh} />
-          </div>
-        </div>
-      )}
-
-      {/* Weekly targets */}
-      {!loading && (
-        <div style={{ position:'relative', zIndex:1, borderBottom:'1px solid '+C.border, background:'rgba(255,255,255,0.015)' }}>
-          <div style={{ maxWidth:'1100px', margin:'0 auto', padding:'1.25rem 2rem' }}>
-            <p style={{ fontSize:'0.62rem', fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:C.muted, margin:'0 0 0.6rem' }}>This week&apos;s targets</p>
-            <WeeklyTargets />
-          </div>
-        </div>
-      )}
-
-      </div>
-
-      {/* Focus pre-flight check overlay */}
-      {showFocusCheck && (
-        <FocusCheck
-          onProceed={proceedToFocus}
-          onClose={() => setShowFocusCheck(false)}
-        />
-      )}
+      {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} onAdded={() => setTaskRefresh(k => k + 1)} />}
+      {showFocusCheck && <FocusCheck onProceed={proceedToFocus} onClose={() => setShowFocusCheck(false)} />}
 
       <style>{`
-        @keyframes orbFloat1 { 0%,100%{transform:translate(0,0) scale(1)} 30%{transform:translate(50px,-35px) scale(1.08)} 70%{transform:translate(-25px,20px) scale(0.94)} }
-        @keyframes orbFloat2 { 0%,100%{transform:translate(0,0) scale(1)} 40%{transform:translate(-40px,45px) scale(0.92)} 75%{transform:translate(30px,-20px) scale(1.06)} }
-        @keyframes orbFloat3 { 0%,100%{transform:translate(-50%,-50%) scale(1)} 50%{transform:translate(-50%,-50%) scale(1.18)} }
-        @keyframes breathe { 0%,100%{opacity:0.5;transform:scale(1)} 50%{opacity:1;transform:scale(1.08)} }
         @keyframes fadeInUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
         @keyframes spin { to{transform:rotate(360deg)} }
       `}</style>
