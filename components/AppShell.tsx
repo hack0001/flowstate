@@ -4,12 +4,12 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Zap, Home, Sunrise, Film, TrendingUp, Activity, BookOpen, ChevronRight, ChevronLeft, Menu } from 'lucide-react'
 import { useLanguage } from '@/context/LanguageContext'
 import { getPageVisits, recordPageVisit } from '@/lib/supabase'
+import { C } from '@/lib/theme'
 
 // Persistent left sidebar for the whole app: five groups instead of one button
 // per page. Collapsible (state remembered per browser) -- when collapsed a small
 // round button bottom-left brings it back. Hidden on the login screen only.
 
-const C = { bg:'#0a0a0f', border:'#2a2a3a', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a', cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6' }
 const STORAGE_KEY = 'flowstate_sidebar_collapsed'
 const HIDDEN_ON = ['/login', '/auth']
 

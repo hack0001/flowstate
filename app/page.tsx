@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Zap, Star, ChevronRight, CalendarDays, Sunrise, BarChart2, Moon, FolderOpen, Film, BookOpen, CheckSquare, User, Target, Tv, Link2, ShoppingBag, X, Activity, Camera, Layers, Lightbulb, Plus, Flame, GripVertical, ShoppingCart, Bell, Sparkles, Palette, Library, Disc3, FileEdit, TrendingUp, LineChart } from 'lucide-react'
 import SignOutButton from '@/components/SignOutButton'
@@ -14,11 +14,8 @@ import { useLanguage } from '@/context/LanguageContext'
 import { type Reminder, reminderOccursOn, fetchRemindersRow } from '@/lib/reminders'
 import { calcHabitStreak, calcConsistencyPct, type StreakHabit } from '@/lib/habitStreak'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'#1a1a26', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6',
-  red:'#ff4466', text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a'
-}
+import { C, DESK as D, MONO } from '@/lib/theme'
+import { Tile, Panel, ListRow, Grid } from '@/components/ui'
 
 const QUOTES = [
   { q:'The secret of getting ahead is getting started.', a:'Mark Twain' },
@@ -1470,50 +1467,25 @@ export default function Home() {
 
   // ---- Dashboard helpers ----
   const routeFor = (s: DailyPlanSection) => (s === 'youtube' ? 'content' : s)
-  // The #1 item from the first three areas that have anything queued.
-  const topPicks = (['tasks', 'youtube', 'etsy', 'x'] as DailyPlanSection[])
-    .map(section => ({ section, item: (top5[section] ?? [])[0] as RankableItem | undefined }))
-    .filter((p): p is { section: DailyPlanSection; item: RankableItem } => !!p.item)
-    .slice(0, 3)
 
-  // Betfair-desk look: navy panels, hairline borders, mono type, dense rows.
-  const D = { bg:'#060914', panel:'#0b1122', panel2:'#0e1630', line:'#1a2547', fg:'#dbe3f7', mut:'#7784a6', dim:'#4b5677', teal:'#2fd6b0', red:'#ff5470', amb:'#f6b93b', grn:'#3ee08f', vio:'#9b8cff' }
-  const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
+  // Thin wrappers over the shared templates in components/ui.
+  const tile = (label: string, value: string, sub: string, color: string, onClick?: () => void) =>
+    <Tile key={label} label={label} value={value} sub={sub} color={color} onClick={onClick} />
 
-  const tile = (label: string, value: string, sub: string, color: string, onClick?: () => void) => (
-    <div key={label} onClick={onClick} style={{ background:D.panel, border:'1px solid '+D.line, borderRadius:10, padding:'10px 12px', cursor:onClick ? 'pointer' : 'default', minWidth:0 }}>
-      <div style={{ fontSize:9, letterSpacing:'.16em', textTransform:'uppercase', color:D.mut }}>{label}</div>
-      <div style={{ fontSize:22, fontWeight:700, color, margin:'4px 0 2px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{value}</div>
-      <div style={{ fontSize:10, color:D.dim, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sub}</div>
-    </div>
-  )
+  const rows = (list: { id: string; title: string; badge?: string }[], color: string, onPick: (id: string) => void) =>
+    list.length === 0
+      ? <div style={{ fontSize:11, color:D.dim, padding:'6px 0' }}>nothing here</div>
+      : list.map((it, i) => <ListRow key={it.id} index={i + 1} title={it.title} badge={it.badge} color={color} onClick={() => onPick(it.id)} />)
 
-  const renderList = (section: DailyPlanSection, n = 5) => {
-    const items = (top5[section] ?? []).slice(0, n)
-    if (items.length === 0) return <div style={{ fontSize:11, color:D.dim, padding:'6px 0' }}>nothing queued</div>
-    return (
-      <div style={{ display:'flex', flexDirection:'column' }}>
-        {items.map((item, i) => (
-          <button key={item.id} onClick={() => section === 'youtube' ? focusYoutubeItem(item.id) : navToItem(routeFor(section), item.id)}
-            style={{ display:'flex', alignItems:'center', gap:8, background:'none', border:'none', borderTop:'1px solid '+D.line, padding:'6px 0', cursor:'pointer', fontFamily:MONO, textAlign:'left', width:'100%' }}>
-            <span style={{ fontSize:10, color:TOP5_COLOR[section], width:12, flexShrink:0 }}>{i + 1}</span>
-            <span style={{ flex:1, minWidth:0, fontSize:12, color:D.fg, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.title}</span>
-            {section === 'youtube' && item.pipeline_stage && <span style={{ fontSize:9, color:D.mut, border:'1px solid '+D.line, borderRadius:4, padding:'0 4px', flexShrink:0 }}>{item.pipeline_stage.replace(/^\S+\s/, '')}</span>}
-          </button>
-        ))}
-      </div>
+  const renderList = (section: DailyPlanSection, n = 5) =>
+    rows(
+      (top5[section] ?? []).slice(0, n).map(i => ({ id: i.id, title: i.title, badge: section === 'youtube' ? i.pipeline_stage?.replace(/^\S+\s/, '') : undefined })),
+      TOP5_COLOR[section],
+      id => section === 'youtube' ? focusYoutubeItem(id) : navToItem(routeFor(section), id),
     )
-  }
 
-  const panel = (title: string, color: string, note: string, route: string, body: JSX.Element) => (
-    <div key={title} style={{ background:D.panel, border:'1px solid '+D.line, borderRadius:10, padding:12, minWidth:0 }}>
-      <button onClick={() => navTo(route)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, width:'100%', background:'none', border:'none', padding:0, marginBottom:8, cursor:'pointer', fontFamily:MONO }}>
-        <span style={{ fontSize:10, letterSpacing:'.16em', textTransform:'uppercase', fontWeight:600, color }}>{title}</span>
-        <span style={{ fontSize:10, color:D.mut }}>{note} &rsaquo;</span>
-      </button>
-      {body}
-    </div>
-  )
+  const panel = (title: string, color: string, note: string, route: string, body: ReactNode) =>
+    <Panel key={title} title={title} color={color} note={note} onTitleClick={() => navTo(route)}>{body}</Panel>
 
 
   return (
@@ -1766,37 +1738,17 @@ export default function Home() {
               </div>
 
               {/* Section panels */}
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,250px),1fr))', gap:10 }}>
+              <Grid min={250}>
                 {panel('Tasks', TOP5_COLOR.tasks, 'today', 'tasks', renderList('tasks'))}
                 {panel('YouTube', TOP5_COLOR.youtube, 'pipeline', 'content', renderList('youtube'))}
                 {panel('Etsy', TOP5_COLOR.etsy, 'to do', 'etsy', renderList('etsy'))}
                 {panel('X / Social', TOP5_COLOR.x, 'ideas', 'x', renderList('x'))}
                 {panel('Vault', TOP5_COLOR.vault, 'to read', 'vault', renderList('vault'))}
-                {panel('Site ideas', D.vio, 'parked', 'ideas', ideas.length === 0 ? (
-                  <div style={{ fontSize:11, color:D.dim, padding:'6px 0' }}>{ideasLoading ? 'loading…' : 'nothing parked'}</div>
-                ) : (
-                  <div style={{ display:'flex', flexDirection:'column' }}>
-                    {ideas.slice(0, 5).map((idea, i) => (
-                      <button key={idea.id} onClick={() => navTo('ideas')} style={{ display:'flex', alignItems:'center', gap:8, background:'none', border:'none', borderTop:'1px solid '+D.line, padding:'6px 0', cursor:'pointer', fontFamily:MONO, textAlign:'left', width:'100%' }}>
-                        <span style={{ fontSize:10, color:D.vio, width:12, flexShrink:0 }}>{i + 1}</span>
-                        <span style={{ flex:1, minWidth:0, fontSize:12, color:D.fg, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{idea.title}</span>
-                      </button>
-                    ))}
-                  </div>
-                ))}
-                {panel('Streaks', D.amb, 'habits', 'tracking', streaks.length === 0 ? (
-                  <div style={{ fontSize:11, color:D.dim, padding:'6px 0' }}>no streaks yet</div>
-                ) : (
-                  <div style={{ display:'flex', flexDirection:'column' }}>
-                    {streaks.slice(0, 5).map(s => (
-                      <div key={s.id} style={{ display:'flex', alignItems:'center', gap:8, borderTop:'1px solid '+D.line, padding:'6px 0' }}>
-                        <span style={{ fontSize:12, color:s.color, fontWeight:700, width:30, flexShrink:0 }}>{s.streak}d</span>
-                        <span style={{ flex:1, minWidth:0, fontSize:12, color:D.fg, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.emoji ? s.emoji + ' ' : ''}{s.title}</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
+                {panel('Site ideas', D.vio, 'parked', 'ideas',
+                  rows(ideas.slice(0, 5).map(i => ({ id: i.id, title: i.title })), D.vio, () => navTo('ideas')))}
+                {panel('Streaks', D.amb, 'habits', 'tracking',
+                  rows(streaks.slice(0, 5).map(s => ({ id: s.id, title: (s.emoji ? s.emoji + ' ' : '') + s.title, badge: s.streak + 'd' })), D.amb, () => navTo('tracking')))}
+              </Grid>
             </div>
           </div>
         </div>

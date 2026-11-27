@@ -23,11 +23,9 @@ import {
 import type { MorningRoutineItem } from '@/lib/supabase'
 import { getMobilityDay, type MobilityDayPlan } from '@/lib/mobility'
 
-const C = {
-  bg:'#0a0a0f', surface:'#12121a', card:'rgba(18,18,26,0.8)', border:'#2a2a3a',
-  cyan:'#00d4ff', green:'#00ff88', amber:'#ffb800', purple:'#8b5cf6',
-  text:'#f0f0ff', sec:'#8888aa', muted:'#4a4a6a', red:'#ff4444',
-}
+import { C as BASE } from '@/lib/theme'
+import { Modal } from '@/components/ui'
+const C = { ...BASE, card:'rgba(18,18,26,0.8)' }
 
 const CAT_COLORS: Record<string,string> = {
   Movement: C.cyan, Health: C.green, Fuel: C.amber, Mind: C.purple,
@@ -224,9 +222,7 @@ function EditPanel({ items, completionCounts, onClose, onSave }:{ items:MorningR
   const selectStyle: CSSProperties = { background:'#12121a', border:'1px solid #2a2a3a', borderRadius:'0.4rem', color:C.sec, fontFamily:'inherit', fontSize:'0.68rem', padding:'0.2rem 0.3rem', cursor:'pointer', outline:'none' }
 
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60 }}>
-      <div style={{ background:'#1a1a26', border:'1px solid #2a2a3a', borderRadius:'1rem', padding:'1.5rem', width:'94%', maxWidth:'38rem', maxHeight:'88vh', overflow:'auto', position:'relative' }}>
-        <button onClick={finish} aria-label="Close" style={{ position:'absolute', top:'1rem', right:'1rem', background:'none', border:'none', color:C.muted, cursor:'pointer' }}><X size={16}/></button>
+    <Modal onClose={finish} maxWidth="38rem">
         <h2 style={{ margin:'0 0 0.2rem', fontSize:'1rem', fontWeight:800, color:C.text }}>Organise morning routine</h2>
         <p style={{ margin:'0 0 1.25rem', fontSize:'0.68rem', color:C.muted, lineHeight:1.5 }}>
           Put each task in the right section, rename it, reorder it or add new ones. Changes save as you go. Numbers show completions in the last 30 days.
@@ -279,8 +275,7 @@ function EditPanel({ items, completionCounts, onClose, onSave }:{ items:MorningR
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:'0.5rem' }}>
           <button onClick={finish} disabled={saving} style={{ padding:'0.55rem 1.4rem', background:C.cyan, border:'none', borderRadius:'0.5rem', color:'#000', fontWeight:800, cursor:saving?'default':'pointer', fontFamily:'inherit', fontSize:'0.82rem', opacity:saving?0.7:1 }}>{saving?'Saving…':'Done'}</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
